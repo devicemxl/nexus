@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<!--
+        Ejemplo de uso de voyajerJS en el navegador.
+    Configura un router SPA con rutas estáticas y dinámicas,
+    navegación mediante hash y vistas dummy renderizadas en el DOM.
+-->
+
+<head>
+    <!-- Metadatos y título de la página. -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ejemplo de voyajerJS</title>
+</head>
+
+<body>
+    <!-- Contenido visible de la demostración. -->
+    <h1>Ejemplo de voyajerJS</h1>
+    <nav aria-label="Navegación principal">
+        <a href="/">Inicio</a>
+        <a href="/users">Usuarios</a>
+        <a href="/users/123">Usuario 123</a>
+        <a href="/about">Acerca de</a>
+        <a href="/contact">Contacto</a>
+        <a href="/settings">Configuración</a>
+    </nav>
+    <main id="app" aria-live="polite">
+        <p>Selecciona una ruta para probar el router.</p>
+    </main>
+    <!-- Módulo que configura y ejecuta el ejemplo de Pulsar. -->
+    <script type="module">
+        import { Voyajer, VoyajerUtils } from '../../src/voyajer.js';
+
+        /**
+         * Configura el router del ejemplo, sus rutas, middleware y eventos.
+         */
+        function aTrip() {
+        // Crear router
+        const router = new Voyajer({
+            mode: 'hash', // o 'history'
+            base: '/',
+            scrollBehavior: 'smooth'
+        });
+
+        const app = document.querySelector('#app');
+
+        /**
+         * Reemplaza el contenido de la vista actual con una página dummy.
+         * @param {string} title - Título de la vista.
+         * @param {string} description - Texto descriptivo de la vista.
+         */
+        const renderPage = (title, description) => {
+            const page = document.createElement('section');
+            const heading = document.createElement('h2');
+            const text = document.createElement('p');
+
+            heading.textContent = title;
+            text.textContent = description;
+            page.append(heading, text);
+            app.replaceChildren(page);
+        };
+
+        // Registrar rutas
+        router.register('/', () => {
+            renderPage('Página de inicio', 'Esta es la vista dummy de la ruta principal.');
+            console.log('Página de inicio');
+        });
+
+        router.register('/users', () => {
+            renderPage('Lista de usuarios', 'Aquí aparecería el listado de usuarios.');
+            console.log('Lista de usuarios');
+        });
+
+        router.register('/users/:id', (context) => {
+            renderPage(`Usuario ${context.params.id}`, `Esta es la vista dummy del usuario ${context.params.id}.`);
+            console.log('Usuario:', context.params.id);
+        });
+
+        router.register('/about', () => {
+            renderPage('Acerca de', 'Página dummy de información sobre este ejemplo.');
+            console.log('Acerca de');
+        }, { name: 'about', meta: { title: 'Acerca de' } });
+
+        // Registrar múltiples rutas
+        router.registerRoutes([
+            {
+                path: '/contact',
+                handler: () => {
+                    renderPage('Contacto', 'Página dummy de contacto.');
+                    console.log('Contacto');
+                }
+            },
+            {
+                path: '/settings',
+                handler: () => {
+                    renderPage('Configuración', 'Página dummy de configuración.');
+                    console.log('Configuración');
+                }
+            }
+        ]);
+
+        // Middlewares
+        router.use(({ path, router }) => {
+            console.log('Middleware:', path);
+            // Puede retornar false para cancelar o string para redirigir
+        });
+
+        // Eventos
+        router.subscribe('navigate', ({ path, route, params }) => {
+            console.log('Navegando a:', path);
+        });
+
+        router.subscribe('notfound', ({ path }) => {
+            console.log('Ruta no encontrada:', path);
+        });
+
+        // Navegación programática
+        router.push('/users/123');
+        router.replace('/about');
+        router.navigateTo('about');
+
+        // Obtener información
+        const current = router.getCurrentRoute();
+        console.log('Ruta actual:', current);
+
+        // Utilidades
+        const parsed = VoyajerUtils.parseURL('/users/123?page=2#section');
+        console.log('URL parseada:', parsed);
+
+        // Iniciar router
+        router.start();
+    }
+
+    aTrip();
+    </script>
+</body>
+<!--
+        Registro de cambios:
+- Se documentaron la estructura HTML y el propósito del ejemplo.
+- Se añadieron enlaces de navegación y vistas dummy para cada ruta.
+- Se documentaron las funciones aTrip y renderPage con comentarios JSDoc.
+-->
+</html>

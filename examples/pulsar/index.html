@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<!--
+        Ejemplo de uso de Pulsar en el navegador.
+        Crea un estado reactivo, calcula valores derivados y demuestra
+        la suscripción a cambios y las operaciones de deshacer y rehacer.
+    -->
+
+<head>
+    <!-- Metadatos y título de la página. -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ejemplo de pulsarJS</title>
+</head>
+
+<body>
+    <!-- Contenido visible de la demostración. -->
+    <h1>Ejemplo de pulsarJS</h1>
+    <!-- Módulo que configura y ejecuta el ejemplo de Pulsar. -->
+    <script type="module">
+        import { Pulsar } from '../../src/pulsar.js';
+
+        // Crear estado
+        const state = new Pulsar({ count: 0 });
+
+        // Suscribirse a cambios
+        state.subscribe('count', (value, oldValue) => {
+            console.log(`Count: ${oldValue} -> ${value}`);
+        });
+
+        // Computado
+        state.computed('double', (s) => s.count * 2, ['count']);
+
+        // Actualizar estado
+        state.set('count', 5);
+        console.log(state.get('double')); // 10
+
+        // Undo/Redo
+        state.undo(); // count vuelve a 0
+        state.redo(); // count vuelve a 5
+
+    </script>
+</body>
+<!--
+        Registro de cambios:
+    - Se documentaron la estructura HTML y el propósito del ejemplo.
+    -->
+
+</html>

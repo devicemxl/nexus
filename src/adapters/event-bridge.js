@@ -1,0 +1,1 @@
+// Adapter de eventos externos

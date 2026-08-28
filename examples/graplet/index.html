@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="es">
+    <!--
+        Ejemplo de uso de Graphlet en el navegador.
+        Crea un grafo dirigido, agrega nodos y aristas, realiza consultas
+        y demuestra la suscripción a eventos y la serialización del grafo.
+    -->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ejemplo de Graphlet</title>
+</head>
+<body>
+    <h1>Ejemplo de Graphlet</h1>
+    <script type="module">
+        import { Graphlet, GraphletUtils } from '../../src/graphlet.js';
+
+        // Crear un grafo dirigido y escuchar los nodos que se agreguen.
+        const graph = new Graphlet({ directed: true });
+        graph.subscribe('nodeAdded', ({ node }) => {
+            console.log('Nodo agregado:', node);
+        });
+
+        // Agregar nodos.
+        const input = graph.addNode({ id: 'input1', type: 'input', data: { label: 'Entrada' } });
+        const process = graph.addNode({ type: 'process', data: { label: 'Procesar' } });
+        const output = graph.addNode({ type: 'output', data: { label: 'Salida' } });
+
+        // Conectar los nodos con aristas de flujo.
+        graph.addEdge({ source: input.id, target: process.id, type: 'flow' });
+        graph.addEdge({ source: process.id, target: output.id, type: 'flow' });
+
+        // Consultar vecinos y encontrar el camino más corto.
+        const neighbors = graph.getNeighbors(input.id);
+        const path = GraphletUtils.shortestPath(graph, input.id, output.id);
+
+        // Serializar el grafo y restaurarlo desde JSON.
+        const json = graph.toJSON();
+        const restored = Graphlet.fromJSON(json);
+
+        console.log('Vecinos de entrada:', neighbors);
+        console.log('Camino más corto:', path);
+        console.log('Grafo serializado:', json);
+        console.log('Grafo restaurado:', restored);
+    </script>
+</body>
+    <!--
+        Registro de cambios:
+        - Se corrigió la carga del módulo Graphlet.
+        - Se registró la suscripción antes de agregar los nodos.
+        - Se documentaron las operaciones principales del ejemplo.
+    -->
+</html>

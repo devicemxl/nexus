@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="es">
+<!--
+    Ejemplo de uso de ChunkletJS en el navegador.
+    Crea un componente interactivo con contador, eventos, estado,
+    comportamientos, animaciones y renderizado dinámico.
+    También muestra cómo crear componentes múltiples y elementos
+    mediante las utilidades de ChunkletJS.
+    -->
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ejemplo de chunkletJS</title>
+</head>
+
+<body>
+    <h1>Ejemplo de chunkletJS</h1>
+    <div id="myButton">click me</div>
+    <script type="module">
+        import { Chunklet, ChunkletUtils } from '../../src/chunklet.js';
+
+        /**
+         * Inicializa un componente Chunklet y demuestra sus principales APIs.
+         * @param {HTMLElement|string} id Elemento o selector del componente.
+         * @returns {void}
+         */
+        function chunketer(id) {
+            // Crear el componente a partir del elemento recibido.
+            const button = new Chunklet(id, {
+                // opciones
+            });
+
+            // Añadir comportamientos reutilizables al componente.
+            button.use('tooltip', { text: 'Haz clic aquí', position: 'top' });
+            button.use('toggle', { target: '.menu', activeClass: 'open' });
+
+            // Incrementar el contador y actualizar su contenido en cada click.
+            button.events.on('click', () => {
+                button.setState({ count: button.state('count') + 1 });
+                button.render((state) => ` <span>Contador: ${state.count}</span>`);
+                console.log('Click!');
+            });
+
+            // Inicializar el estado que utiliza el contador.
+            button.state('count', 0);
+
+            // Ejecutar animaciones de entrada al inicializar el componente.
+            button.animations.fadeIn(500);
+            button.animations.slideDown(300);
+
+            // Renderizar el valor inicial del contador.
+            button.render((state) => ` <span>Contador: ${state.count}</span>`);
+
+            // Crear componentes adicionales a partir de una clase común.
+            const buttons = Chunklet.createAll('.btn', {});
+            buttons.forEach(btn => {
+                btn.events.on('click', () => console.log('Clicked:', btn.element));
+            });
+
+            // Demostrar la utilidad para crear elementos con atributos y estilos.
+            const element = ChunkletUtils.createElement('div', {
+                class: 'container',
+                style: { color: 'red' },
+                'data-id': '123'
+            },
+                'Contenido');
+
+        }
+        // Ensure the DOM is ready if the script is in the <head>
+        document.addEventListener('DOMContentLoaded', () => {
+            const el = document.querySelector('#myButton');
+            if (el) {
+                chunketer(el); // Pass the element directly
+            } else {
+                console.error('Target element not found in DOM');
+            }
+        });
+    </script>
+</body>
+<!--
+    Registro de cambios:
+    - Se corrigió la inicialización para pasar el elemento #myButton
+      directamente a Chunklet.
+    - Se añadió un contador que comienza en cero y aumenta con cada click.
+    - Se actualiza el contenido renderizado después de cada cambio de estado.
+    - Se documentó la función chunketer y el propósito de sus bloques.
+    -->
+
+</html>

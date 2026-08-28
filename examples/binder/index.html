@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<!--
+    Ejemplo de uso de binderJS en el navegador.
+    Crea ** y ***.
+    También ***.
+    -->
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ejemplo de binderJS</title>
+</head>
+
+<body>
+    <h1>Ejemplo de binderJS</h1>
+    <form id="myForm">
+        <label>
+            Usuario
+            <input type="text" name="username">
+        </label>
+        <label>
+            Email
+            <input type="email" name="email">
+        </label>
+        <label>
+            Contraseña
+            <input type="password" name="password">
+        </label>
+        <button type="submit">Enviar</button>
+        <button type="button" id="set-values">Establecer valores</button>
+        <button type="button" id="fill-form">Llenar datos externos</button>
+        <button type="button" id="reset-form">Resetear</button>
+    </form>
+    <script type="module">
+        import { Binder, BinderUtils } from '../../src/binder.js';
+
+        /**
+         * Inicializa un componente Chunklet y demuestra sus principales APIs.
+         * @param {HTMLElement|string} id Elemento o selector del componente.
+         * @returns {void}
+         */
+        function bindener(id) {
+
+            // Crear binder
+            const form = new Binder(id, {
+                validateOnSubmit: true,
+                showErrors: true
+            });
+
+            // Suscribirse a eventos
+            form.subscribe('submit', ({ data }) => {
+                console.log('Datos del formulario:', data);
+            });
+
+            form.subscribe('field:change', ({ field, value }) => {
+                console.log(`Campo ${field.name} cambió a:`, value);
+            });
+
+            // Validación
+            form.subscribe('validate', ({ valid }) => {
+                console.log('Formulario válido:', valid);
+            });
+
+            document.querySelector('#set-values').addEventListener('click', () => {
+                form.setValue('username', 'juan123');
+                form.setData({
+                    email: 'juan@example.com',
+                    password: 'secret123'
+                });
+                console.log('Datos establecidos:', form.getData());
+            });
+
+            document.querySelector('#fill-form').addEventListener('click', () => {
+                form.fill({
+                    username: 'maria456',
+                    email: 'maria@example.com'
+                });
+                console.log('Datos externos cargados:', form.getData());
+            });
+
+            document.querySelector('#reset-form').addEventListener('click', () => {
+                form.reset();
+                console.log('Formulario reseteado:', form.getData());
+            });
+
+            // Utilidades
+            const serialized = BinderUtils.serialize(document.querySelector('#myForm'));
+            BinderUtils.deserialize(document.querySelector('#myForm'), { username: 'test' });
+
+        }
+        // Ensure the DOM is ready if the script is in the <head>
+        document.addEventListener('DOMContentLoaded', () => {
+            const el = document.querySelector('#myForm');
+            if (el) {
+                bindener(el); // Pass the element directly
+            } else {
+                console.error('Target element not found in DOM');
+            }
+        });
+    </script>
+</body>
+<!--
+    Registro de cambios:
+-   Se agregó un formulario HTML real para usar BinderUtils con FormData.
+-   Se agregaron acciones para establecer, llenar y resetear los valores.
+-->
+</html>
