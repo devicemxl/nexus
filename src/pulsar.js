@@ -1,443 +1,335 @@
 /**
- * PulsarJS - Estado reactivo
- * Sistema de estado con suscripciones, computados y persistencia opcional
+ * PulsarJS - Estado reactivo para el navegador
+ * Versión: 0.1.0 (Implementación del contrato)
  * 
-  Características implementadas:
-
-    Estado reactivo básico - get(), set(), delete()
-    Suscripciones - subscribe() con cancelación
-    Propiedades computadas - computed() con dependencias
-    Historial de cambios - undo(), redo() con límite configurable
-    Persistencia opcional - localStorage con configuración
-    Serialización - serialize(), deserialize()
-    Métodos estáticos - Pulsar.create(), createState()
-    Utilidades - PulsarUtils.combine(), derive(), watch()
-    Modo debug - Logs en consola cuando está habilitado
+ * Características:
+ * - Cero dependencias
+ * - ES Module puro (type="module")
+ * - Browser-first (sin Node.js, sin build steps)
+ * - Estado como árbol de objetos
+ * - Suscripciones globales y selectivas
+ * - Reentrancy-safe
+ * - Congelamiento opcional del estado
  */
 
-// Estado interno de Pulsar
-const state = new Map();
-const subscribers = new Map();
-const computedCache = new Map();
+// ============================================
+// CLASE PRINCIPAL
+// ============================================
 
-// Configuración global
-const config = {
-  useLocalStorage: false,
-  storageKey: 'pulsar-state',
-  debug: false
-};
-
-class Pulsar {
+export class Pulsar {
   /**
-   * Inicializa Pulsar con estado inicial
-   * @param {Object} initialState - Estado inicial
+   * Crea una nueva instancia de Pulsar
+   * @param {Object} initialState - Estado inicial (debe ser objeto plano)
    * @param {Object} options - Opciones de configuración
+   * @param {boolean} options.freeze - Si true, congela el estado (default: true)
+   * @param {boolean} options.skipEqualUpdates - Si true, no notifica si el estado es igual (default: false)
    */
   constructor(initialState = {}, options = {}) {
-    this._state = { ...initialState };
-    this._subscribers = new Map();
-    this._computed = new Map();
-    this._history = [];
-    this._historyIndex = -1;
-    this._maxHistory = 50;
+    // Validar estado inicial
+    if (!this._isPlainObject(initialState)) {
+      throw new TypeError('[Pulsar] initialState debe ser un objeto plano');
+    }
 
-    Object.assign(config, options);
+    // Estado interno
+    this._state = initialState;
+    this._listeners = new Set();           // Listeners globales (subscribe)
+    this._selectorListeners = new Map();   // Map<selectorFn, Map<id, {listener, equality, previousValue}>>
+    this._nextSelectorId = 1;
 
-    // Cargar estado persistido si está habilitado
-    if (config.useLocalStorage) {
-      this._loadFromStorage();
+    // Opciones
+    this._options = {
+      freeze: true,
+      skipEqualUpdates: false,
+      ...options
+    };
+
+    // Congelar estado inicial si está activado
+    if (this._options.freeze) {
+      this._state = this._deepFreeze(this._state);
     }
   }
 
+  // ============================================
+  // API PRINCIPAL
+  // ============================================
+
   /**
-   * Obtiene el valor de una propiedad
-   * @param {string} key - Nombre de la propiedad
-   * @returns {*} Valor de la propiedad
+   * Obtiene el estado actual
+   * @returns {Object} Estado actual (congelado si freeze=true)
    */
-  get(key) {
-    if (this._computed.has(key)) {
-      return this._computed.get(key).value;
-    }
-    return this._state[key];
+  getState() {
+    return this._state;
   }
 
   /**
-   * Establece el valor de una propiedad
-   * @param {string} key - Nombre de la propiedad
-   * @param {*} value - Nuevo valor
-   * @param {boolean} silent - Si true, no notifica a los suscriptores
+   * Actualiza el estado con shallow merge
+   * @param {Object} partial - Objeto con las propiedades a actualizar
+   * @throws {TypeError} Si partial no es un objeto plano
    */
-  set(key, value, silent = false) {
-    const oldValue = this._state[key];
-
-    // No hacer nada si el valor no cambió
-    if (oldValue === value) return;
-
-    // Guardar en historial para undo/redo
-    if (!silent) {
-      this._pushHistory(key, oldValue, value);
+  setState(partial) {
+    // Validar
+    if (!this._isPlainObject(partial)) {
+      throw new TypeError('[Pulsar] setState: partial debe ser un objeto plano');
     }
 
-    // Actualizar el estado
-    this._state[key] = value;
+    // Crear nuevo estado con shallow merge
+    const next = { ...this._state, ...partial };
 
-    // Persistir si está habilitado
-    if (config.useLocalStorage) {
-      this._saveToStorage();
+    // Skip si es igual (opcional)
+    if (this._options.skipEqualUpdates && this._shallowEqual(this._state, next)) {
+      return;
     }
 
-    // Notificar a los suscriptores
-    if (!silent) {
-      this._notify(key, value, oldValue);
+    // Congelar si está activado
+    if (this._options.freeze) {
+      this._deepFreeze(next);
     }
 
-    // Actualizar valores computados dependientes
-    this._updateComputations(key);
-
-    if (config.debug) {
-      console.log(`[Pulsar] set(${key}) =`, value);
-    }
+    // Actualizar estado y notificar
+    this._state = next;
+    this._notify();
   }
 
+  // ============================================
+  // SUSCRIPCIONES
+  // ============================================
+
   /**
-   * Suscribe una función a cambios en una propiedad
-   * @param {string|string[]} keys - Propiedad o array de propiedades
-   * @param {Function} callback - Función a ejecutar
+   * Suscribe un listener global (se llama con todo el estado)
+   * @param {Function} listener - Función (state) => void
+   * @param {Object} options - Opciones
+   * @param {boolean} options.immediate - Si true, llama al listener inmediatamente
    * @returns {Function} Función para cancelar la suscripción
    */
-  subscribe(keys, callback) {
-    const keyArray = Array.isArray(keys) ? keys : [keys];
-    const subscriptionId = Symbol('subscription');
+  subscribe(listener, options = {}) {
+    // Validar
+    if (typeof listener !== 'function') {
+      throw new TypeError('[Pulsar] subscribe: listener debe ser una función');
+    }
 
-    keyArray.forEach(key => {
-      if (!this._subscribers.has(key)) {
-        this._subscribers.set(key, new Map());
+    // Añadir listener
+    this._listeners.add(listener);
+
+    // Llamar inmediatamente si se solicita
+    if (options.immediate) {
+      try {
+        listener(this._state);
+      } catch (error) {
+        console.error('[Pulsar] Error en listener inmediato:', error);
       }
-      this._subscribers.get(key).set(subscriptionId, callback);
+    }
+
+    // Retornar función de cancelación
+    return () => {
+      this._listeners.delete(listener);
+    };
+  }
+
+  /**
+   * Suscribe un listener selectivo (solo se llama si el valor derivado cambia)
+   * @param {Function|string} selector - Función (state) => any o string con ruta ('ui.selectedNode')
+   * @param {Function} listener - Función (currentValue, previousValue, state) => void
+   * @param {Object} options - Opciones
+   * @param {Function} options.equality - Función de comparación (default: Object.is)
+   * @param {boolean} options.immediate - Si true, llama al listener inmediatamente
+   * @returns {Function} Función para cancelar la suscripción
+   */
+  subscribeSelector(selector, listener, options = {}) {
+    // Validar
+    if (typeof listener !== 'function') {
+      throw new TypeError('[Pulsar] subscribeSelector: listener debe ser una función');
+    }
+
+    // Normalizar selector
+    const selectorFn = typeof selector === 'string' 
+      ? this._createPathSelector(selector) 
+      : selector;
+
+    if (typeof selectorFn !== 'function') {
+      throw new TypeError('[Pulsar] subscribeSelector: selector debe ser función o string');
+    }
+
+    // Configurar
+    const equalityFn = options.equality || Object.is;
+    const listenerId = this._nextSelectorId++;
+
+    // Evaluar valor inicial
+    let previousValue;
+    try {
+      previousValue = selectorFn(this._state);
+    } catch (error) {
+      console.error('[Pulsar] Error evaluando selector:', error);
+      previousValue = undefined;
+    }
+
+    // Llamar inmediatamente si se solicita
+    if (options.immediate) {
+      try {
+        listener(previousValue, undefined, this._state);
+      } catch (error) {
+        console.error('[Pulsar] Error en listener inmediato:', error);
+      }
+    }
+
+    // Registrar en el mapa de selectores
+    if (!this._selectorListeners.has(selectorFn)) {
+      this._selectorListeners.set(selectorFn, new Map());
+    }
+    this._selectorListeners.get(selectorFn).set(listenerId, {
+      listener,
+      equality: equalityFn,
+      previousValue
     });
 
     // Retornar función de cancelación
     return () => {
-      keyArray.forEach(key => {
-        if (this._subscribers.has(key)) {
-          this._subscribers.get(key).delete(subscriptionId);
+      const listenerMap = this._selectorListeners.get(selectorFn);
+      if (listenerMap) {
+        listenerMap.delete(listenerId);
+        if (listenerMap.size === 0) {
+          this._selectorListeners.delete(selectorFn);
         }
-      });
+      }
+    };
+  }
+
+  // ============================================
+  // MÉTODOS INTERNOS
+  // ============================================
+
+  /**
+   * Notifica a todos los listeners (reentrancy-safe)
+   */
+  _notify() {
+    // Snapshot de listeners globales (reentrancy safety)
+    const listenersSnapshot = [...this._listeners];
+
+    // Notificar listeners globales
+    for (const listener of listenersSnapshot) {
+      try {
+        listener(this._state);
+      } catch (error) {
+        console.error('[Pulsar] Error en listener global:', error);
+      }
+    }
+
+    // Notificar selector listeners
+    for (const [selector, listenerMap] of this._selectorListeners) {
+      // Evaluar valor actual
+      let currentValue;
+      try {
+        currentValue = selector(this._state);
+      } catch (error) {
+        console.error('[Pulsar] Error evaluando selector:', error);
+        continue;
+      }
+
+      // Iterar listeners de este selector (snapshot para reentrancy)
+      const listenerSnapshot = [...listenerMap.entries()];
+
+      for (const [id, { listener, equality, previousValue }] of listenerSnapshot) {
+        // Verificar si el valor cambió
+        if (!equality(currentValue, previousValue)) {
+          try {
+            listener(currentValue, previousValue, this._state);
+          } catch (error) {
+            console.error('[Pulsar] Error en selector listener:', error);
+          }
+
+          // Actualizar previousValue
+          if (listenerMap.has(id)) {
+            listenerMap.set(id, {
+              listener,
+              equality,
+              previousValue: currentValue
+            });
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Crea un selector de ruta a partir de un string
+   * @param {string} path - Ruta (ej: 'ui.selectedNode')
+   * @returns {Function} Función selector
+   */
+  _createPathSelector(path) {
+    const keys = path.split('.');
+
+    return (state) => {
+      let value = state;
+      for (const key of keys) {
+        if (value === null || value === undefined) return undefined;
+        value = value[key];
+      }
+      return value;
     };
   }
 
   /**
-   * Crea una propiedad computada
-   * @param {string} key - Nombre de la propiedad computada
-   * @param {Function} computeFn - Función que calcula el valor
-   * @param {string[]} dependencies - Propiedades de las que depende
+   * Verifica si un objeto es plano
+   * @param {*} obj - Objeto a verificar
+   * @returns {boolean} true si es objeto plano
    */
-  computed(key, computeFn, dependencies = []) {
-    const computedObj = {
-      value: undefined,
-      computeFn,
-      dependencies,
-      dirty: true
-    };
+  _isPlainObject(obj) {
+    if (obj === null || typeof obj !== 'object') return false;
+    if (Array.isArray(obj)) return false;
 
-    // Calcular valor inicial
-    computedObj.value = this._executeComputed(computeFn);
-    this._computed.set(key, computedObj);
-
-    // Suscribirse a dependencias
-    this.subscribe(dependencies, () => {
-      const oldValue = computedObj.value;
-      computedObj.value = this._executeComputed(computeFn);
-      this._notify(key, computedObj.value, oldValue);
-    });
-
-    return computedObj.value;
+    const proto = Object.getPrototypeOf(obj);
+    return proto === Object.prototype || proto === null;
   }
 
   /**
-   * Ejecuta una función computada con manejo de errores
-   * @param {Function} fn - Función a ejecutar
-   * @returns {*} Resultado de la función
+   * Congela un objeto recursivamente
+   * @param {Object} obj - Objeto a congelar
+   * @returns {Object} Objeto congelado
    */
-  _executeComputed(fn) {
-    try {
-      return fn(this._state);
-    } catch (error) {
-      console.error('[Pulsar] Error en computado:', error);
-      return undefined;
-    }
-  }
-
-  /**
-   * Notifica a los suscriptores de una propiedad
-   * @param {string} key - Propiedad que cambió
-   * @param {*} value - Nuevo valor
-   * @param {*} oldValue - Valor anterior
-   */
-  _notify(key, value, oldValue) {
-    if (this._subscribers.has(key)) {
-      this._subscribers.get(key).forEach(callback => {
-        try {
-          callback(value, oldValue, key);
-        } catch (error) {
-          console.error(`[Pulsar] Error en suscriptor de ${key}:`, error);
-        }
-      });
-    }
-
-    // Notificar suscriptores globales
-    if (this._subscribers.has('*')) {
-      this._subscribers.get('*').forEach(callback => {
-        try {
-          callback({ key, value, oldValue });
-        } catch (error) {
-          console.error('[Pulsar] Error en suscriptor global:', error);
-        }
-      });
-    }
-  }
-
-  /**
-   * Actualiza los computados que dependen de una propiedad
-   * @param {string} key - Propiedad que cambió
-   */
-  _updateComputations(key) {
-    this._computed.forEach((computedObj, computedKey) => {
-      if (computedObj.dependencies.includes(key)) {
-        const oldValue = computedObj.value;
-        computedObj.value = this._executeComputed(computedObj.computeFn);
-        this._notify(computedKey, computedObj.value, oldValue);
-      }
-    });
-  }
-
-  /**
-   * Guarda un cambio en el historial para undo/redo
-   * @param {string} key - Propiedad que cambió
-   * @param {*} oldValue - Valor anterior
-   * @param {*} newValue - Nuevo valor
-   */
-  _pushHistory(key, oldValue, newValue) {
-    // Eliminar entradas futuras si estamos en medio del historial
-    if (this._historyIndex < this._history.length - 1) {
-      this._history = this._history.slice(0, this._historyIndex + 1);
-    }
-
-    this._history.push({ key, oldValue, newValue });
-    this._historyIndex++;
-
-    // Limitar el tamaño del historial
-    if (this._history.length > this._maxHistory) {
-      this._history.shift();
-      this._historyIndex--;
-    }
-  }
-
-  /**
-   * Deshace el último cambio
-   * @returns {boolean} true si se pudo deshacer
-   */
-  undo() {
-    if (this._historyIndex < 0) return false;
-
-    const change = this._history[this._historyIndex];
-    this._state[change.key] = change.oldValue;
-    this._historyIndex--;
-
-    this._notify(change.key, change.oldValue, change.newValue);
-    this._updateComputations(change.key);
-
-    if (config.useLocalStorage) {
-      this._saveToStorage();
-    }
-
-    return true;
-  }
-
-  /**
-   * Rehace un cambio deshecho
-   * @returns {boolean} true si se pudo rehacer
-   */
-  redo() {
-    if (this._historyIndex >= this._history.length - 1) return false;
-
-    this._historyIndex++;
-    const change = this._history[this._historyIndex];
-    this._state[change.key] = change.newValue;
-
-    this._notify(change.key, change.newValue, change.oldValue);
-    this._updateComputations(change.key);
-
-    if (config.useLocalStorage) {
-      this._saveToStorage();
-    }
-
-    return true;
-  }
-
-  /**
-   * Obtiene todo el estado actual
-   * @returns {Object} Copia del estado actual
-   */
-  getState() {
-    return { ...this._state };
-  }
-
-  /**
-   * Establece múltiples propiedades a la vez
-   * @param {Object} updates - Objeto con las propiedades a actualizar
-   * @param {boolean} silent - Si true, no notifica a los suscriptores
-   */
-  setState(updates, silent = false) {
-    const keys = Object.keys(updates);
-    keys.forEach(key => {
-      this.set(key, updates[key], silent);
-    });
-  }
-
-  /**
-   * Elimina una propiedad del estado
-   * @param {string} key - Propiedad a eliminar
-   */
-  delete(key) {
-    if (key in this._state) {
-      const oldValue = this._state[key];
-      delete this._state[key];
-      this._notify(key, undefined, oldValue);
-
-      if (config.useLocalStorage) {
-        this._saveToStorage();
+  _deepFreeze(obj) {
+    if (obj && typeof obj === 'object' && !Object.isFrozen(obj)) {
+      Object.freeze(obj);
+      for (const key of Object.keys(obj)) {
+        this._deepFreeze(obj[key]);
       }
     }
+    return obj;
   }
 
   /**
-   * Guarda el estado en localStorage
+   * Compara dos objetos superficialmente
+   * @param {Object} a - Primer objeto
+   * @param {Object} b - Segundo objeto
+   * @returns {boolean} true si son iguales superficialmente
    */
-  _saveToStorage() {
-    try {
-      localStorage.setItem(config.storageKey, JSON.stringify(this._state));
-    } catch (error) {
-      console.error('[Pulsar] Error guardando en localStorage:', error);
-    }
-  }
+  _shallowEqual(a, b) {
+    if (Object.is(a, b)) return true;
+    if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
 
-  /**
-   * Carga el estado desde localStorage
-   */
-  _loadFromStorage() {
-    try {
-      const savedState = localStorage.getItem(config.storageKey);
-      if (savedState) {
-        this._state = { ...this._state, ...JSON.parse(savedState) };
-      }
-    } catch (error) {
-      console.error('[Pulsar] Error cargando de localStorage:', error);
-    }
-  }
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
 
-  /**
-   * Limpia todo el estado y las suscripciones
-   */
-  reset() {
-    this._state = {};
-    this._subscribers.clear();
-    this._computed.clear();
-    this._history = [];
-    this._historyIndex = -1;
+    if (keysA.length !== keysB.length) return false;
 
-    if (config.useLocalStorage) {
-      localStorage.removeItem(config.storageKey);
-    }
-  }
-
-  /**
-   * Serializa el estado a JSON
-   * @returns {string} Estado serializado
-   */
-  serialize() {
-    return JSON.stringify(this._state);
-  }
-
-  /**
-   * Deserializa estado desde JSON
-   * @param {string} json - JSON con el estado
-   */
-  deserialize(json) {
-    try {
-      const parsed = JSON.parse(json);
-      this.setState(parsed);
-    } catch (error) {
-      console.error('[Pulsar] Error deserializando:', error);
-    }
-  }
-
-  /**
-   * Método estático para crear instancia de Pulsar
-   * @param {Object} initialState - Estado inicial
-   * @param {Object} options - Opciones de configuración
-   * @returns {Pulsar} Nueva instancia
-   */
-  static create(initialState = {}, options = {}) {
-    return new Pulsar(initialState, options);
+    return keysA.every(key => Object.is(a[key], b[key]));
   }
 }
 
-// Exportar la clase Pulsar
-export { Pulsar };
+// ============================================
+// FACTORY FUNCTION
+// ============================================
 
-// Exportar instancia singleton para uso global
-export const pulsar = new Pulsar();
-
-// Exportar función helper para crear estados reactivos
-export function createState(initialState = {}, options = {}) {
+/**
+ * Crea una nueva instancia de Pulsar
+ * @param {Object} initialState - Estado inicial
+ * @param {Object} options - Opciones
+ * @returns {Pulsar} Nueva instancia
+ */
+export function createStatePulsar(initialState = {}, options = {}) {
   return new Pulsar(initialState, options);
 }
 
-// Exportar utilidades adicionales
-export const PulsarUtils = {
-  /**
-   * Combina múltiples estados en uno
-   * @param {...Pulsar} states - Estados a combinar
-   * @returns {Pulsar} Nuevo estado combinado
-   */
-  combine(...states) {
-    const combined = {};
-    states.forEach(state => {
-      Object.assign(combined, state.getState());
-    });
-    return new Pulsar(combined);
-  },
-
-  /**
-   * Crea un estado derivado de otro
-   * @param {Pulsar} source - Estado fuente
-   * @param {Object} transformations - Transformaciones a aplicar
-   * @returns {Pulsar} Estado derivado
-   */
-  derive(source, transformations = {}) {
-    const derived = new Pulsar();
-
-    Object.entries(transformations).forEach(([key, transformFn]) => {
-      source.subscribe(key, (value) => {
-        derived.set(key, transformFn(value));
-      });
-    });
-
-    return derived;
-  },
-
-  /**
-   * Observa cambios en múltiples propiedades
-   * @param {Pulsar} state - Estado a observar
-   * @param {string[]} keys - Propiedades a observar
-   * @param {Function} callback - Función a ejecutar
-   */
-  watch(state, keys, callback) {
-    return state.subscribe(keys, (value, oldValue, key) => {
-      callback({ key, value, oldValue });
-    });
-  }
-};
+// ============================================
+// EXPORT DEFAULT
+// ============================================
 
 export default Pulsar;

@@ -1,49 +1,62 @@
 <!DOCTYPE html>
-<html lang="es">
 <!--
-        Ejemplo de uso de Pulsar en el navegador.
-        Crea un estado reactivo, calcula valores derivados y demuestra
-        la suscripción a cambios y las operaciones de deshacer y rehacer.
-    -->
-
+    Descripcion:
+    Ejemplo de uso de PulsarJS directamente en el navegador, sin Node.js.
+    Muestra como crear un almacen de estado, suscribirse a un selector,
+    actualizar el estado, usar la funcion de fabrica y cancelar una suscripcion.
+-->
+<html lang="es">
 <head>
-    <!-- Metadatos y título de la página. -->
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ejemplo de pulsarJS</title>
+    <title>PulsarJS - Browser Native</title>
 </head>
-
 <body>
-    <!-- Contenido visible de la demostración. -->
-    <h1>Ejemplo de pulsarJS</h1>
-    <!-- Módulo que configura y ejecuta el ejemplo de Pulsar. -->
+    <h1>PulsarJS - Sin Node.js</h1>
+
     <script type="module">
-        import { Pulsar } from '../../src/pulsar.js';
+        // Importa el almacen y la funcion de fabrica directamente desde el archivo.
+        import { Pulsar, createStatePulsar } from '../../src/pulsar.js';
 
-        // Crear estado
-        const state = new Pulsar({ count: 0 });
-
-        // Suscribirse a cambios
-        state.subscribe('count', (value, oldValue) => {
-            console.log(`Count: ${oldValue} -> ${value}`);
+        // Crea un almacen con el estado inicial de la interfaz y sus entidades.
+        const store = new Pulsar({
+            ui: {
+                selectedNode: null,
+                activeTool: 'select'
+            },
+            entities: {}
         });
 
-        // Computado
-        state.computed('double', (s) => s.count * 2, ['count']);
+        // Se suscribe al cambio del nodo seleccionado y ejecuta el callback
+        // inmediatamente con el valor actual.
+        const unsub = store.subscribeSelector(
+            'ui.selectedNode',
+            (nodeId, prevNodeId) => {
+                // Informa en consola el valor anterior y el nuevo valor.
+                console.log(`Selección: ${prevNodeId} -> ${nodeId}`);
+            },
+            { immediate: true }
+        );
 
-        // Actualizar estado
-        state.set('count', 5);
-        console.log(state.get('double')); // 10
+        // Actualiza solo la seleccion, conservando el resto del estado de la interfaz.
+        store.setState({
+            ui: {
+                ...store.getState().ui,
+                selectedNode: 'node:42'
+            }
+        });
 
-        // Undo/Redo
-        state.undo(); // count vuelve a 0
-        state.redo(); // count vuelve a 5
+        // Tambien puedes crear un almacen sencillo usando la funcion de fabrica.
+        const store2 = createStatePulsar({ count: 0 });
+        // Se suscribe a los cambios de la propiedad count.
+        store2.subscribeSelector('count', (value) => {
+            // Muestra el nuevo contador en la consola.
+            console.log('Count:', value);
+        });
+        // Cambia el contador y notifica a la suscripcion anterior.
+        store2.setState({ count: 5 });
 
+        // Cancela la suscripcion al nodo seleccionado para dejar de recibir avisos.
+        unsub();
     </script>
 </body>
-<!--
-        Registro de cambios:
-    - Se documentaron la estructura HTML y el propósito del ejemplo.
-    -->
-
 </html>
