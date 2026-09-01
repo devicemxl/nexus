@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Graphlet CP5 - query</title>
+</head>
+<body>
+  <script type="module">
+    import { createGraphlet } from '../src/graphlet.js';
+
+    const g = createGraphlet();
+
+    // Poblar datos
+    g.put('user:1', { name: 'Alice', age: 30, role: 'admin' });
+    g.put('user:2', { name: 'Bob', age: 25, role: 'user' });
+    g.put('user:3', { name: 'Charlie', age: 35, role: 'admin' });
+    g.put('project:1', { title: 'Nexus', status: 'active' });
+    g.put('project:2', { title: 'Graphlet', status: 'archived' });
+
+    // Agregar algunas relaciones para probar en query
+    g.link('user:1', 'memberOf', 'project:1');
+    g.link('user:2', 'memberOf', 'project:1');
+    g.link('user:3', 'memberOf', 'project:2');
+
+    // ---- query por propiedad ----
+    const admins = g.query((id, props) => props.role === 'admin');
+    console.log('Admins:', admins); // ['user:1', 'user:3']
+    console.assert(admins.length === 2, 'Debe haber 2 admins');
+
+    // ---- query por edad ----
+    const over30 = g.query((id, props) => props.age > 30);
+    console.log('Mayores de 30:', over30); // ['user:3']
+    console.assert(over30.length === 1 && over30[0] === 'user:3', 'Solo user:3 mayor de 30');
+
+    // ---- query con links ----
+    const projectMembers = g.query((id, props, links) => {
+      return links.memberOf && links.memberOf.includes('project:1');
+    });
+    console.log('Miembros de project:1:', projectMembers); // ['user:1', 'user:2']
+    console.assert(projectMembers.length === 2, 'Debe haber 2 miembros de project:1');
+
+    // ---- query con múltiples condiciones ----
+    const activeProjects = g.query((id, props) => props.status === 'active');
+    console.log('Proyectos activos:', activeProjects); // ['project:1']
+    console.assert(activeProjects.length === 1, 'Solo project:1 está activo');
+
+    // ---- query sin resultados ----
+    const none = g.query((id, props) => props.age > 100);
+    console.log('Mayores de 100:', none); // []
+    console.assert(none.length === 0, 'No hay mayores de 100');
+
+    // ---- verificar que query no muta los datos ----
+    const original = g.get('user:1');
+    g.query((id, props) => {
+      props.name = 'Malicious'; // intento de mutación
+      return false;
+    });
+    const after = g.get('user:1');
+    console.assert(after.properties.name === 'Alice', 'query no debe mutar las propiedades');
+
+    console.log('✅ CP5 completado');
+  </script>
+</body>
+</html>

@@ -53,7 +53,7 @@ export function createGraphlet() {
     // Clonamos los links: cada array es clonado para evitar mutación externa.
     const linksClone = {};
     for (const [rel, targets] of Object.entries(record.links)) {
-      linksClone[rel] = [...targets]; // copia del array
+      linksClone[rel] = [...targets];
     }
 
     return {
@@ -76,10 +76,8 @@ export function createGraphlet() {
 
     const record = _entities.get(id);
     if (record) {
-      // Reemplazar propiedades (mantener links existentes)
       record.properties = { ...properties };
     } else {
-      // Crear nueva entidad con links vacíos
       _entities.set(id, {
         properties: { ...properties },
         links: {},
@@ -95,7 +93,6 @@ export function createGraphlet() {
 
     const record = _entities.get(id);
     if (record) {
-      // Shallow merge
       record.properties = { ...record.properties, ...properties };
     } else {
       _entities.set(id, {
@@ -112,7 +109,7 @@ export function createGraphlet() {
     }
     _validatePlainObject(patch, 'patch');
 
-    const record = _getRecord(id); // lanza si no existe
+    const record = _getRecord(id);
     record.properties = { ...record.properties, ...patch };
   }
 
@@ -121,10 +118,9 @@ export function createGraphlet() {
       throw new Error('[Graphlet] delete: El ID debe ser un string no vacío');
     }
 
-    // Verificar existencia (fail-fast)
     const record = _getRecord(id);
 
-    // 1. Eliminar referencias entrantes a 'id' desde otras entidades
+    // Eliminar referencias entrantes
     for (const [otherId, otherRecord] of _entities) {
       if (otherId === id) continue;
       for (const [relation, targets] of Object.entries(otherRecord.links)) {
@@ -138,7 +134,6 @@ export function createGraphlet() {
       }
     }
 
-    // 2. Eliminar la entidad (sus links salientes desaparecen con ella)
     _entities.delete(id);
   }
 
@@ -154,11 +149,9 @@ export function createGraphlet() {
       throw new Error('[Graphlet] link: targetId debe ser un string no vacío');
     }
 
-    // Verificar que ambos nodos existen (fail-fast)
     const sourceRecord = _getRecord(sourceId);
-    const targetRecord = _getRecord(targetId);
+    const targetRecord = _getRecord(targetId); // verificamos que existe
 
-    // Agregar la relación (se permiten duplicados)
     if (!sourceRecord.links[relation]) {
       sourceRecord.links[relation] = [];
     }
@@ -177,12 +170,11 @@ export function createGraphlet() {
     }
 
     const record = _entities.get(sourceId);
-    if (!record) return; // Si no existe, no-op (según contrato)
+    if (!record) return;
 
     const targets = record.links[relation];
     if (!targets || targets.length === 0) return;
 
-    // Buscar y eliminar la primera ocurrencia de targetId
     const index = targets.indexOf(targetId);
     if (index !== -1) {
       targets.splice(index, 1);
@@ -201,16 +193,31 @@ export function createGraphlet() {
     }
 
     const record = _entities.get(sourceId);
-    if (!record) return; // Si no existe, no-op
+    if (!record) return;
 
     if (record.links[relation]) {
       delete record.links[relation];
     }
   }
 
-  // ---------- Consultas (CP5 - pendiente) ----------
+  // ---------- Consultas (CP5) ----------
   function query(predicate) {
-    throw new Error('[Graphlet] query: Pendiente de implementación (CP5)');
+    if (typeof predicate !== 'function') {
+      throw new TypeError('[Graphlet] query: predicate debe ser una función');
+    }
+
+    const results = [];
+    for (const [id, record] of _entities) {
+      // Construimos el objeto que se pasa al predicado: (id, properties, links)
+      // Para mantener consistencia con get(), pasamos copias (shallow)
+      const props = { ...record.properties };
+      const links = { ...record.links };
+      // Nota: los arrays dentro de links no se clonan, pero el predicado no debe mutarlos.
+      if (predicate(id, props, links)) {
+        results.push(id);
+      }
+    }
+    return results;
   }
 
   // ============================================
