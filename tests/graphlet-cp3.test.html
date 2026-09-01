@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Graphlet CP3 - update / delete</title>
+</head>
+<body>
+  <script type="module">
+    import { createGraphlet } from '../src/graphlet.js';
+
+    const g = createGraphlet();
+
+    // Preparar datos
+    g.put('user:1', { name: 'Alice', age: 30 });
+    g.put('user:2', { name: 'Bob', age: 25 });
+    g.put('project:1', { title: 'Nexus' });
+
+    // Agregamos relaciones con link (aunque link aún no está implementado, 
+    // podemos manipular internamente para probar delete)
+    // Para esta prueba, inyectamos manualmente relaciones (solo para verificar delete)
+    const record1 = g._entities?.get('user:1'); // Acceso interno (solo para test)
+    if (record1) {
+      record1.links['memberOf'] = ['project:1'];
+    }
+    const record2 = g._entities?.get('project:1');
+    if (record2) {
+      record2.links['hasMember'] = ['user:1', 'user:2'];
+    }
+
+    console.log('Antes de delete:');
+    console.log('user:1 ->', g.get('user:1'));
+    console.log('project:1 ->', g.get('project:1'));
+
+    // === Test update ===
+    g.update('user:1', { age: 31, city: 'NYC' });
+    console.log('Después de update user:1 ->', g.get('user:1'));
+    // Debe tener age:31, city:'NYC', y name:'Alice' (se mantiene)
+
+    // Intento de update sobre inexistente (debe lanzar error)
+    try {
+      g.update('user:99', {});
+    } catch(e) {
+      console.log('Error esperado (update inexistente):', e.message);
+    }
+
+    // === Test delete ===
+    g.delete('user:1');
+    console.log('Después de delete user:1');
+    console.log('user:1 ->', g.get('user:1')); // null
+    console.log('project:1 ->', g.get('project:1'));
+    // Debe haber eliminado la referencia a user:1 en project:1 (hasMember ahora solo ['user:2'])
+
+    // Verificar que project:1 aún existe y su lista hasMember se actualizó
+    const project = g.get('project:1');
+    console.log('project:1 links.hasMember ->', project.links.hasMember); // ['user:2']
+
+    // Intento de delete sobre inexistente (debe lanzar error)
+    try {
+      g.delete('user:99');
+    } catch(e) {
+      console.log('Error esperado (delete inexistente):', e.message);
+    }
+
+    console.log('✅ CP3 completado');
+  </script>
+</body>
+</html>

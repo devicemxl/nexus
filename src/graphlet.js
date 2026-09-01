@@ -4,6 +4,13 @@
  * 
  * Estructura interna:
  *   Map<string, { properties: object, links: Record<string, string[]> }>
+ * 
+ * Checkpoints alcanzados:
+ *   CP1: get, allIds
+ *   CP2: put, upsert
+ *   CP3: update, delete
+ *   (CP4: link, unlink, unlinkAll - stubs)
+ *   (CP5: query - stub)
  */
 
 // ============================================
@@ -54,7 +61,7 @@ export function createGraphlet() {
   }
 
   // ============================================
-  // API PÚBLICA (Checkpoint 1: Solo Lectura)
+  // API PÚBLICA (Lectura - CP1)
   // ============================================
 
   /**
@@ -70,10 +77,7 @@ export function createGraphlet() {
     return {
       id: id,
       properties: { ...record.properties },
-      links: { ...record.links } // Record<string, string[]> -> copiamos el objeto, pero los arrays internos se copian bajo demanda.
-      // Nota: Para links, como es un objeto de arrays, la copia superficial es suficiente
-      // porque los métodos de mutación (link/unlink) siempre reemplazan el array completo
-      // en el registro interno en lugar de mutarlo directamente.
+      links: { ...record.links } // Record<string, string[]> -> copiamos el objeto
     };
   }
 
@@ -86,24 +90,114 @@ export function createGraphlet() {
   }
 
   // ============================================
-  // STUBS para Checkpoint 2, 3, 4 (Evitan errores de importación)
+  // API PÚBLICA (Escritura Base - CP2)
   // ============================================
 
+  /**
+   * Crea una entidad o reemplaza totalmente sus propiedades.
+   * @param {string} id - Identificador único.
+   * @param {object} [properties={}] - Propiedades a asignar.
+   * @throws {TypeError} Si properties no es objeto plano.
+   */
   function put(id, properties = {}) {
-    throw new Error('[Graphlet] put: Pendiente de implementación (CP2)');
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error('[Graphlet] put: El ID debe ser un string no vacío');
+    }
+    _validatePlainObject(properties, 'properties');
+
+    // Reemplazo total de properties (o creación)
+    _entities.set(id, {
+      properties: { ...properties }, // Copia para evitar mutación externa
+      links: {} // Siempre se inicia con links vacío
+    });
   }
 
+  /**
+   * Crea una entidad o fusiona (shallow merge) propiedades en una existente.
+   * @param {string} id - Identificador único.
+   * @param {object} [properties={}] - Propiedades a fusionar.
+   * @throws {TypeError} Si properties no es objeto plano.
+   */
   function upsert(id, properties = {}) {
-    throw new Error('[Graphlet] upsert: Pendiente de implementación (CP2)');
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error('[Graphlet] upsert: El ID debe ser un string no vacío');
+    }
+    _validatePlainObject(properties, 'properties');
+
+    const existing = _entities.get(id);
+    if (existing) {
+      // Shallow merge
+      existing.properties = { ...existing.properties, ...properties };
+    } else {
+      // Crear nueva entidad
+      _entities.set(id, {
+        properties: { ...properties },
+        links: {}
+      });
+    }
   }
 
+  // ============================================
+  // API PÚBLICA (Mutación Estricta / Eliminación - CP3)
+  // ============================================
+
+  /**
+   * Actualiza una entidad existente mediante shallow merge.
+   * @param {string} id - Identificador único.
+   * @param {object} patch - Objeto con las propiedades a fusionar.
+   * @throws {Error} Si la entidad no existe.
+   * @throws {TypeError} Si patch no es objeto plano.
+   */
   function update(id, patch) {
-    throw new Error('[Graphlet] update: Pendiente de implementación (CP3)');
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error('[Graphlet] update: El ID debe ser un string no vacío');
+    }
+    _validatePlainObject(patch, 'patch');
+
+    // Obtiene el registro; lanza error si no existe (fail-fast)
+    const record = _getRecord(id);
+    // Shallow merge
+    record.properties = { ...record.properties, ...patch };
   }
 
+  /**
+   * Elimina una entidad y todas las relaciones incidentes (entrantes y salientes).
+   * @param {string} id - Identificador único.
+   * @throws {Error} Si la entidad no existe.
+   */
   function deleteEntity(id) {
-    throw new Error('[Graphlet] delete: Pendiente de implementación (CP3)');
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new Error('[Graphlet] delete: El ID debe ser un string no vacío');
+    }
+
+    // Verificar que existe (fail-fast)
+    const record = _getRecord(id); // Lanza error si no existe
+
+    // 1. Eliminar relaciones entrantes: barrer todas las entidades y borrar 'id' de sus links
+    for (const [otherId, otherRecord] of _entities) {
+      if (otherId === id) continue; // Saltamos la propia entidad (la eliminaremos después)
+      // Iteramos sobre las relaciones de otherRecord
+      for (const [relation, targets] of Object.entries(otherRecord.links)) {
+        // Filtramos los targets que no sean 'id'
+        const filtered = targets.filter(t => t !== id);
+        if (filtered.length !== targets.length) {
+          // Si hubo cambios, actualizamos el array
+          otherRecord.links[relation] = filtered;
+          // Si el array queda vacío, eliminamos la clave para mantener limpio
+          if (filtered.length === 0) {
+            delete otherRecord.links[relation];
+          }
+        }
+      }
+    }
+
+    // 2. Eliminar la entidad misma (junto con sus links salientes)
+    _entities.delete(id);
   }
+
+  // ============================================
+  // STUBS para CP4 y CP5 (se implementarán en siguientes fases)
+  // ============================================
 
   function link(sourceId, relation, targetId) {
     throw new Error('[Graphlet] link: Pendiente de implementación (CP4)');
@@ -130,7 +224,7 @@ export function createGraphlet() {
     get,
     allIds,
 
-    // Escritura (CP2)
+    // Escritura Base (CP2)
     put,
     upsert,
 
@@ -138,12 +232,12 @@ export function createGraphlet() {
     update,
     delete: deleteEntity,
 
-    // Relaciones (CP4)
+    // Relaciones (CP4 - stubs)
     link,
     unlink,
     unlinkAll,
 
-    // Consultas (CP5)
+    // Consultas (CP5 - stub)
     query,
   };
 }
