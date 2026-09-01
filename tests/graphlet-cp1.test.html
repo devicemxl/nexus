@@ -1,0 +1,14 @@
+<script type="module">
+  import { createGraphlet } from '../src/graphlet.js';
+  
+  const g = createGraphlet();
+  console.log('allIds:', g.allIds()); // []
+  console.log('get(abc):', g.get('abc')); // null
+  
+  try {
+    g.put('x', {}); // Debe lanzar el error del stub
+  } catch(e) {
+    console.log('Stub funciona:', e.message);
+  }
+  console.log('✅ Checkpoint 1 listo');
+</script>

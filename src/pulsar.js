@@ -255,13 +255,47 @@ export class Pulsar {
    * @returns {Function} Función selector
    */
   _createPathSelector(path) {
-    const keys = path.split('.');
+    // Dividir la ruta en segmentos respetando los corchetes.
+    // Ejemplo: "users[0].address.city" -> ["users", "0", "address", "city"]
+    const segments = [];
+    let current = '';
+    
+    for (let i = 0; i < path.length; i++) {
+      const char = path[i];
+      if (char === '.') {
+        if (current) {
+          segments.push(current);
+          current = '';
+        }
+      } else if (char === '[') {
+        if (current) {
+          segments.push(current);
+          current = '';
+        }
+        // Extraer el número hasta el ']' correspondiente
+        let j = i + 1;
+        while (j < path.length && path[j] !== ']') j++;
+        if (j < path.length) {
+          const index = path.substring(i + 1, j);
+          if (/^\d+$/.test(index)) {
+            segments.push(index); // El número será usado como clave numérica
+          }
+          i = j; // Saltar el ']'
+        }
+      } else {
+        current += char;
+      }
+    }
+    if (current) segments.push(current);
 
+    // Retornar la función selector que recorre los segmentos
     return (state) => {
       let value = state;
-      for (const key of keys) {
-        if (value === null || value === undefined) return undefined;
-        value = value[key];
+      for (const seg of segments) {
+        if (value === null || value === undefined || typeof value !== 'object') {
+          return undefined;
+        }
+        value = value[seg]; // 'seg' puede ser string o número (para arrays)
       }
       return value;
     };
@@ -315,7 +349,7 @@ export class Pulsar {
 }
 
 // ============================================
-// FACTORY FUNCTION
+// FACTORY FUNCTION(API principal del contrato) 
 // ============================================
 
 /**
@@ -332,4 +366,6 @@ export function createStatePulsar(initialState = {}, options = {}) {
 // EXPORT DEFAULT
 // ============================================
 
-export default Pulsar;
+// El contrato solo exige createStatePulsar, pero podemos mantener
+// el default para no romper ejemplos existentes.
+// export default Pulsar; // la vía oficial es createStatePulsar

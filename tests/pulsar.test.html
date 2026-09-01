@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>PulsarJS - Tests de Contrato</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .test { padding: 4px 0; border-bottom: 1px solid #333; }
+  </style>
+</head>
+<body>
+  <h1>🧪 PulsarJS Contract Tests v0.2.0</h1>
+  <div id="output"></div>
+
+  <script type="module">
+    import { createStatePulsar, Pulsar } from '../src/pulsar.js';
+
+    const output = document.getElementById('output');
+    let passed = 0;
+    let failed = 0;
+
+    function assert(condition, message) {
+      const div = document.createElement('div');
+      div.className = 'test';
+      if (condition) {
+        div.innerHTML = `✅ <span class="pass">${message}</span>`;
+        passed++;
+      } else {
+        div.innerHTML = `❌ <span class="fail">${message}</span>`;
+        failed++;
+      }
+      output.appendChild(div);
+      console.assert(condition, message);
+    }
+
+    // ------------------------------------------------------------
+    // TEST 1: setState con shallow merge
+    // ------------------------------------------------------------
+    const store = createStatePulsar({ ui: { theme: 'dark' }, count: 0 });
+    store.setState({ ui: { selected: 'node1' }, count: 5 });
+    const state = store.getState();
+    assert(state.ui.theme === undefined, 'setState reemplaza el objeto "ui" completo (no merge profundo)');
+    assert(state.ui.selected === 'node1', 'setState agrega nuevas propiedades en el nivel raíz');
+    assert(state.count === 5, 'setState actualiza valores planos correctamente');
+
+    // ------------------------------------------------------------
+    // TEST 2: subscribeSelector con string (incluyendo bracket notation)
+    // ------------------------------------------------------------
+    const store2 = createStatePulsar({
+      items: [{ label: 'Apple', price: 1.2 }, { label: 'Banana', price: 0.8 }]
+    });
+
+    let lastValue = null;
+    const unsub = store2.subscribeSelector(
+      'items[0].label',
+      (value) => { lastValue = value; },
+      { immediate: true }
+    );
+
+    assert(lastValue === 'Apple', 'subscribeSelector con bracket notation (inmediato) devuelve "Apple"');
+
+    store2.setState({ items: [{ label: 'Orange', price: 1.5 }, { label: 'Banana', price: 0.8 }] });
+    assert(lastValue === 'Orange', 'subscribeSelector con bracket notation actualiza a "Orange"');
+
+    unsub();
+    store2.setState({ items: [{ label: 'Grape', price: 2.0 }, { label: 'Banana', price: 0.8 }] });
+    assert(lastValue === 'Orange', 'Unsubscribe evita que el listener se ejecute (sigue siendo "Orange")');
+
+    // ------------------------------------------------------------
+    // TEST 3: subscribeSelector con función selector
+    // ------------------------------------------------------------
+    const store3 = createStatePulsar({ a: 5, b: 10 });
+    let sum = null;
+    store3.subscribeSelector(
+      (state) => state.a + state.b,
+      (value) => { sum = value; },
+      { immediate: true }
+    );
+    assert(sum === 15, 'Selector de función calcula la suma correctamente (15)');
+
+    store3.setState({ a: 20 });
+    assert(sum === 30, 'Selector de función se actualiza a 30');
+
+    // ------------------------------------------------------------
+    // TEST 4: Reentrancy safety (suscripción dentro de notificación)
+    // ------------------------------------------------------------
+    const store4 = createStatePulsar({ counter: 0 });
+    let innerCalled = false;
+    const outerUnsub = store4.subscribeSelector('counter', (val) => {
+      if (val === 1) {
+        // Desde dentro del listener, nos suscribimos a otro selector
+        store4.subscribeSelector('counter', (v2) => {
+          innerCalled = (v2 === 2);
+        }, { immediate: false });
+      }
+    });
+
+    store4.setState({ counter: 1 }); // Esto dispara el listener y crea la suscripción interna.
+    store4.setState({ counter: 2 }); // Ahora la nueva suscripción debería ver el cambio.
+    assert(innerCalled === true, 'Reentrancy: suscripción creada dentro de notificación recibe el siguiente cambio');
+
+    outerUnsub();
+
+    // ------------------------------------------------------------
+    // TEST 5: Inmutabilidad (Object.freeze)
+    // ------------------------------------------------------------
+    const store5 = createStatePulsar({ nested: { value: 42 } }, { freeze: true });
+    const frozenState = store5.getState();
+    let threw = false;
+    try {
+      frozenState.nested.value = 100; // Intento de mutación (debe fallar en strict mode o no tener efecto)
+    } catch (e) {
+      threw = true;
+    }
+    // En navegadores modernos con strict mode, lanza TypeError. Si no, el valor sigue siendo 42.
+    assert(store5.getState().nested.value === 42, 'El estado permanece inmutable (freeze activo)');
+
+    // ------------------------------------------------------------
+    // Resumen final
+    // ------------------------------------------------------------
+    const total = passed + failed;
+    const summary = document.createElement('div');
+    summary.style.marginTop = '20px';
+    summary.style.fontWeight = 'bold';
+    summary.innerHTML = `📊 Resultados: ${passed}/${total} pasaron. ${failed === 0 ? '🎉 ¡Todos los tests del contrato pasaron!' : '⚠️ Revisa los fallos.'}`;
+    output.appendChild(summary);
+  </script>
+</body>
+</html>
