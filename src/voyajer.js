@@ -5,6 +5,7 @@
  * Características:
  * - Escribe el estado de navegación en Pulsar bajo una clave configurable (por defecto 'route').
  * - Escucha eventos popstate y hashchange para actualizar el store.
+ * - Navegación programática con push, replace, back, forward, go.
  * - No manipula el DOM, solo window.history y el store.
  */
 
@@ -33,9 +34,6 @@ export function createVoyajer(pulsarStore, options = {}) {
   // UTILIDADES PRIVADAS
   // ============================================
 
-  /**
-   * Parseo por defecto: extrae path, search y hash de la URL.
-   */
   function _defaultParse(url) {
     return {
       path: url.pathname,
@@ -44,9 +42,6 @@ export function createVoyajer(pulsarStore, options = {}) {
     };
   }
 
-  /**
-   * Serialización por defecto: construye una URL a partir de path, search y hash.
-   */
   function _defaultSerialize(state) {
     const path = state.path || '/';
     const search = state.search || '';
@@ -54,9 +49,6 @@ export function createVoyajer(pulsarStore, options = {}) {
     return `${path}${search}${hash}`;
   }
 
-  /**
-   * Obtiene la ruta actual según el modo (hash o history).
-   */
   function _getCurrentPath() {
     if (config.mode === 'hash') {
       const hash = window.location.hash.substring(1);
@@ -70,22 +62,10 @@ export function createVoyajer(pulsarStore, options = {}) {
     }
   }
 
-  /**
-   * Construye un objeto URL a partir de la ubicación actual.
-   */
   function _getCurrentURL() {
-    if (config.mode === 'hash') {
-      // En modo hash, la URL completa es window.location.href
-      // pero el path es lo que está después del #.
-      return new URL(window.location.href);
-    } else {
-      return new URL(window.location.href);
-    }
+    return new URL(window.location.href);
   }
 
-  /**
-   * Escribe el estado de navegación en Pulsar.
-   */
   function _writeToStore(navigationState) {
     if (_destroyed) return;
     if (!navigationState || typeof navigationState !== 'object') {
@@ -101,7 +81,7 @@ export function createVoyajer(pulsarStore, options = {}) {
   }
 
   /**
-   * Sincroniza la URL actual con el store (escucha cambios del navegador).
+   * Sincroniza la URL actual con el store.
    */
   function sync() {
     if (_destroyed) return;
@@ -118,23 +98,114 @@ export function createVoyajer(pulsarStore, options = {}) {
   }
 
   // ============================================
-  // EVENT LISTENERS DEL NAVEGADOR
+  // NAVEGACIÓN PROGRAMÁTICA (CP2)
   // ============================================
 
   /**
-   * Maneja eventos popstate y hashchange.
+   * Navega a un nuevo estado, añadiendo una entrada al historial.
    */
+  function push(state) {
+    if (_destroyed) return;
+    if (typeof state !== 'object' || state === null) {
+      throw new TypeError('[Voyajer] push: state debe ser un objeto');
+    }
+
+    const url = config.serialize(state);
+    if (url === null || url === undefined) {
+      console.warn('[Voyajer] serialize retornó null, no se navega');
+      return;
+    }
+
+    const currentPath = _getCurrentPath();
+    if (url === currentPath) return; // no-op si es la misma URL
+
+    // Actualizar historial
+    if (config.mode === 'hash') {
+      window.location.hash = url;
+    } else {
+      window.history.pushState(null, '', config.base + url);
+    }
+
+    // Actualizar store (sync)
+    sync();
+  }
+
+  /**
+   * Navega a un nuevo estado, reemplazando la entrada actual del historial.
+   */
+  function replace(state) {
+    if (_destroyed) return;
+    if (typeof state !== 'object' || state === null) {
+      throw new TypeError('[Voyajer] replace: state debe ser un objeto');
+    }
+
+    const url = config.serialize(state);
+    if (url === null || url === undefined) {
+      console.warn('[Voyajer] serialize retornó null, no se navega');
+      return;
+    }
+
+    const currentPath = _getCurrentPath();
+    if (url === currentPath) return;
+
+    if (config.mode === 'hash') {
+      window.location.replace(`#${url}`);
+    } else {
+      window.history.replaceState(null, '', config.base + url);
+    }
+
+    sync();
+  }
+
+  // ============================================
+  // HISTORIAL Y NAVEGACIÓN (CP3)
+  // ============================================
+
+  /**
+   * Retrocede una página en el historial.
+   */
+  function back() {
+    if (_destroyed) return;
+    window.history.back();
+    // El evento popstate llamará a sync()
+  }
+
+  /**
+   * Avanza una página en el historial.
+   */
+  function forward() {
+    if (_destroyed) return;
+    window.history.forward();
+    // El evento popstate llamará a sync()
+  }
+
+  /**
+   * Navega un número específico de pasos en el historial.
+   * @param {number} delta - Número positivo (avanzar) o negativo (retroceder).
+   */
+  function go(delta) {
+    if (_destroyed) return;
+    if (typeof delta !== 'number') {
+      throw new TypeError('[Voyajer] go: delta debe ser un número');
+    }
+    window.history.go(delta);
+    // El evento popstate llamará a sync()
+  }
+
+  // ============================================
+  // EVENT LISTENERS DEL NAVEGADOR
+  // ============================================
+
   function _handleNavigation() {
     if (_destroyed) return;
     sync();
   }
 
-  // Registrar listeners
   window.addEventListener('popstate', _handleNavigation);
   window.addEventListener('hashchange', _handleNavigation);
 
   // ============================================
-  // API PÚBLICA (CP1)
+  // API PÚBLICA
   // ============================================
 
   /**
@@ -157,110 +228,9 @@ export function createVoyajer(pulsarStore, options = {}) {
   }
 
   // ============================================
-  // STUBS para CP2
-  // ============================================
-
-  // ============================================
-  // NAVEGACIÓN PROGRAMÁTICA (CP2)
-  // ============================================
-
-  /**
-   * Navega a un nuevo estado, añadiendo una entrada al historial.
-   * @param {Object} state - Estado de navegación a serializar.
-   * @throws {Error} Si el estado es inválido o no se puede serializar.
-   */
-  function push(state) {
-    if (_destroyed) {
-      throw new Error('[Voyajer] push: instancia destruida');
-    }
-
-    if (typeof state !== 'object' || state === null || Array.isArray(state)) {
-      throw new TypeError('[Voyajer] push: state debe ser un objeto plano');
-    }
-
-    // Serializar el estado a una URL
-    const url = config.serialize(state);
-    if (typeof url !== 'string' || url === '') {
-      throw new Error('[Voyajer] push: serialize retornó una cadena vacía o no válida');
-    }
-
-    // Verificar si la URL es igual a la actual (evitar navegaciones redundantes)
-    const currentPath = _getCurrentPath();
-    if (url === currentPath) {
-      console.warn('[Voyajer] push: la URL ya es la actual, no se navega');
-      return;
-    }
-
-    // Actualizar la URL según el modo
-    if (config.mode === 'hash') {
-      // En modo hash, solo cambiamos el hash
-      window.location.hash = url;
-    } else {
-      // En modo history, usamos pushState
-      window.history.pushState(null, '', config.base + url);
-    }
-
-    // Escribir el estado en el store (ya que pushState no dispara popstate)
-    _writeToStore(state);
-  }
-
-  /**
-   * Navega a un nuevo estado, reemplazando la entrada actual del historial.
-   * @param {Object} state - Estado de navegación a serializar.
-   * @throws {Error} Si el estado es inválido o no se puede serializar.
-   */
-  function replace(state) {
-    if (_destroyed) {
-      throw new Error('[Voyajer] replace: instancia destruida');
-    }
-
-    if (typeof state !== 'object' || state === null || Array.isArray(state)) {
-      throw new TypeError('[Voyajer] replace: state debe ser un objeto plano');
-    }
-
-    // Serializar el estado a una URL
-    const url = config.serialize(state);
-    if (typeof url !== 'string' || url === '') {
-      throw new Error('[Voyajer] replace: serialize retornó una cadena vacía o no válida');
-    }
-
-    // Verificar si la URL es igual a la actual
-    const currentPath = _getCurrentPath();
-    if (url === currentPath) {
-      console.warn('[Voyajer] replace: la URL ya es la actual, no se navega');
-      return;
-    }
-
-    // Actualizar la URL según el modo
-    if (config.mode === 'hash') {
-      // En modo hash, reemplazamos el hash
-      window.location.replace(`#${url}`);
-    } else {
-      // En modo history, usamos replaceState
-      window.history.replaceState(null, '', config.base + url);
-    }
-
-    // Escribir el estado en el store
-    _writeToStore(state);
-  }
-
-  function back() {
-    throw new Error('[Voyajer] back: Pendiente de implementación (CP3)');
-  }
-
-  function forward() {
-    throw new Error('[Voyajer] forward: Pendiente de implementación (CP3)');
-  }
-
-  function go(delta) {
-    throw new Error('[Voyajer] go: Pendiente de implementación (CP3)');
-  }
-
-  // ============================================
   // INICIALIZACIÓN
   // ============================================
 
-  // Si writeOnInit es true, escribir el estado inicial en el store
   if (config.writeOnInit) {
     sync();
   }
