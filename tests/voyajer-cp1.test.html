@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Voyajer CP1 - Sincronización URL → Store</title>
+</head>
+<body>
+  <h1>Voyajer CP1 - URL → Store</h1>
+  <p>Abre la consola y cambia la URL (hash o history) para ver los cambios.</p>
+  <p>Estado actual: <span id="routeDisplay">(cargando...)</span></p>
+  <nav>
+    <a href="#/">Inicio</a>
+    <a href="#/users">Usuarios</a>
+    <a href="#/users/123">Usuario 123</a>
+  </nav>
+
+  <script type="module">
+    import { createStatePulsar } from '../src/pulsar.js';
+    import { createVoyajer } from '../src/voyajer.js';
+
+    const store = createStatePulsar({});
+    const voyajer = createVoyajer(store, {
+      mode: 'hash',
+      parse: (url) => ({
+        path: url.pathname + url.search + url.hash,
+      }),
+      serialize: (state) => state.path,
+    });
+
+    // Mostrar estado en la UI
+    const display = document.getElementById('routeDisplay');
+    store.subscribeSelector('route', (route) => {
+      display.textContent = route ? JSON.stringify(route, null, 2) : '(vacío)';
+      console.log('Route actual:', route);
+    }, { immediate: true });
+
+    // Botón para probar sync manual
+    const syncBtn = document.createElement('button');
+    syncBtn.textContent = 'Forzar sync';
+    syncBtn.addEventListener('click', () => voyajer.sync());
+    document.body.appendChild(syncBtn);
+
+    console.log('Voyajer CP1 listo. Cambia la URL o haz clic en los enlaces.');
+  </script>
+</body>
+</html>
