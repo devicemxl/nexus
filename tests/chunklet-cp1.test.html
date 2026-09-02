@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Chunklet CP1+CP2 - Estructura y Contexto</title>
+</head>
+<body>
+  <h1>Chunklet CP1+CP2 - Prueba básica</h1>
+
+  <div id="app">
+    <button data-chunk="counter">Clickeame</button>
+  </div>
+
+  <script type="module">
+    import { define, mount, unmount } from '../src/chunklet.js';
+
+    // Definir un comportamiento contador
+    define('counter', (element, ctx) => {
+      let count = 0;
+
+      // Actualizar el texto
+      function update() {
+        element.textContent = `Clickeado: ${count} veces`;
+      }
+
+      // Listener de click
+      ctx.listen(element, 'click', () => {
+        count++;
+        update();
+      });
+
+      // Cleanup personalizado (opcional)
+      ctx.cleanup(() => {
+        console.log('Comportamiento counter destruido');
+      });
+
+      // Inicializar
+      update();
+
+      // Retornar destroy personalizado (opcional)
+      return {
+        destroy: () => {
+          console.log('Destroy personalizado de counter');
+        }
+      };
+    });
+
+    // Montar el comportamiento
+    const app = document.getElementById('app');
+    mount(app);
+
+    // Botón para desmontar y probar cleanup
+    const btn = document.createElement('button');
+    btn.textContent = 'Desmontar';
+    btn.addEventListener('click', () => {
+      unmount(app);
+      console.log('Desmontado');
+    });
+    document.body.appendChild(btn);
+
+    console.log('Chunklet CP1+CP2 listo. Haz clic en el botón y observa la consola.');
+  </script>
+</body>
+</html>
