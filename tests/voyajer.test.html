@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>VoyajerJS - Tests de Contrato v0.2.0</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .test { padding: 4px 0; border-bottom: 1px solid #333; }
+    .summary { margin-top: 20px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>🧪 VoyajerJS Contract Tests v0.2.0</h1>
+  <div id="output"></div>
+
+  <script type="module">
+    import { createStatePulsar } from '../src/pulsar.js';
+    import { createVoyajer } from '../src/voyajer.js';
+
+    const output = document.getElementById('output');
+    let passed = 0;
+    let failed = 0;
+
+    function assert(condition, message) {
+      const div = document.createElement('div');
+      div.className = 'test';
+      if (condition) {
+        div.innerHTML = `✅ <span class="pass">${message}</span>`;
+        passed++;
+      } else {
+        div.innerHTML = `❌ <span class="fail">${message}</span>`;
+        failed++;
+      }
+      output.appendChild(div);
+      console.assert(condition, message);
+    }
+
+    function log(message, type = 'info') {
+      const div = document.createElement('div');
+      div.className = 'test';
+      div.innerHTML = `ℹ️ <span class="${type}">${message}</span>`;
+      output.appendChild(div);
+    }
+
+    // ============================================
+    // UTILIDAD: Espera fija (más fiable que eventos)
+    // ============================================
+    function delay(ms = 200) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // ============================================
+    // PRUEBAS
+    // ============================================
+
+    // -------- CP1: URL → Store --------
+    log('=== CP1: URL → Store ===', 'info');
+
+    const store1 = createStatePulsar({});
+    const voyajer1 = createVoyajer(store1, {
+      mode: 'hash',
+      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      serialize: (state) => state.path,
+      writeOnInit: true,
+    });
+
+    await delay(50);
+    const route1 = store1.getState().route;
+    assert(route1 !== undefined && route1 !== null, 'writeOnInit: el store tiene el estado inicial');
+    assert(route1.path !== undefined, 'writeOnInit: el estado contiene la ruta');
+
+    const store2 = createStatePulsar({});
+    const voyajer2 = createVoyajer(store2, {
+      mode: 'hash',
+      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      serialize: (state) => state.path,
+      writeOnInit: false,
+    });
+
+    let route2 = store2.getState().route;
+    assert(route2 === undefined, 'writeOnInit: false → store vacío');
+
+    voyajer2.sync();
+    route2 = store2.getState().route;
+    assert(route2 !== undefined && route2.path !== undefined, 'sync() escribe el estado en el store');
+
+    // -------- CP2: push / replace --------
+    log('=== CP2: Store → URL (push/replace) ===', 'info');
+
+    const store3 = createStatePulsar({});
+    const voyajer3 = createVoyajer(store3, {
+      mode: 'hash',
+      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      serialize: (state) => state.path,
+      writeOnInit: false,
+    });
+
+    voyajer3.push({ path: '/test-push' });
+    await delay(200);
+    const route3 = store3.getState().route;
+    assert(route3.path === '/test-push', 'push: la URL cambia y el store se actualiza');
+    assert(window.location.hash === '#/test-push', 'push: la URL del navegador se actualiza');
+
+    const store4 = createStatePulsar({});
+    const voyajer4 = createVoyajer(store4, {
+      mode: 'hash',
+      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      serialize: (state) => state.path,
+      writeOnInit: false,
+    });
+
+    voyajer4.push({ path: '/first' });
+    await delay(200);
+    voyajer4.replace({ path: '/replaced' });
+    await delay(200);
+
+    const route4 = store4.getState().route;
+    assert(route4.path === '/replaced', 'replace: el store se actualiza correctamente');
+    assert(window.location.hash === '#/replaced', 'replace: la URL se reemplaza');
+
+    // -------- CP3: back/forward/go --------
+    log('=== CP3: Historial (back/forward/go) ===', 'info');
+
+    // Test 5: back y forward
+    const store5 = createStatePulsar({});
+    const voyajer5 = createVoyajer(store5, {
+      mode: 'hash',
+      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      serialize: (state) => state.path,
+      writeOnInit: false,
+    });
+
+    voyajer5.push({ path: '/home' });
+    await delay(200);
+    voyajer5.push({ path: '/about' });
+    await delay(200);
+    voyajer5.push({ path: '/contact' });
+    await delay(200);
+
+    voyajer5.back();
+    await delay(300); // esperar a que el navegador procese
+    voyajer5.sync(); // forzar sincronización
+    const route5a = store5.getState().route;
+    assert(route5a.path === '/about', 'back: navega a la entrada anterior');
+    assert(window.location.hash === '#/about', 'back: la URL cambia a #/about');
+
+    voyajer5.forward();
+    await delay(300);
+    voyajer5.sync();
+    const route5b = store5.getState().route;
+    assert(route5b.path === '/contact', 'forward: navega a la siguiente entrada');
+    assert(window.location.hash === '#/contact', 'forward: la URL cambia a #/contact');
+
+    // Test 6: go(delta)
+    const store6 = createStatePulsar({});
+    const voyajer6 = createVoyajer(store6, {
+      mode: 'hash',
+      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      serialize: (state) => state.path,
+      writeOnInit: false,
+    });
+
+    voyajer6.push({ path: '/a' });
+    await delay(200);
+    voyajer6.push({ path: '/b' });
+    await delay(200);
+    voyajer6.push({ path: '/c' });
+    await delay(200);
+    voyajer6.push({ path: '/d' });
+    await delay(200);
+
+    voyajer6.go(-2);
+    await delay(300);
+    voyajer6.sync();
+    const route6a = store6.getState().route;
+    assert(route6a.path === '/b', 'go(-2): retrocede 2 entradas');
+    assert(window.location.hash === '#/b', 'go(-2): la URL cambia a #/b');
+
+    voyajer6.go(1);
+    await delay(300);
+    voyajer6.sync();
+    const route6b = store6.getState().route;
+    assert(route6b.path === '/c', 'go(1): avanza 1 entrada');
+    assert(window.location.hash === '#/c', 'go(1): la URL cambia a #/c');
+
+    // -------- Casos límite --------
+    log('=== Casos límite y errores ===', 'info');
+
+    // Test 7: push con state inválido
+    const store7 = createStatePulsar({});
+    const voyajer7 = createVoyajer(store7, {
+      mode: 'hash',
+      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      serialize: (state) => state.path,
+    });
+
+    let threw = false;
+    try {
+      voyajer7.push(null);
+    } catch (e) {
+      threw = true;
+      assert(e.message.includes('state debe ser un objeto'), 'push lanza TypeError con state null');
+    }
+    assert(threw, 'push valida que state sea objeto');
+
+    // Test 8: serialize retorna null
+    const store8 = createStatePulsar({});
+    const voyajer8 = createVoyajer(store8, {
+      mode: 'hash',
+      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      serialize: () => null,
+      writeOnInit: false,
+    });
+
+    const routeBefore = store8.getState().route || null;
+    voyajer8.push({ path: '/anything' });
+    await delay(100);
+    // NO llamamos a sync() para no alterar el estado
+    const routeAfter = store8.getState().route || null;
+    assert(routeBefore === routeAfter, 'serialize null: no navega ni actualiza el store');
+
+    // Test 9: destroy limpia listeners
+    const store9 = createStatePulsar({});
+    const voyajer9 = createVoyajer(store9, {
+      mode: 'hash',
+      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      serialize: (state) => state.path,
+    });
+
+    voyajer9.destroy();
+    voyajer9.push({ path: '/after-destroy' });
+    await delay(100);
+    assert(window.location.hash !== '#/after-destroy', 'destroy: limpia listeners y no navega');
+
+    // Test 10: getCurrent
+    const store10 = createStatePulsar({ route: { path: '/custom' } });
+    const voyajer10 = createVoyajer(store10, {
+      mode: 'hash',
+      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      serialize: (state) => state.path,
+      writeOnInit: false,
+    });
+
+    const current = voyajer10.getCurrent();
+    assert(current.path === '/custom', 'getCurrent: lee el estado del store');
+
+    // ============================================
+    // RESUMEN FINAL
+    // ============================================
+    const total = passed + failed;
+    const summary = document.createElement('div');
+    summary.className = 'summary';
+    summary.innerHTML = `📊 Resultados: ${passed}/${total} pasaron. ${failed === 0 ? '🎉 ¡Todos los tests del contrato pasaron!' : '⚠️ Revisa los fallos.'}`;
+    output.appendChild(summary);
+
+    if (failed === 0) {
+      document.body.style.background = '#1e3a2a';
+    } else {
+      document.body.style.background = '#3a1e1e';
+    }
+
+    // Limpiar URL
+    window.location.hash = '#/';
+  </script>
+</body>
+</html>

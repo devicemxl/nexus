@@ -28,7 +28,7 @@ export function createVoyajer(pulsarStore, options = {}) {
   // Estado interno
   let _destroyed = false;
   let _currentState = null;
-  let _listeners = []; // para eventos de navegación (si se necesitan)
+  let _listeners = [];
 
   // ============================================
   // UTILIDADES PRIVADAS
@@ -81,9 +81,11 @@ export function createVoyajer(pulsarStore, options = {}) {
   }
 
   /**
-   * Sincroniza la URL actual con el store.
+   * Lee la URL actual, la parsea y escribe el resultado en el store.
+   * Esta es la función principal de sincronización y se usa tanto en el
+   * listener de eventos como en las navegaciones programáticas.
    */
-  function sync() {
+  function _updateStoreFromURL() {
     if (_destroyed) return;
 
     const url = _getCurrentURL();
@@ -113,21 +115,18 @@ export function createVoyajer(pulsarStore, options = {}) {
     const url = config.serialize(state);
     if (url === null || url === undefined) {
       console.warn('[Voyajer] serialize retornó null, no se navega');
-      return;
+      return; // <- aquí debería retornar sin hacer nada
     }
 
-    const currentPath = _getCurrentPath();
-    if (url === currentPath) return; // no-op si es la misma URL
-
-    // Actualizar historial
+    // 1. Actualizar historial
     if (config.mode === 'hash') {
       window.location.hash = url;
     } else {
       window.history.pushState(null, '', config.base + url);
     }
 
-    // Actualizar store (sync)
-    sync();
+    // 2. Actualizar store sincrónicamente
+    _updateStoreFromURL();
   }
 
   /**
@@ -145,68 +144,50 @@ export function createVoyajer(pulsarStore, options = {}) {
       return;
     }
 
-    const currentPath = _getCurrentPath();
-    if (url === currentPath) return;
-
     if (config.mode === 'hash') {
+      // Reemplazar el hash sin añadir entrada al historial
       window.location.replace(`#${url}`);
     } else {
       window.history.replaceState(null, '', config.base + url);
     }
 
-    sync();
+    // Actualizar store sincrónicamente
+    _updateStoreFromURL();
   }
 
   // ============================================
   // HISTORIAL Y NAVEGACIÓN (CP3)
   // ============================================
 
-  /**
-   * Retrocede una página en el historial.
-   */
   function back() {
     if (_destroyed) return;
     window.history.back();
-    // El evento popstate llamará a sync()
+    // El evento popstate llamará a _updateStoreFromURL()
   }
 
-  /**
-   * Avanza una página en el historial.
-   */
   function forward() {
     if (_destroyed) return;
     window.history.forward();
-    // El evento popstate llamará a sync()
   }
 
-  /**
-   * Navega un número específico de pasos en el historial.
-   * @param {number} delta - Número positivo (avanzar) o negativo (retroceder).
-   */
   function go(delta) {
     if (_destroyed) return;
     if (typeof delta !== 'number') {
       throw new TypeError('[Voyajer] go: delta debe ser un número');
     }
     window.history.go(delta);
-    // El evento popstate llamará a sync()
   }
-
-  // ============================================
-  // EVENT LISTENERS DEL NAVEGADOR
-  // ============================================
-
-  function _handleNavigation() {
-    if (_destroyed) return;
-    sync();
-  }
-
-  window.addEventListener('popstate', _handleNavigation);
-  window.addEventListener('hashchange', _handleNavigation);
 
   // ============================================
   // API PÚBLICA
   // ============================================
+
+  /**
+   * Sincroniza la URL actual con el store (puede llamarse manualmente).
+   */
+  function sync() {
+    _updateStoreFromURL();
+  }
 
   /**
    * Obtiene el estado de navegación actual desde el store.
@@ -228,11 +209,23 @@ export function createVoyajer(pulsarStore, options = {}) {
   }
 
   // ============================================
+  // EVENT LISTENERS DEL NAVEGADOR
+  // ============================================
+
+  function _handleNavigation() {
+    if (_destroyed) return;
+    _updateStoreFromURL();
+  }
+
+  window.addEventListener('popstate', _handleNavigation);
+  window.addEventListener('hashchange', _handleNavigation);
+
+  // ============================================
   // INICIALIZACIÓN
   // ============================================
 
   if (config.writeOnInit) {
-    sync();
+    _updateStoreFromURL();
   }
 
   // ============================================
