@@ -160,12 +160,88 @@ export function createVoyajer(pulsarStore, options = {}) {
   // STUBS para CP2
   // ============================================
 
+  // ============================================
+  // NAVEGACIÓN PROGRAMÁTICA (CP2)
+  // ============================================
+
+  /**
+   * Navega a un nuevo estado, añadiendo una entrada al historial.
+   * @param {Object} state - Estado de navegación a serializar.
+   * @throws {Error} Si el estado es inválido o no se puede serializar.
+   */
   function push(state) {
-    throw new Error('[Voyajer] push: Pendiente de implementación (CP2)');
+    if (_destroyed) {
+      throw new Error('[Voyajer] push: instancia destruida');
+    }
+
+    if (typeof state !== 'object' || state === null || Array.isArray(state)) {
+      throw new TypeError('[Voyajer] push: state debe ser un objeto plano');
+    }
+
+    // Serializar el estado a una URL
+    const url = config.serialize(state);
+    if (typeof url !== 'string' || url === '') {
+      throw new Error('[Voyajer] push: serialize retornó una cadena vacía o no válida');
+    }
+
+    // Verificar si la URL es igual a la actual (evitar navegaciones redundantes)
+    const currentPath = _getCurrentPath();
+    if (url === currentPath) {
+      console.warn('[Voyajer] push: la URL ya es la actual, no se navega');
+      return;
+    }
+
+    // Actualizar la URL según el modo
+    if (config.mode === 'hash') {
+      // En modo hash, solo cambiamos el hash
+      window.location.hash = url;
+    } else {
+      // En modo history, usamos pushState
+      window.history.pushState(null, '', config.base + url);
+    }
+
+    // Escribir el estado en el store (ya que pushState no dispara popstate)
+    _writeToStore(state);
   }
 
+  /**
+   * Navega a un nuevo estado, reemplazando la entrada actual del historial.
+   * @param {Object} state - Estado de navegación a serializar.
+   * @throws {Error} Si el estado es inválido o no se puede serializar.
+   */
   function replace(state) {
-    throw new Error('[Voyajer] replace: Pendiente de implementación (CP2)');
+    if (_destroyed) {
+      throw new Error('[Voyajer] replace: instancia destruida');
+    }
+
+    if (typeof state !== 'object' || state === null || Array.isArray(state)) {
+      throw new TypeError('[Voyajer] replace: state debe ser un objeto plano');
+    }
+
+    // Serializar el estado a una URL
+    const url = config.serialize(state);
+    if (typeof url !== 'string' || url === '') {
+      throw new Error('[Voyajer] replace: serialize retornó una cadena vacía o no válida');
+    }
+
+    // Verificar si la URL es igual a la actual
+    const currentPath = _getCurrentPath();
+    if (url === currentPath) {
+      console.warn('[Voyajer] replace: la URL ya es la actual, no se navega');
+      return;
+    }
+
+    // Actualizar la URL según el modo
+    if (config.mode === 'hash') {
+      // En modo hash, reemplazamos el hash
+      window.location.replace(`#${url}`);
+    } else {
+      // En modo history, usamos replaceState
+      window.history.replaceState(null, '', config.base + url);
+    }
+
+    // Escribir el estado en el store
+    _writeToStore(state);
   }
 
   function back() {
