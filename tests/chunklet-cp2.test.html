@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Chunklet CP2 - Contexto y Recursos</title>
+</head>
+<body>
+  <h1>Chunklet CP2</h1>
+  <div id="app">
+    <div data-chunk="contador">Clickeame</div>
+  </div>
+  <button id="unmountBtn">Desmontar</button>
+  <button id="mountBtn">Montar de nuevo</button>
+
+  <script type="module">
+    import { define, mount, unmount } from '../src/chunklet.js';
+
+    define('contador', (el, ctx) => {
+      console.log('🟢 contador montado');
+      let count = 0;
+      const span = document.createElement('span');
+      span.textContent = '0';
+      el.appendChild(span);
+
+      // Usamos ctx.listen en lugar de addEventListener directo
+      ctx.listen(el, 'click', () => {
+        count++;
+        span.textContent = count;
+        console.log('Contador:', count);
+      });
+
+      // Limpieza personalizada: eliminar el span
+      ctx.cleanup(() => {
+        console.log('🧹 Limpiando contador (eliminando span)');
+        span.remove();
+      });
+
+      // También podemos usar timeout
+      ctx.timeout(() => {
+        console.log('⏰ Timeout ejecutado (3 segundos después del montaje)');
+      }, 3000);
+
+      return {
+        destroy: () => {
+          console.log('💥 Destroy personalizado de contador');
+        }
+      };
+    });
+
+    const app = document.getElementById('app');
+    mount(app);
+
+    document.getElementById('unmountBtn').addEventListener('click', () => {
+      unmount(app);
+      console.log('🧹 Desmontado todo');
+    });
+
+    document.getElementById('mountBtn').addEventListener('click', () => {
+      mount(app);
+      console.log('🚀 Remontado');
+    });
+  </script>
+</body>
+</html>
