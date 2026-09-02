@@ -8,18 +8,26 @@
     .pass { color: #4ec9b0; }
     .fail { color: #f44747; }
     .test { padding: 4px 0; border-bottom: 1px solid #333; }
+    .section { margin-top: 20px; padding: 6px 0; color: #dcdcaa; font-weight: bold; border-bottom: 2px solid #333; }
   </style>
 </head>
 <body>
-  <h1>🧪 PulsarJS Contract Tests v0.2.0</h1>
+  <h1>🧪 PulsarJS Contract Tests v0.2.0 (código v0.2.1)</h1>
   <div id="output"></div>
 
   <script type="module">
-    import { createStatePulsar, Pulsar } from '../src/pulsar.js';
+    import { createStatePulsar } from '../src/pulsar.js';
 
     const output = document.getElementById('output');
     let passed = 0;
     let failed = 0;
+
+    function section(title) {
+      const div = document.createElement('div');
+      div.className = 'section';
+      div.textContent = title;
+      output.appendChild(div);
+    }
 
     function assert(condition, message) {
       const div = document.createElement('div');
@@ -35,9 +43,11 @@
       console.assert(condition, message);
     }
 
-    // ------------------------------------------------------------
-    // TEST 1: setState con shallow merge
-    // ------------------------------------------------------------
+    // ============================================================
+    // TESTS ORIGINALES DEL CONTRATO v0.2.0
+    // ============================================================
+
+    section('TEST 1: setState con shallow merge');
     const store = createStatePulsar({ ui: { theme: 'dark' }, count: 0 });
     store.setState({ ui: { selected: 'node1' }, count: 5 });
     const state = store.getState();
@@ -45,9 +55,7 @@
     assert(state.ui.selected === 'node1', 'setState agrega nuevas propiedades en el nivel raíz');
     assert(state.count === 5, 'setState actualiza valores planos correctamente');
 
-    // ------------------------------------------------------------
-    // TEST 2: subscribeSelector con string (incluyendo bracket notation)
-    // ------------------------------------------------------------
+    section('TEST 2: subscribeSelector con string (incluyendo bracket notation)');
     const store2 = createStatePulsar({
       items: [{ label: 'Apple', price: 1.2 }, { label: 'Banana', price: 0.8 }]
     });
@@ -68,9 +76,7 @@
     store2.setState({ items: [{ label: 'Grape', price: 2.0 }, { label: 'Banana', price: 0.8 }] });
     assert(lastValue === 'Orange', 'Unsubscribe evita que el listener se ejecute (sigue siendo "Orange")');
 
-    // ------------------------------------------------------------
-    // TEST 3: subscribeSelector con función selector
-    // ------------------------------------------------------------
+    section('TEST 3: subscribeSelector con función selector');
     const store3 = createStatePulsar({ a: 5, b: 10 });
     let sum = null;
     store3.subscribeSelector(
@@ -83,48 +89,100 @@
     store3.setState({ a: 20 });
     assert(sum === 30, 'Selector de función se actualiza a 30');
 
-    // ------------------------------------------------------------
-    // TEST 4: Reentrancy safety (suscripción dentro de notificación)
-    // ------------------------------------------------------------
+    section('TEST 4: Reentrancy — suscripción creada dentro de notificación');
     const store4 = createStatePulsar({ counter: 0 });
     let innerCalled = false;
     const outerUnsub = store4.subscribeSelector('counter', (val) => {
       if (val === 1) {
-        // Desde dentro del listener, nos suscribimos a otro selector
         store4.subscribeSelector('counter', (v2) => {
           innerCalled = (v2 === 2);
         }, { immediate: false });
       }
     });
 
-    store4.setState({ counter: 1 }); // Esto dispara el listener y crea la suscripción interna.
-    store4.setState({ counter: 2 }); // Ahora la nueva suscripción debería ver el cambio.
-    assert(innerCalled === true, 'Reentrancy: suscripción creada dentro de notificación recibe el siguiente cambio');
+    store4.setState({ counter: 1 }); // dispara outer, crea inner
+    store4.setState({ counter: 2 }); // la nueva suscripción debe verlo
+    assert(innerCalled === true, 'Suscripción creada dentro de notificación recibe el siguiente cambio');
 
     outerUnsub();
 
-    // ------------------------------------------------------------
-    // TEST 5: Inmutabilidad (Object.freeze)
-    // ------------------------------------------------------------
+    section('TEST 5: Inmutabilidad (deepFreeze)');
     const store5 = createStatePulsar({ nested: { value: 42 } }, { freeze: true });
     const frozenState = store5.getState();
-    let threw = false;
     try {
-      frozenState.nested.value = 100; // Intento de mutación (debe fallar en strict mode o no tener efecto)
+      frozenState.nested.value = 100;
     } catch (e) {
-      threw = true;
+      // strict mode lanza; no-strict silencia. Ambos son aceptables.
     }
-    // En navegadores modernos con strict mode, lanza TypeError. Si no, el valor sigue siendo 42.
     assert(store5.getState().nested.value === 42, 'El estado permanece inmutable (freeze activo)');
 
-    // ------------------------------------------------------------
+    // ============================================================
+    // TESTS NUEVOS PARA CAMBIOS DE v0.2.1
+    // ============================================================
+
+    section('TEST 6: Simetría de "immediate" en subscribeSelector (fix v0.2.1)');
+    // Antes del fix: el listener se invocaba inmediatamente ANTES de registrarse
+    // en el mapa. Si el callback disparaba un setState reentrante, la notificación
+    // resultante no alcanzaba al propio listener (aún no registrado).
+    // Después del fix: el listener se registra ANTES de invocarse. Un setState
+    // reentrante desde el callback inmediato debe notificar al propio listener.
+    const store6 = createStatePulsar({ n: 0 });
+    const seen = [];
+
+    store6.subscribeSelector('n', (val) => {
+      seen.push(val);
+      if (seen.length === 1) {
+        // Reentrada: setState desde el callback inmediato
+        store6.setState({ n: val + 1 });
+      }
+    }, { immediate: true });
+
+    assert(seen.length === 2, 'subscribeSelector con immediate: recibe la notificación reentrante desde su primer callback');
+    assert(seen[0] === 0 && seen[1] === 1, 'subscribeSelector con immediate: los valores recibidos son [0, 1]');
+
+    section('TEST 7: Desuscripción durante _notify (reentrancy safety)');
+    // El contrato dice que _notify usa un snapshot del registro de listeners
+    // antes de iterar. Consecuencia doble:
+    //   (a) Un listener que desuscribe a otro durante la notificación en curso
+    //       NO impide que el otro reciba esa misma notificación (ya en snapshot).
+    //   (b) En la SIGUIENTE notificación, el desuscribido ya no aparece.
+    // Ambas propiedades deben verificarse.
+    const store7 = createStatePulsar({ counter: 0 });
+    const calls = { a: 0, b: 0 };
+    let unsubB = null;
+
+    const unsubA = store7.subscribe(() => {
+      calls.a++;
+      if (calls.a === 1 && unsubB) {
+        unsubB(); // desuscribir b desde el callback de a
+      }
+    });
+
+    unsubB = store7.subscribe(() => {
+      calls.b++;
+    });
+
+    store7.setState({ counter: 1 });
+    assert(calls.a === 1 && calls.b === 1,
+      'Snapshot preserva iteración: b se llama en la notificación en curso aunque a lo desuscriba');
+
+    store7.setState({ counter: 2 });
+    assert(calls.a === 2 && calls.b === 1,
+      'En la siguiente notificación, el listener desuscribido ya no se llama');
+
+    unsubA();
+
+    // ============================================================
     // Resumen final
-    // ------------------------------------------------------------
+    // ============================================================
     const total = passed + failed;
     const summary = document.createElement('div');
-    summary.style.marginTop = '20px';
+    summary.style.marginTop = '30px';
+    summary.style.fontSize = '1.1em';
     summary.style.fontWeight = 'bold';
-    summary.innerHTML = `📊 Resultados: ${passed}/${total} pasaron. ${failed === 0 ? '🎉 ¡Todos los tests del contrato pasaron!' : '⚠️ Revisa los fallos.'}`;
+    summary.style.padding = '10px';
+    summary.style.borderTop = '2px solid #555';
+    summary.innerHTML = `📊 Resultados: ${passed}/${total} pasaron. ${failed === 0 ? '🎉 ¡Todos los tests del contrato pasaron!' : `⚠️ ${failed} fallo(s). Revisa arriba.`}`;
     output.appendChild(summary);
   </script>
 </body>
