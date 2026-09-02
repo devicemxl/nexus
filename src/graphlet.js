@@ -1,7 +1,12 @@
 /**
- * GraphletJS - Modelo semántico (Contrato v0.2.0)
+ * GraphletJS - Modelo semántico (Contrato v0.2.0, código v0.2.1)
  * Implementación pura, sin reactividad, sin dependencias.
- * 
+ *
+ * Cambios respecto a v0.2.0:
+ * - Fix en `query`: los arrays dentro de `links` ahora se clonan antes de
+ *   pasarse al predicate, alineando el comportamiento con `get()` y
+ *   evitando que un predicate mal escrito pueda corromper el estado interno.
+ *
  * Estructura interna:
  *   Map<string, { properties: object, links: Record<string, string[]> }>
  */
@@ -41,6 +46,19 @@ export function createGraphlet() {
     }
   }
 
+  /**
+   * Clona el mapa de links de un record produciendo un nuevo objeto y
+   * nuevos arrays para cada relación. Uso interno compartido entre
+   * `get` y `query` para garantizar la misma inmutabilidad defensiva.
+   */
+  function _cloneLinks(links) {
+    const out = {};
+    for (const [rel, targets] of Object.entries(links)) {
+      out[rel] = [...targets];
+    }
+    return out;
+  }
+
   // ============================================
   // API PÚBLICA
   // ============================================
@@ -50,16 +68,10 @@ export function createGraphlet() {
     const record = _entities.get(id);
     if (!record) return null;
 
-    // Clonamos los links: cada array es clonado para evitar mutación externa.
-    const linksClone = {};
-    for (const [rel, targets] of Object.entries(record.links)) {
-      linksClone[rel] = [...targets];
-    }
-
     return {
       id: id,
       properties: { ...record.properties },
-      links: linksClone,
+      links: _cloneLinks(record.links),
     };
   }
 
@@ -209,10 +221,11 @@ export function createGraphlet() {
     const results = [];
     for (const [id, record] of _entities) {
       // Construimos el objeto que se pasa al predicado: (id, properties, links)
-      // Para mantener consistencia con get(), pasamos copias (shallow)
+      // Se clonan tanto las propiedades como los arrays de cada relación,
+      // igual que hace get(), para que un predicate mal escrito no pueda
+      // mutar el estado interno.
       const props = { ...record.properties };
-      const links = { ...record.links };
-      // Nota: los arrays dentro de links no se clonan, pero el predicado no debe mutarlos.
+      const links = _cloneLinks(record.links);
       if (predicate(id, props, links)) {
         results.push(id);
       }
