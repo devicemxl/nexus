@@ -1,7 +1,16 @@
 /**
  * PulsarJS - Estado reactivo para el navegador
- * Versión: 0.1.0 (Implementación del contrato)
- * 
+ * Versión: 0.2.1 (Implementación del contrato v0.2.0)
+ *
+ * Cambios respecto a la versión anterior:
+ * - El módulo expone únicamente el named export `createStatePulsar`,
+ *   alineado con el contrato. Se removió `export default Pulsar` y
+ *   el named export de la clase.
+ * - `subscribeSelector` ahora registra el listener antes de invocarlo
+ *   con `immediate: true`, replicando la semántica de `subscribe`.
+ *   Un `setState` disparado dentro del callback inmediato ahora sí
+ *   notifica al listener recién suscrito.
+ *
  * Características:
  * - Cero dependencias
  * - ES Module puro (type="module")
@@ -13,10 +22,10 @@
  */
 
 // ============================================
-// CLASE PRINCIPAL
+// CLASE INTERNA
 // ============================================
 
-export class Pulsar {
+class Pulsar {
   /**
    * Crea una nueva instancia de Pulsar
    * @param {Object} initialState - Estado inicial (debe ser objeto plano)
@@ -107,10 +116,10 @@ export class Pulsar {
       throw new TypeError('[Pulsar] subscribe: listener debe ser una función');
     }
 
-    // Añadir listener
+    // Registrar ANTES de invocar (para que un setState reentrante desde
+    // el callback inmediato notifique al listener recién suscrito).
     this._listeners.add(listener);
 
-    // Llamar inmediatamente si se solicita
     if (options.immediate) {
       try {
         listener(this._state);
@@ -141,8 +150,8 @@ export class Pulsar {
     }
 
     // Normalizar selector
-    const selectorFn = typeof selector === 'string' 
-      ? this._createPathSelector(selector) 
+    const selectorFn = typeof selector === 'string'
+      ? this._createPathSelector(selector)
       : selector;
 
     if (typeof selectorFn !== 'function') {
@@ -162,16 +171,8 @@ export class Pulsar {
       previousValue = undefined;
     }
 
-    // Llamar inmediatamente si se solicita
-    if (options.immediate) {
-      try {
-        listener(previousValue, undefined, this._state);
-      } catch (error) {
-        console.error('[Pulsar] Error en listener inmediato:', error);
-      }
-    }
-
-    // Registrar en el mapa de selectores
+    // Registrar ANTES de invocar (simetría con subscribe): un setState
+    // reentrante desde el callback inmediato debe alcanzar a este listener.
     if (!this._selectorListeners.has(selectorFn)) {
       this._selectorListeners.set(selectorFn, new Map());
     }
@@ -180,6 +181,15 @@ export class Pulsar {
       equality: equalityFn,
       previousValue
     });
+
+    // Llamar inmediatamente si se solicita
+    if (options.immediate) {
+      try {
+        listener(previousValue, undefined, this._state);
+      } catch (error) {
+        console.error('[Pulsar] Error en listener inmediato:', error);
+      }
+    }
 
     // Retornar función de cancelación
     return () => {
@@ -259,7 +269,7 @@ export class Pulsar {
     // Ejemplo: "users[0].address.city" -> ["users", "0", "address", "city"]
     const segments = [];
     let current = '';
-    
+
     for (let i = 0; i < path.length; i++) {
       const char = path[i];
       if (char === '.') {
@@ -349,23 +359,18 @@ export class Pulsar {
 }
 
 // ============================================
-// FACTORY FUNCTION(API principal del contrato) 
+// FACTORY FUNCTION (API pública del contrato)
 // ============================================
 
 /**
- * Crea una nueva instancia de Pulsar
+ * Crea una nueva instancia de Pulsar.
+ * Esta es la única API pública del módulo, conforme al contrato v0.2.0.
+ *
  * @param {Object} initialState - Estado inicial
  * @param {Object} options - Opciones
- * @returns {Pulsar} Nueva instancia
+ * @returns {Object} Nueva instancia con métodos getState, setState,
+ *                   subscribe y subscribeSelector.
  */
 export function createStatePulsar(initialState = {}, options = {}) {
   return new Pulsar(initialState, options);
 }
-
-// ============================================
-// EXPORT DEFAULT
-// ============================================
-
-// El contrato solo exige createStatePulsar, pero podemos mantener
-// el default para no romper ejemplos existentes.
-export default Pulsar; // la vía oficial es createStatePulsar
