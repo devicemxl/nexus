@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Binder CP3 - Validación</title>
+</head>
+<body>
+  <h1>Binder CP3 - Validación</h1>
+  <form id="testForm">
+    <input type="text" data-bind="user.name" placeholder="Nombre">
+    <input type="email" data-bind="user.email" placeholder="Email">
+    <button type="button" id="validateBtn">Validar</button>
+    <button type="button" id="setErrorsBtn">Establecer errores manuales</button>
+    <pre id="output"></pre>
+  </form>
+
+  <script type="module">
+    import { createStatePulsar } from '../src/pulsar.js';
+    import { createBinder } from '../src/binder.js';
+
+    const store = createStatePulsar({});
+    const binder = createBinder(store, { key: 'myForm' });
+
+    // Vincular todos los campos
+    binder.bind(document.getElementById('testForm'));
+
+    // Función de validación
+    function validateForm(data) {
+      const errors = {};
+      if (!data.user?.name || data.user.name.length < 3) {
+        errors['user.name'] = 'El nombre debe tener al menos 3 caracteres';
+      }
+      if (!data.user?.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.user.email)) {
+        errors['user.email'] = 'Email inválido';
+      }
+      return Object.keys(errors).length > 0 ? errors : null;
+    }
+
+    // Mostrar estado en consola
+    function logState() {
+      const state = store.getState();
+      document.getElementById('output').textContent = JSON.stringify(state, null, 2);
+    }
+
+    // Botón validar
+    document.getElementById('validateBtn').addEventListener('click', () => {
+      const errors = binder.validate(validateForm);
+      logState();
+      console.log('Errores:', errors);
+    });
+
+    // Botón errores manuales
+    document.getElementById('setErrorsBtn').addEventListener('click', () => {
+      binder.setErrors({ 'user.name': 'Error manual' });
+      logState();
+    });
+
+    // Suscribirse a cambios para mostrar en consola
+    store.subscribeSelector('myForm', (formData) => {
+      console.log('Form data:', formData);
+    }, { immediate: true });
+
+    logState();
+  </script>
+</body>
+</html>

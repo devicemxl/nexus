@@ -368,6 +368,141 @@ export function createBinder(pulsarStore, options = {}) {
   // Iniciar suscripción al store
   _unsubscribeStore = _subscribeToStore();
 
+
+  // ============================================
+  // SUBMIT Y ESTADO DE ENVÍO (CP4)
+  // ============================================
+
+  /**
+   * Envía el formulario: valida, gestiona el estado de envío y ejecuta la función onSubmit.
+   * @param {Function} onSubmit - Función que recibe los datos del formulario y retorna una Promise o un valor.
+   * @param {Object} options - Opciones adicionales.
+   * @param {Function} options.validateFn - Función de validación opcional (si no se proporciona, usa la que se configuró previamente, o ninguna).
+   * @returns {Promise<any>} - Promesa que se resuelve con el resultado de onSubmit o se rechaza con el error.
+   */
+  function submit(onSubmit, options = {}) {
+    if (typeof onSubmit !== 'function') {
+      throw new TypeError('[Binder] submit: onSubmit debe ser una función');
+    }
+
+    // 1. Validar
+    let validationErrors = null;
+    const validateFn = options.validateFn || null; // Podríamos tener una función de validación por defecto configurada en el binder, pero por ahora no.
+    if (validateFn) {
+      validationErrors = validate(validateFn);
+      if (validationErrors !== null && Object.keys(validationErrors).length > 0) {
+        // Emitir evento de invalid (aunque no tenemos sistema de eventos, podemos llamar a un callback)
+        // Según el contrato, deberíamos lanzar o retornar un error.
+        // Decidimos lanzar un error con los errores de validación.
+        const err = new Error('[Binder] Validación fallida');
+        err.validationErrors = validationErrors;
+        throw err;
+      }
+    }
+
+    // 2. Establecer estado de envío
+    const currentState = pulsarStore.getState();
+    const currentFormData = currentState[config.key] || {};
+    pulsarStore.setState({
+      [config.key]: {
+        ...currentFormData,
+        [config.submissionKey]: true,
+      }
+    });
+
+    // 3. Ejecutar onSubmit y manejar resultado
+    let result;
+    try {
+      const data = _getFormData();
+      result = onSubmit(data);
+    } catch (error) {
+      // Si onSubmit lanza síncronamente, capturamos y manejamos
+      pulsarStore.setState({
+        [config.key]: {
+          ...(pulsarStore.getState()[config.key] || {}),
+          [config.submissionKey]: false,
+          [config.errorKey]: {
+            ...(pulsarStore.getState()[config.key]?.[config.errorKey] || {}),
+            _submit: error.message || 'Error en el envío'
+          }
+        }
+      });
+      // Re-lanzar el error para que el caller lo maneje
+      throw error;
+    }
+
+    // Si onSubmit retorna una Promise, esperar
+    if (result && typeof result.then === 'function') {
+      return result
+        .then((res) => {
+          // Éxito
+          pulsarStore.setState({
+            [config.key]: {
+              ...(pulsarStore.getState()[config.key] || {}),
+              [config.submissionKey]: false,
+              [config.errorKey]: {
+                ...(pulsarStore.getState()[config.key]?.[config.errorKey] || {}),
+                _submit: null // Limpiar error de envío
+              }
+            }
+          });
+          return res;
+        })
+        .catch((error) => {
+          // Error en la Promise
+          pulsarStore.setState({
+            [config.key]: {
+              ...(pulsarStore.getState()[config.key] || {}),
+              [config.submissionKey]: false,
+              [config.errorKey]: {
+                ...(pulsarStore.getState()[config.key]?.[config.errorKey] || {}),
+                _submit: error.message || 'Error en el envío'
+              }
+            }
+          });
+          // Re-lanzar para que el caller maneje
+          throw error;
+        });
+    } else {
+      // Si onSubmit es síncrono y no devuelve Promise
+      pulsarStore.setState({
+        [config.key]: {
+          ...(pulsarStore.getState()[config.key] || {}),
+          [config.submissionKey]: false,
+          [config.errorKey]: {
+            ...(pulsarStore.getState()[config.key]?.[config.errorKey] || {}),
+            _submit: null
+          }
+        }
+      });
+      return result;
+    }
+  }
+
+  /**
+   * Resetea el formulario: limpia todos los valores y los errores.
+   * @param {Object} initialState - Estado inicial opcional para establecer después del reset.
+   */
+  function reset(initialState = {}) {
+    // Limpiar valores
+    const currentData = _getFormData();
+    const resetData = { ...initialState };
+    // Eliminar el errorKey y submissionKey
+    delete resetData[config.errorKey];
+    delete resetData[config.submissionKey];
+    // Establecer el nuevo estado
+    _setFormData(resetData);
+    // También limpiar errores y submitting
+    const state = pulsarStore.getState();
+    const formData = state[config.key] || {};
+    pulsarStore.setState({
+      [config.key]: {
+        ...resetData,
+        [config.errorKey]: null,
+        [config.submissionKey]: false,
+      }
+    });
+  }
   return {
     getValues,
     setValues,
@@ -378,6 +513,7 @@ export function createBinder(pulsarStore, options = {}) {
     validate,
     setErrors,
     submit,
+    reset, // <-- Añadido: reset
     destroy,
   };
 }
