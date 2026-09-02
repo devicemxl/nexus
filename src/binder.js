@@ -6,22 +6,21 @@
  * - Escribe y lee de Pulsar bajo una clave configurable (por defecto 'form').
  * - Actualiza el DOM cuando el store cambia externamente (via subscribeSelector).
  * - No genera DOM, solo trabaja con elementos existentes.
+ * 
+ * CP1: Estructura y fábrica
+ * CP2: Binding de campos
+ * CP3: Validación y errores
  */
 
-// ============================================
-// FACTORY FUNCTION
-// ============================================
-
 export function createBinder(pulsarStore, options = {}) {
-  // Validar que el store tenga los métodos necesarios
+  // Validar store
   if (!pulsarStore || typeof pulsarStore.getState !== 'function' || typeof pulsarStore.setState !== 'function') {
     throw new TypeError('[Binder] pulsarStore debe tener getState y setState');
   }
   if (typeof pulsarStore.subscribeSelector !== 'function') {
-    throw new TypeError('[Binder] pulsarStore debe tener subscribeSelector (para escuchar cambios)');
+    throw new TypeError('[Binder] pulsarStore debe tener subscribeSelector');
   }
 
-  // Configuración
   const config = {
     key: options.key || 'form',
     errorKey: options.errorKey || 'errors',
@@ -31,12 +30,12 @@ export function createBinder(pulsarStore, options = {}) {
   };
 
   // Estado interno
-  const _fields = new Map(); // key: nombre/path, value: { element, path, listeners }
+  const _fields = new Map(); // path -> { element, listeners }
   let _destroyed = false;
   let _unsubscribeStore = null;
 
   // ============================================
-  // UTILIDADES PRIVADAS
+  // UTILIDADES (clonación, paths, etc.)
   // ============================================
 
   function _clone(obj) {
@@ -129,18 +128,13 @@ export function createBinder(pulsarStore, options = {}) {
   }
 
   function _getElementValue(element) {
-    if (element.type === 'checkbox') {
-      return element.checked;
-    } else if (element.type === 'radio') {
-      if (element.checked) return element.value;
-      return null;
-    } else if (element.type === 'number') {
-      return element.value !== '' ? Number(element.value) : null;
-    } else if (element.tagName === 'SELECT' && element.multiple) {
+    if (element.type === 'checkbox') return element.checked;
+    if (element.type === 'radio') return element.checked ? element.value : null;
+    if (element.type === 'number') return element.value !== '' ? Number(element.value) : null;
+    if (element.tagName === 'SELECT' && element.multiple) {
       return Array.from(element.selectedOptions).map(opt => opt.value);
-    } else {
-      return element.value;
     }
+    return element.value;
   }
 
   function _setElementValue(element, value) {
@@ -162,7 +156,7 @@ export function createBinder(pulsarStore, options = {}) {
   }
 
   // ============================================
-  // SUSCRIPCIÓN A CAMBIOS DEL STORE
+  // SUSCRIPCIÓN AL STORE (actualiza DOM)
   // ============================================
 
   function _subscribeToStore() {
@@ -182,20 +176,13 @@ export function createBinder(pulsarStore, options = {}) {
     );
   }
 
-  _unsubscribeStore = _subscribeToStore();
-
   // ============================================
   // BINDING (CP2)
   // ============================================
 
-  /**
-   * Vincula un elemento o un conjunto de elementos.
-   * @param {string|HTMLElement|HTMLFormElement} element - Selector, elemento o formulario.
-   */
   function bind(element) {
     if (_destroyed) throw new Error('[Binder] bind: Binder ya fue destruido');
 
-    // Normalizar: si es string, buscar elemento
     let target = element;
     if (typeof element === 'string') {
       target = document.querySelector(element);
@@ -204,44 +191,32 @@ export function createBinder(pulsarStore, options = {}) {
       }
     }
 
-    // Si es un formulario, vincular todos los hijos con data-bind o name
     if (target.tagName === 'FORM') {
       const inputs = target.querySelectorAll('[data-bind], input[name], select[name], textarea[name]');
       inputs.forEach(el => _bindSingle(el));
     } else {
-      // Si es un solo elemento, vincularlo
       _bindSingle(target);
     }
   }
 
-  /**
-   * Vincula un único elemento.
-   */
   function _bindSingle(element) {
-    // Obtener el path de binding (data-bind o name)
-    let path = element.getAttribute('data-bind');
-    if (!path) {
-      path = element.getAttribute('name');
-    }
+    let path = element.getAttribute('data-bind') || element.getAttribute('name');
     if (!path) {
       console.warn('[Binder] Elemento sin data-bind ni name:', element);
       return;
     }
 
-    // Evitar duplicados
     if (_fields.has(path)) {
       console.warn(`[Binder] El campo "${path}" ya está vinculado`);
       return;
     }
 
-    // Guardar referencia
     const field = {
       element,
       path,
       listeners: [],
     };
 
-    // Función para actualizar el store cuando el DOM cambia
     function handleInput() {
       const value = _getElementValue(element);
       const currentData = _getFormData();
@@ -249,22 +224,16 @@ export function createBinder(pulsarStore, options = {}) {
       _setFormData(currentData);
     }
 
-    // Determinar evento según tipo de input
     let eventType = 'input';
     if (element.type === 'checkbox' || element.type === 'radio' || element.tagName === 'SELECT') {
       eventType = 'change';
     }
 
-    // Añadir listener
     element.addEventListener(eventType, handleInput);
     field.listeners.push({ event: eventType, handler: handleInput });
-
-    // Guardar en el mapa
     _fields.set(path, field);
 
-    // Inicializar el DOM con el valor del store (usando la suscripción inmediata)
-    // Pero la suscripción ya se encarga de eso; sin embargo, forzamos una actualización
-    // para asegurar que el DOM tenga el valor correcto.
+    // Inicializar DOM desde store
     const formData = _getFormData();
     const initialValue = _getValueByPath(formData, path);
     if (initialValue !== undefined) {
@@ -272,10 +241,6 @@ export function createBinder(pulsarStore, options = {}) {
     }
   }
 
-  /**
-   * Desvincula un elemento o conjunto de elementos.
-   * @param {string|HTMLElement|HTMLFormElement} element - Selector, elemento o formulario.
-   */
   function unbind(element) {
     let target = element;
     if (typeof element === 'string') {
@@ -298,22 +263,76 @@ export function createBinder(pulsarStore, options = {}) {
     const field = _fields.get(path);
     if (!field) return;
 
-    // Remover listeners
     field.listeners.forEach(({ event, handler }) => {
       element.removeEventListener(event, handler);
     });
-
-    // Eliminar del mapa
     _fields.delete(path);
   }
 
   // ============================================
-  // API PÚBLICA (CP1 + CP2)
+  // VALIDACIÓN (CP3)
   // ============================================
 
-  function getValues() {
-    return _getFormData();
+  /**
+   * Valida los datos del formulario usando una función proporcionada.
+   * @param {Function} validateFn - función que recibe los datos y devuelve un objeto de errores { path: 'mensaje' } o null.
+   * @returns {Object|null} - Objeto de errores o null si no hay errores.
+   */
+  function validate(validateFn) {
+    if (typeof validateFn !== 'function') {
+      throw new TypeError('[Binder] validate: validateFn debe ser una función');
+    }
+
+    const data = _getFormData();
+    const errors = validateFn(data);
+
+    // Almacenar errores en Pulsar bajo la clave de errores
+    const currentState = pulsarStore.getState();
+    const errorData = (errors && typeof errors === 'object' && !Array.isArray(errors)) ? errors : null;
+
+    const currentFormData = currentState[config.key] || {};
+    pulsarStore.setState({
+      [config.key]: {
+        ...currentFormData,
+        [config.errorKey]: errorData
+      }
+    });
+
+    return errorData;
   }
+
+  /**
+   * Establece manualmente un objeto de errores.
+   * @param {Object|null} errors - objeto de errores { path: 'mensaje' } o null para borrar.
+   */
+  function setErrors(errors) {
+    if (errors !== null && (typeof errors !== 'object' || Array.isArray(errors))) {
+      throw new TypeError('[Binder] setErrors: errors debe ser un objeto o null');
+    }
+
+    const currentState = pulsarStore.getState();
+    const currentFormData = currentState[config.key] || {};
+    pulsarStore.setState({
+      [config.key]: {
+        ...currentFormData,
+        [config.errorKey]: errors
+      }
+    });
+  }
+
+  // ============================================
+  // STUB PARA CP4 (submit)
+  // ============================================
+
+  function submit(onSubmit) {
+    throw new Error('[Binder] submit: Pendiente de implementación (CP4)');
+  }
+
+  // ============================================
+  // API PÚBLICA (CP1, CP2, CP3)
+  // ============================================
+
+  function getValues() { return _getFormData(); }
 
   function setValues(data) {
     if (typeof data !== 'object' || data === null || Array.isArray(data)) {
@@ -333,19 +352,6 @@ export function createBinder(pulsarStore, options = {}) {
     _setFormData(data);
   }
 
-  // Stubs para CP3 y CP4
-  function validate(validateFn) {
-    throw new Error('[Binder] validate: Pendiente de implementación (CP3)');
-  }
-
-  function setErrors(errors) {
-    throw new Error('[Binder] setErrors: Pendiente de implementación (CP3)');
-  }
-
-  function submit(onSubmit) {
-    throw new Error('[Binder] submit: Pendiente de implementación (CP4)');
-  }
-
   function destroy() {
     if (_destroyed) return;
     _destroyed = true;
@@ -353,16 +359,14 @@ export function createBinder(pulsarStore, options = {}) {
       _unsubscribeStore();
       _unsubscribeStore = null;
     }
-    // Limpiar todos los campos
     for (const [path, field] of _fields) {
       _unbindSingle(field.element);
     }
     _fields.clear();
   }
 
-  // ============================================
-  // EXPORTACIÓN DE LA API
-  // ============================================
+  // Iniciar suscripción al store
+  _unsubscribeStore = _subscribeToStore();
 
   return {
     getValues,
@@ -377,9 +381,5 @@ export function createBinder(pulsarStore, options = {}) {
     destroy,
   };
 }
-
-// ============================================
-// EXPORTACIÓN POR DEFECTO (Opcional)
-// ============================================
 
 export default createBinder;
