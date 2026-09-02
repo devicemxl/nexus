@@ -664,6 +664,78 @@ function _handleEnabledStateChange(enabledMap) {
 }
 
 // ============================================
+// OBSERVADOR DE MUTACIONES (Fase 6)
+// ============================================
+
+/**
+ * Observa dinámicamente el DOM: cuando se añaden nodos con `data-chunk`,
+ * los monta automáticamente; cuando se eliminan, los desmonta.
+ *
+ * @param {Node} root - Nodo raíz a observar (childList + subtree).
+ * @returns {Function} Función para desconectar SOLO este observador.
+ * @throws {Error} Si setup() no ha sido llamado.
+ * @throws {TypeError} Si root no es un Node.
+ */
+export function observe(root) {
+  // Exigir setup previo
+  if (_stack === null || _config === null) {
+    throw new Error('[Chunklet] observe: setup() debe llamarse antes de observar.');
+  }
+  if (!root || typeof root.nodeType !== 'number') {
+    throw new TypeError('[Chunklet] observe: root debe ser un Node.');
+  }
+
+  const observer = new MutationObserver((mutations) => {
+    // 1. Procesar primero REMOCIONES (para que un "mover" no desmonte al final)
+    for (const mutation of mutations) {
+      for (const node of mutation.removedNodes) {
+        if (node.nodeType === 1) { // Element
+          try {
+            unmount(node);
+          } catch (error) {
+            console.error('[Chunklet] observe: error en unmount de nodo removido', node, error);
+          }
+        }
+      }
+    }
+
+    // 2. Procesar ADICIONES después
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType === 1) { // Element
+          try {
+            mount(node);
+          } catch (error) {
+            console.error('[Chunklet] observe: error en mount de nodo agregado', node, error);
+          }
+        }
+      }
+    }
+  });
+
+  observer.observe(root, { childList: true, subtree: true });
+  _observers.add(observer);
+
+  // Devolver desconectador específico
+  return () => {
+    observer.disconnect();
+    _observers.delete(observer);
+  };
+}
+
+/**
+ * Desconecta TODOS los observadores activos.
+ * No desmonta los comportamientos ya montados.
+ */
+export function disconnect() {
+  for (const observer of _observers) {
+    observer.disconnect();
+  }
+  _observers.clear();
+}
+
+
+// ============================================
 // PRÓXIMAS FASES (a implementar)
 // ============================================
 // ✅ Fase 0: preparación, imports, estado interno y utilidades privadas.
@@ -672,6 +744,6 @@ function _handleEnabledStateChange(enabledMap) {
 // ✅ Fase 3: _createContext(element) completo.
 // ✅ Fase 4: mount(element) y lógica de montaje.
 // ✅ Fase 5: unmount(element) y reconciliación enable/disable.
-// ⏳ Fase 6: observe(root) y disconnect()
+// ✅ Fase 6: observe(root) y disconnect().
 // ⏳ Fase 7: enable(entity, name) y disable(entity, name)
 // ⏳ Fase 8: exportaciones finales y pruebas

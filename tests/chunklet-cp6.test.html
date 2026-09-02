@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <title>ChunkletJS Demo – Fases 1 a 5</title>
+  <style>
+    body {
+      font-family: monospace;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+
+    .success {
+      color: #4ec9b0;
+    }
+
+    .error {
+      color: #f44747;
+    }
+
+    .info {
+      color: #dcdcaa;
+    }
+
+    .box {
+      padding: 20px;
+      margin: 10px 0;
+      background: #2d2d2d;
+      border: 2px solid transparent;
+      cursor: pointer;
+    }
+
+    .marcable-activo {
+      outline: 2px solid orange;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>🧪 ChunkletJS Demo – Fases 1 a 5</h1>
+  <div id="output"></div>
+
+  <script type="module">
+    import * as Chunklet from '../src/chunklet.js';
+
+    window.Chunklet = Chunklet;
+
+    const output = document.getElementById('output');
+
+    function log(msg, className = 'info') {
+      const div = document.createElement('div');
+      div.className = className;
+      div.textContent = msg;
+      output.appendChild(div);
+    }
+
+    try {
+      // ========== 1. SETUP ==========
+      log('=== 1. Setup ===', 'info');
+
+      const stack = Chunklet.setup({
+        pulsar: {
+          initialState: {
+            ui: { count: 0, enabled: {} }
+          }
+        },
+        graphlet: undefined,
+        voyajer: { mode: 'hash' },
+        entityAttr: 'data-entity',
+        enabledPath: 'ui.enabled'
+      });
+
+      if (typeof stack.pulsar.getState === 'function') log('✅ pulsar válido', 'success');
+      if (typeof stack.graphlet.allIds === 'function') log('✅ graphlet válido', 'success');
+      if (stack.voyajer && typeof stack.voyajer.getCurrent === 'function') log('✅ voyajer válido', 'success');
+
+      stack.graphlet.put('node:1', { title: 'Hola Chunklet' });
+      log(`✅ Graphlet: ${stack.graphlet.get('node:1').properties.title}`, 'success');
+
+      // ========== 2. DEFINE ==========
+      log('=== 2. Define ===', 'info');
+
+      Chunklet.define('ctx-demo', (element, ctx) => {
+        element.style.border = '2px solid #4ec9b0';
+        element.textContent = '✅ Comportamiento activo';
+
+        ctx.subscribeSelector('ui.count', (count) => {
+          element.setAttribute('data-count', count);
+        }, { immediate: true });
+
+        ctx.listen(element, 'click', () => {
+          const current = ctx.getState().ui.count || 0;
+          ctx.setState({ ui: { ...ctx.getState().ui, count: current + 1 } });
+        });
+
+        ctx.cleanup(() => {
+          element.removeAttribute('data-count');
+          element.style.border = '';
+          element.textContent = '';
+          console.log('ctx-demo destruido');
+        });
+      });
+
+      Chunklet.define('marcable', (element, ctx) => {
+        element.classList.add('marcable-activo');
+        ctx.cleanup(() => element.classList.remove('marcable-activo'));
+      });
+
+      log('✅ behaviors definidos', 'success');
+
+
+      // ========== fase 6 ==========
+      // Activar observación global sobre <body>
+      const stopObserving = Chunklet.observe(document.body);
+
+      // Ahora crea un elemento dinámicamente:
+      const nuevo = document.createElement('div');
+      nuevo.setAttribute('data-chunk', 'ctx-demo');
+      document.body.appendChild(nuevo);
+      // -> Se montará solo, sin llamar a mount manualmente
+
+      // Para quitarlo:
+      nuevo.remove();
+      // -> Se desmontará solo
+
+      // Detener solo este observador:
+      stopObserving();
+
+
+      // ========== 3. MOUNT ==========
+      log('=== 3. Mount ===', 'info');
+
+      const demoDiv = document.createElement('div');
+      demoDiv.id = 'demo-mount';
+      demoDiv.className = 'box';
+      demoDiv.setAttribute('data-chunk', 'ctx-demo demo-inexistente');
+      document.body.appendChild(demoDiv);
+
+      Chunklet.mount(document.body);
+
+      const countValue = demoDiv.getAttribute('data-count');
+      if (demoDiv.textContent.includes('Comportamiento activo')) {
+        log('✅ ctx-demo montado correctamente', 'success');
+      } else {
+        log('❌ No se montó ctx-demo', 'error');
+      }
+
+      demoDiv.click();
+      if (demoDiv.getAttribute('data-count') === '1') {
+        log('✅ Click: ui.count actualizado a 1', 'success');
+      } else {
+        log('❌ Click no actualizó el contador', 'error');
+      }
+
+      // ========== 4. UNMOUNT ==========
+      log('=== 4. Unmount ===', 'info');
+
+      Chunklet.unmount(demoDiv);
+
+      if (demoDiv.getAttribute('data-count') === null && demoDiv.textContent === '') {
+        log('✅ ctx-demo desmontado: recursos liberados y DOM limpiado', 'success');
+      } else {
+        log('❌ El comportamiento sigue activo tras unmount', 'error');
+      }
+
+      // ========== 5. ENABLE/DISABLE ==========
+      log('=== 5. Enable/Disable ===', 'info');
+
+      const nodo = document.createElement('div');
+      nodo.id = 'nodo-demo';
+      nodo.className = 'box';
+      nodo.setAttribute('data-entity', 'node:42');
+      nodo.setAttribute('data-chunk', 'marcable ctx-demo');
+      document.body.appendChild(nodo);
+
+      Chunklet.mount(nodo);
+
+      if (nodo.classList.contains('marcable-activo') && nodo.textContent.includes('Comportamiento activo')) {
+        log('✅ Con ui.enabled vacío, se montan ambos behaviors', 'success');
+      } else {
+        log('❌ No se montaron ambos behaviors', 'error');
+      }
+
+      // Deshabilitar todo para node:42
+      stack.pulsar.setState({
+        ui: { ...stack.pulsar.getState().ui, enabled: { 'node:42': [] } }
+      });
+
+      await new Promise(r => setTimeout(r, 50));
+
+      if (!nodo.classList.contains('marcable-activo') && !nodo.textContent.includes('Comportamiento activo')) {
+        log('✅ Al deshabilitar con [], se desmontan todos', 'success');
+      } else {
+        log('❌ No se desmontaron los behaviors', 'error');
+      }
+
+      // Habilitar solo marcable
+      stack.pulsar.setState({
+        ui: { ...stack.pulsar.getState().ui, enabled: { 'node:42': ['marcable'] } }
+      });
+
+      await new Promise(r => setTimeout(r, 50));
+
+      if (nodo.classList.contains('marcable-activo') && !nodo.textContent.includes('Comportamiento activo')) {
+        log('✅ Al habilitar ["marcable"], solo se monta marcable', 'success');
+      } else {
+        log('❌ La reconciliación no funcionó', 'error');
+      }
+
+      // Limpiar
+      Chunklet.unmount(nodo);
+      nodo.remove();
+      demoDiv.remove();
+
+      log('=== Resumen: Fases 1–5 completadas ===', 'success');
+    } catch (error) {
+      log(`❌ Error inesperado: ${error.message}`, 'error');
+      console.error(error);
+    }
+  </script>
+</body>
+
+</html>
