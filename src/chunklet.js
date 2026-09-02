@@ -333,12 +333,199 @@ export function setup(options = {}) {
 }
 
 // ============================================
+// API PÚBLICA: define
+// ============================================
+
+/**
+ * Registra una nueva fábrica de comportamiento Chunklet.
+ *
+ * @param {string} name   Identificador único del comportamiento (sin espacios).
+ *                        Se referencia en el atributo `data-chunk`.
+ * @param {Function} factory
+ *        Recibe `(element, ctx)` y opcionalmente devuelve `{ destroy }`.
+ *
+ * @throws {Error}      Si setup() no ha sido llamado todavía.
+ * @throws {TypeError}  Si name no es string no vacío.
+ * @throws {TypeError}  Si name contiene espacios en blanco.
+ * @throws {TypeError}  Si factory no es una función.
+ */
+export function define(name, factory) {
+  // El contrato exige que setup se ejecute antes de define.
+  _assertSetupCalled();
+
+  // Validaciones de nombre
+  if (typeof name !== 'string' || name.trim() === '') {
+    throw new TypeError('[Chunklet] define: name debe ser un string no vacío');
+  }
+  if (/\s/.test(name)) {
+    throw new TypeError('[Chunklet] define: name no puede contener espacios');
+  }
+
+  // Validación de factory
+  if (typeof factory !== 'function') {
+    throw new TypeError('[Chunklet] define: factory debe ser una función');
+  }
+
+  // Si ya existe un comportamiento con el mismo nombre, se sobreescribe.
+  _behaviors.set(name, factory);
+}
+
+// ============================================
+// CREACIÓN DE CONTEXTO (Fase 3)
+// ============================================
+
+/**
+ * Crea un contexto de comportamiento para un elemento.
+ * Cada comportamiento montado recibe su propio ctx independiente.
+ *
+ * @param {Element} element - Elemento DOM que aloja el comportamiento.
+ * @returns {{ ctx: Object, destroy: Function }}
+ */
+function _createContext(element) {
+  // El contexto requiere que setup haya inicializado el stack.
+  if (_stack === null) {
+    throw new Error('[Chunklet] _createContext: setup() debe llamarse antes de crear contextos.');
+  }
+
+  const resources = [];
+
+  // Registra una función de limpieza. Se ejecutará en LIFO al destruir el contexto.
+  function addResource(cleanupFn) {
+    if (typeof cleanupFn === 'function') {
+      resources.push(cleanupFn);
+    }
+  }
+
+  // ============================================
+  // CONTEXTO PÚBLICO (lo que recibe la factory)
+  // ============================================
+  const ctx = {
+    // --- Stack accessors ---
+    pulsar: _stack.pulsar,
+    graphlet: _stack.graphlet,
+    voyajer: _stack.voyajer, // puede ser undefined
+
+    // --- Registro de recursos (auto-cleanup) ---
+
+    listen(target, event, handler, options) {
+      if (!target || typeof target.addEventListener !== 'function') {
+        throw new TypeError('[Chunklet] ctx.listen: target debe ser un EventTarget');
+      }
+      target.addEventListener(event, handler, options);
+      addResource(() => target.removeEventListener(event, handler, options));
+    },
+
+    subscribe(listener) {
+      if (typeof listener !== 'function') {
+        throw new TypeError('[Chunklet] ctx.subscribe: listener debe ser una función');
+      }
+      const unsubscribe = _stack.pulsar.subscribe(listener);
+      addResource(unsubscribe);
+    },
+
+    subscribeSelector(selector, listener, options) {
+      if (typeof listener !== 'function') {
+        throw new TypeError('[Chunklet] ctx.subscribeSelector: listener debe ser una función');
+      }
+      const unsubscribe = _stack.pulsar.subscribeSelector(selector, listener, options);
+      addResource(unsubscribe);
+    },
+
+    observe(target, callback, options) {
+      if (!target || typeof target.nodeType !== 'number') {
+        throw new TypeError('[Chunklet] ctx.observe: target debe ser un Node');
+      }
+      const obsOptions = options || { childList: true, subtree: true };
+      const observer = new MutationObserver(callback);
+      observer.observe(target, obsOptions);
+      addResource(() => observer.disconnect());
+    },
+
+    timeout(handler, delay, ...args) {
+      const id = setTimeout(handler, delay, ...args);
+      addResource(() => clearTimeout(id));
+    },
+
+    interval(handler, interval, ...args) {
+      const id = setInterval(handler, interval, ...args);
+      addResource(() => clearInterval(id));
+    },
+
+    cleanup(fn) {
+      if (typeof fn !== 'function') {
+        throw new TypeError('[Chunklet] ctx.cleanup: fn debe ser una función');
+      }
+      addResource(fn);
+    },
+
+    // --- Shortcuts puros (no registran recursos) ---
+
+    getState() {
+      return _stack.pulsar.getState();
+    },
+
+    setState(partial) {
+      return _stack.pulsar.setState(partial);
+    },
+
+    entity(id) {
+      return _stack.graphlet.get(id);
+    },
+
+    upsertEntity(id, props) {
+      return _stack.graphlet.upsert(id, props);
+    },
+
+    updateEntity(id, patch) {
+      return _stack.graphlet.update(id, patch);
+    },
+
+    deleteEntity(id) {
+      return _stack.graphlet.delete(id);
+    },
+
+    navigate(state) {
+      if (!_stack.voyajer) {
+        throw new Error('[Chunklet] Voyajer no configurado');
+      }
+      return _stack.voyajer.push(state);
+    },
+
+    replace(state) {
+      if (!_stack.voyajer) {
+        throw new Error('[Chunklet] Voyajer no configurado');
+      }
+      return _stack.voyajer.replace(state);
+    },
+  };
+
+  // ============================================
+  // DESTRUCCIÓN DEL CONTEXTO
+  // ============================================
+  function destroy() {
+    // Recorre en LIFO: último recurso registrado se libera primero.
+    for (let i = resources.length - 1; i >= 0; i--) {
+      try {
+        resources[i]();
+      } catch (error) {
+        console.error('[Chunklet] Error en cleanup de recurso:', error);
+      }
+    }
+    resources.length = 0;
+  }
+
+  return { ctx, destroy };
+}
+
+// ============================================
 // PRÓXIMAS FASES (a implementar)
 // ============================================
-// - Fase 2: define(name, factory)
-// - Fase 3: _createContext(element)
-// - Fase 4: mount(element)
-// - Fase 5: unmount(element) y reconciliación enable/disable
-// - Fase 6: observe(root) y disconnect()
-// - Fase 7: enable(entity, name) y disable(entity, name)
-// - Fase 8: exportaciones finales y pruebas
+// ✅ Fase 0: preparación, imports, estado interno y utilidades privadas.
+// ✅ Fase 1: setup(options) completo.
+// ✅ Fase 2: define(name, factory) completo.
+// ✅ Fase 3: _createContext(element) completo.
+// ⏳ Fase 4: mount(element) y lógica de montaje.
+// ⏳ Fase 5: unmount(element) y reconciliación enable/disable
+// ⏳ Fase 6: observe(root) y disconnect()
+// ⏳ Fase 7: enable(entity, name) y disable(entity, name)
+// ⏳ Fase 8: exportaciones finales y pruebas

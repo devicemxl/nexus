@@ -1,113 +1,137 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Chunklet CP3 - Integración con Pulsar</title>
+  <title>ChunkletJS – Demo Fase 3 (setup + define + ctx listo)</title>
   <style>
-    .active { background: #4ec9b0; color: #1e1e1e; padding: 10px; }
-    .inactive { background: #333; color: #d4d4d4; padding: 10px; }
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .success { color: #4ec9b0; }
+    .error { color: #f44747; }
+    .info { color: #dcdcaa; }
+    #output { margin-top: 20px; }
   </style>
 </head>
 <body>
-  <h1>Chunklet CP3 - Integración con Pulsar</h1>
-  <div id="app">
-    <div id="element1" data-chunk="draggable selectable resizable">Elemento 1</div>
-    <div id="element2" data-chunk="draggable highlight">Elemento 2</div>
-  </div>
-  <div>
-    <button id="enableDraggable">Habilitar draggable en el1</button>
-    <button id="disableResizable">Deshabilitar resizable en el1</button>
-    <button id="showState">Mostrar estado</button>
-  </div>
-  <pre id="stateDisplay"></pre>
+  <h1>🧪 ChunkletJS Demo – Fase 3</h1>
+  <div id="output"></div>
 
   <script type="module">
-    import { createStatePulsar } from '../src/pulsar.js';
-    import { define, mount, enableBehavior, disableBehavior } from '../src/chunklet.js';
+    import * as Chunklet from '../src/chunklet.js';
 
-    // Crear store
-    const store = createStatePulsar({
-      ui: {
-        behaviors: {
-          'el1': ['draggable', 'selectable', 'resizable'],
-          'el2': ['draggable', 'highlight']
-        }
-      }
-    });
+    // Exponer para pruebas manuales en consola
+    window.Chunklet = Chunklet;
 
-    // Definir comportamientos
-    define('draggable', (el, ctx) => {
-      console.log('🟢 draggable montado en', el);
-      el.classList.add('active');
-      return {
-        destroy: () => {
-          console.log('🔴 draggable desmontado');
-          el.classList.remove('active');
-        }
-      };
-    });
+    const output = document.getElementById('output');
 
-    define('selectable', (el, ctx) => {
-      console.log('🟢 selectable montado en', el);
-      el.style.border = '2px solid blue';
-      ctx.listen(el, 'click', () => {
-        console.log('📌 selectable: click en', el);
-      });
-      return {
-        destroy: () => {
-          console.log('🔴 selectable desmontado');
-          el.style.border = '';
-        }
-      };
-    });
-
-    define('resizable', (el, ctx) => {
-      console.log('🟢 resizable montado en', el);
-      el.style.resize = 'both';
-      return {
-        destroy: () => {
-          console.log('🔴 resizable desmontado');
-          el.style.resize = '';
-        }
-      };
-    });
-
-    define('highlight', (el, ctx) => {
-      console.log('🟢 highlight montado en', el);
-      el.style.background = 'yellow';
-      return {
-        destroy: () => {
-          console.log('🔴 highlight desmontado');
-          el.style.background = '';
-        }
-      };
-    });
-
-    // Montar con Pulsar
-    const app = document.getElementById('app');
-    mount(app, { pulsarStore: store, statePath: 'ui.behaviors' });
-
-    // Mostrar estado
-    function showState() {
-      const state = store.getState();
-      document.getElementById('stateDisplay').textContent = JSON.stringify(state.ui.behaviors, null, 2);
+    function log(msg, className = 'info') {
+      const div = document.createElement('div');
+      div.className = className;
+      div.textContent = msg;
+      output.appendChild(div);
     }
-    showState();
 
-    // Botones de control
-    const el1 = document.getElementById('element1');
+    try {
+      // ========== 1. SETUP ==========
+      log('=== 1. Setup ===', 'info');
+      const stack = Chunklet.setup({
+        pulsar: {
+          initialState: {
+            ui: { theme: 'dark' },
+            enabled: {}
+          }
+        },
+        graphlet: undefined,
+        voyajer: { mode: 'hash' },
+        entityAttr: 'data-entity',
+        enabledPath: 'ui.enabled'
+      });
 
-    document.getElementById('enableDraggable').addEventListener('click', () => {
-      enableBehavior(el1, 'draggable', store);
-      showState();
-    });
+      // Verificar stack
+      if (typeof stack.pulsar.getState === 'function') {
+        log('✅ pulsar instancia válida', 'success');
+      } else {
+        throw new Error('pulsar no válido');
+      }
 
-    document.getElementById('disableResizable').addEventListener('click', () => {
-      disableBehavior(el1, 'resizable', store);
-      showState();
-    });
+      if (typeof stack.graphlet.allIds === 'function') {
+        log('✅ graphlet instancia válida', 'success');
+      } else {
+        throw new Error('graphlet no válido');
+      }
 
-    document.getElementById('showState').addEventListener('click', showState);
+      if (stack.voyajer && typeof stack.voyajer.getCurrent === 'function') {
+        log('✅ voyajer instancia válida', 'success');
+      } else {
+        throw new Error('voyajer no válido');
+      }
+
+      // Estado inicial
+      const state = stack.pulsar.getState();
+      log(`✅ Estado inicial: ui=${JSON.stringify(state.ui)}`, 'success');
+
+      // Graphlet
+      stack.graphlet.put('node:1', { title: 'Hola Chunklet' });
+      const entity = stack.graphlet.get('node:1');
+      if (entity && entity.properties.title === 'Hola Chunklet') {
+        log(`✅ Graphlet entidad node:1 → "${entity.properties.title}"`, 'success');
+      } else {
+        throw new Error('Graphlet falla');
+      }
+
+      // ========== 2. DEFINE ==========
+      log('=== 2. Define ===', 'info');
+
+      // Registrar comportamiento normal
+      Chunklet.define('saludar', (element, ctx) => {
+        // El ctx estará disponible cuando montemos en Fase 4
+        console.log('Comportamiento "saludar" definido. ctx disponible en mount:', ctx);
+      });
+      log('✅ define("saludar") registrado', 'success');
+
+      // Sobreescritura
+      Chunklet.define('saludar', (element, ctx) => {
+        console.log('Versión sobreescrita de "saludar"');
+      });
+      log('✅ define("saludar") sobreescrito', 'success');
+
+      // Errores esperados
+      try {
+        Chunklet.define('', () => {});
+        log('❌ define("") debería lanzar', 'error');
+      } catch (e) {
+        log(`✅ Error correcto: ${e.message}`, 'success');
+      }
+
+      try {
+        Chunklet.define('con espacio', () => {});
+        log('❌ define("con espacio") debería lanzar', 'error');
+      } catch (e) {
+        log(`✅ Error correcto: ${e.message}`, 'success');
+      }
+
+      try {
+        Chunklet.define('demo', null);
+        log('❌ define("demo", null) debería lanzar', 'error');
+      } catch (e) {
+        log(`✅ Error correcto: ${e.message}`, 'success');
+      }
+
+      // ========== 3. VERIFICACIÓN INDIRECTA DE FASE 3 ==========
+      log('=== 3. Verificación de _createContext ===', 'info');
+      log('ℹ️ _createContext es privado, pero el módulo carga sin errores.', 'info');
+      log('ℹ️ Cuando implementemos mount (Fase 4), cada factory recibirá su ctx real.', 'info');
+
+      // Comprobamos que el objeto exportado tiene las funciones esperadas
+      const publicApi = Object.keys(Chunklet).sort();
+      log(`🔧 API pública actual: ${publicApi.join(', ')}`, 'success');
+
+      // ========== 4. RESUMEN ==========
+      log('=== Resumen ===', 'info');
+      log('✅ Fases 1 y 2 completadas. Fase 3 preparada para mount.', 'success');
+    } catch (error) {
+      log(`❌ Error inesperado: ${error.message}`, 'error');
+      console.error(error);
+    }
   </script>
 </body>
 </html>
