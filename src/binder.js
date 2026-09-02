@@ -23,15 +23,15 @@ export function createBinder(pulsarStore, options = {}) {
 
   // Configuración
   const config = {
-    key: options.key || 'form',           // Clave principal en Pulsar
-    errorKey: options.errorKey || 'errors', // Subclave para errores
-    submissionKey: options.submissionKey || 'submitting', // Subclave para estado de envío
-    debounce: options.debounce || 0,       // Debounce en ms para inputs
-    validateOn: options.validateOn || 'change', // 'input', 'change', 'blur', 'submit'
+    key: options.key || 'form',
+    errorKey: options.errorKey || 'errors',
+    submissionKey: options.submissionKey || 'submitting',
+    debounce: options.debounce || 0,
+    validateOn: options.validateOn || 'change',
   };
 
   // Estado interno
-  const _fields = new Map(); // nombre del campo -> { element, path, transform? }
+  const _fields = new Map(); // name -> { element, path, unbindFn }
   let _destroyed = false;
   let _unsubscribeStore = null;
 
@@ -39,9 +39,6 @@ export function createBinder(pulsarStore, options = {}) {
   // UTILIDADES PRIVADAS
   // ============================================
 
-  /**
-   * Clona profundamente un objeto (solo valores JSON-serializables).
-   */
   function _clone(obj) {
     if (obj === null || typeof obj !== 'object') return obj;
     if (Array.isArray(obj)) return obj.map(item => _clone(item));
@@ -54,19 +51,12 @@ export function createBinder(pulsarStore, options = {}) {
     return cloned;
   }
 
-  /**
-   * Obtiene el valor actual del store para la clave principal.
-   * Retorna una copia para evitar mutaciones accidentales.
-   */
   function _getFormData() {
     const state = pulsarStore.getState();
     const data = state[config.key] || {};
-    return _clone(data); // Clonar para que sea mutable si se modifica
+    return _clone(data);
   }
 
-  /**
-   * Actualiza el store con un nuevo objeto de datos (shallow merge bajo la clave).
-   */
   function _setFormData(data) {
     const current = pulsarStore.getState();
     pulsarStore.setState({
@@ -74,10 +64,6 @@ export function createBinder(pulsarStore, options = {}) {
     });
   }
 
-  /**
-   * Obtiene el valor de una ruta (path) dentro del objeto de datos.
-   * Soporta notación de puntos y corchetes (ej. 'user.name', 'items[0].label').
-   */
   function _getValueByPath(data, path) {
     const segments = [];
     let current = '';
@@ -108,10 +94,6 @@ export function createBinder(pulsarStore, options = {}) {
     return value;
   }
 
-  /**
-   * Establece un valor en una ruta dentro de un objeto (crea objetos intermedios si es necesario).
-   * ASUME que el objeto recibido es mutable (no congelado).
-   */
   function _setValueByPath(obj, path, value) {
     const segments = [];
     let current = '';
@@ -146,9 +128,6 @@ export function createBinder(pulsarStore, options = {}) {
     ref[last] = value;
   }
 
-  /**
-   * Obtiene el valor de un elemento DOM según su tipo.
-   */
   function _getElementValue(element) {
     if (element.type === 'checkbox') {
       return element.checked;
@@ -164,9 +143,6 @@ export function createBinder(pulsarStore, options = {}) {
     }
   }
 
-  /**
-   * Establece el valor de un elemento DOM según su tipo.
-   */
   function _setElementValue(element, value) {
     if (element.type === 'checkbox') {
       element.checked = Boolean(value);
@@ -189,9 +165,6 @@ export function createBinder(pulsarStore, options = {}) {
   // SUSCRIPCIÓN A CAMBIOS DEL STORE
   // ============================================
 
-  /**
-   * Escucha cambios en la clave principal y actualiza el DOM.
-   */
   function _subscribeToStore() {
     return pulsarStore.subscribeSelector(
       (state) => state[config.key],
@@ -201,6 +174,7 @@ export function createBinder(pulsarStore, options = {}) {
         for (const [name, field] of _fields) {
           const value = _getValueByPath(formData, field.path);
           const currentDomValue = _getElementValue(field.element);
+          // Solo actualizar si el valor del DOM es diferente al del store (evitar bucles)
           if (value !== currentDomValue) {
             _setElementValue(field.element, value);
           }
@@ -210,23 +184,141 @@ export function createBinder(pulsarStore, options = {}) {
     );
   }
 
-  // Iniciar suscripción
   _unsubscribeStore = _subscribeToStore();
 
   // ============================================
-  // API PÚBLICA (CP1)
+  // BINDING (CP2)
   // ============================================
 
   /**
-   * Obtiene todos los datos del formulario desde Pulsar.
+   * Vincula un elemento o un contenedor de elementos al store.
    */
+  function bind(element) {
+    if (_destroyed) {
+      throw new Error('[Binder] bind: El binder ya fue destruido');
+    }
+
+    // Si es un contenedor, vincular todos los descendientes con data-bind
+    if (element.querySelectorAll) {
+      const elements = element.querySelectorAll('[data-bind]');
+      if (elements.length === 0 && element.hasAttribute('data-bind')) {
+        // Es un solo elemento con data-bind
+        _bindSingle(element);
+      } else {
+        elements.forEach(el => _bindSingle(el));
+      }
+      return;
+    }
+
+    // Si es un elemento individual
+    _bindSingle(element);
+  }
+
+  /**
+   * Vincula un solo elemento.
+   */
+  function _bindSingle(element) {
+    const path = element.getAttribute('data-bind');
+    if (!path) {
+      console.warn('[Binder] Elemento sin data-bind, ignorado');
+      return;
+    }
+
+    // Usar path como nombre único para el campo
+    const name = path;
+
+    // Si ya está vinculado, no hacer nada
+    if (_fields.has(name)) {
+      return;
+    }
+
+    // Determinar el evento a escuchar según el tipo de input
+    let eventType = 'input';
+    if (element.type === 'checkbox' || element.type === 'radio' || element.tagName === 'SELECT') {
+      eventType = 'change';
+    }
+
+    // Crear el handler que actualiza el store
+    const handler = (e) => {
+      if (_destroyed) return;
+
+      // Obtener el valor actual del DOM
+      const domValue = _getElementValue(element);
+
+      // Obtener el valor actual del store para evitar bucles
+      const currentData = _getFormData();
+      const storeValue = _getValueByPath(currentData, path);
+
+      // Solo actualizar si el valor cambió realmente
+      if (domValue !== storeValue) {
+        // Actualizar el store (setValue actualiza el store y notifica a los suscriptores)
+        // Pero cuidado: setValue llamará a _setFormData, que dispara la suscripción.
+        // Para evitar un bucle, la suscripción ya se encarga de NO actualizar el DOM si el valor es igual.
+        setValue(path, domValue);
+      }
+    };
+
+    // Añadir el listener
+    element.addEventListener(eventType, handler);
+
+    // Registrar el campo
+    _fields.set(name, {
+      element,
+      path,
+      unbindFn: () => {
+        element.removeEventListener(eventType, handler);
+      }
+    });
+
+    // Establecer el valor inicial desde el store
+    const initialData = _getFormData();
+    const initialValue = _getValueByPath(initialData, path);
+    if (initialValue !== undefined) {
+      _setElementValue(element, initialValue);
+    }
+  }
+
+  /**
+   * Desvincula un elemento o contenedor.
+   */
+  function unbind(element) {
+    if (_destroyed) return;
+
+    if (element.querySelectorAll) {
+      const elements = element.querySelectorAll('[data-bind]');
+      if (elements.length === 0 && element.hasAttribute('data-bind')) {
+        _unbindSingle(element);
+      } else {
+        elements.forEach(el => _unbindSingle(el));
+      }
+      return;
+    }
+
+    _unbindSingle(element);
+  }
+
+  function _unbindSingle(element) {
+    const path = element.getAttribute('data-bind');
+    if (!path) return;
+
+    const field = _fields.get(path);
+    if (field) {
+      // Ejecutar la función de unbind para eliminar listeners
+      if (field.unbindFn) {
+        field.unbindFn();
+      }
+      _fields.delete(path);
+    }
+  }
+
+  // ============================================
+  // API PÚBLICA
+  // ============================================
+
   function getValues() {
     return _getFormData();
   }
 
-  /**
-   * Establece todo el objeto de datos en Pulsar (reemplaza bajo la clave).
-   */
   function setValues(data) {
     if (typeof data !== 'object' || data === null || Array.isArray(data)) {
       throw new TypeError('[Binder] setValues: data debe ser un objeto plano');
@@ -234,28 +326,17 @@ export function createBinder(pulsarStore, options = {}) {
     _setFormData(data);
   }
 
-  /**
-   * Obtiene el valor de un campo específico (por su nombre o path).
-   */
   function getValue(name) {
     const data = _getFormData();
     return _getValueByPath(data, name);
   }
 
-  /**
-   * Establece el valor de un campo específico en el store.
-   * Trabaja sobre una copia mutable para evitar mutar objetos congelados.
-   */
   function setValue(name, value) {
-    // Obtener una copia mutable del estado actual
-    const data = _getFormData(); // ya clonado
+    const data = _getFormData();
     _setValueByPath(data, name, value);
     _setFormData(data);
   }
 
-  /**
-   * Destruye el binder: limpia suscripciones y referencias.
-   */
   function destroy() {
     if (_destroyed) return;
     _destroyed = true;
@@ -263,21 +344,16 @@ export function createBinder(pulsarStore, options = {}) {
       _unsubscribeStore();
       _unsubscribeStore = null;
     }
+    // Desvincular todos los campos
+    for (const [name, field] of _fields) {
+      if (field.unbindFn) {
+        field.unbindFn();
+      }
+    }
     _fields.clear();
   }
 
-  // ============================================
-  // STUBS para siguientes CP
-  // ============================================
-
-  function bind(element) {
-    throw new Error('[Binder] bind: Pendiente de implementación (CP2)');
-  }
-
-  function unbind(element) {
-    throw new Error('[Binder] unbind: Pendiente de implementación (CP2)');
-  }
-
+  // Stubs para CP3 y CP4
   function validate(validateFn) {
     throw new Error('[Binder] validate: Pendiente de implementación (CP3)');
   }
