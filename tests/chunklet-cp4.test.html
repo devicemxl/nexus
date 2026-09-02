@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Chunklet CP4 - Multi-behavior y Orden</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .test { padding: 4px 0; border-bottom: 1px solid #333; }
+    .summary { margin-top: 20px; font-weight: bold; }
+    .box { padding: 20px; margin: 10px 0; border: 2px solid #555; cursor: pointer; transition: all 0.2s; }
+    .box.draggable { background: #2d2d2d; border-color: #4ec9b0; }
+    .box.selectable { border-color: #d4a04a; }
+    .box.resizable { border-color: #f44747; }
+    .box.highlight { background: #3a2a1e; border-color: #d4a04a; }
+    .controls { margin: 20px 0; padding: 15px; background: #2d2d2d; border-radius: 8px; }
+    button { background: #3a3a3a; color: #d4d4d4; border: 1px solid #555; padding: 8px 16px; margin: 4px; cursor: pointer; border-radius: 4px; }
+    button:hover { background: #555; }
+  </style>
+</head>
+<body>
+  <h1>🧪 Chunklet CP4 - Multi-behavior y Orden</h1>
+  <div id="output"></div>
+  <div class="controls">
+    <button id="mountBtn">📦 Montar</button>
+    <button id="unmountBtn">🗑️ Desmontar todo</button>
+    <button id="disableResizable">❌ Deshabilitar resizable</button>
+    <button id="enableResizable">✅ Habilitar resizable</button>
+    <button id="disableHighlight">❌ Deshabilitar highlight</button>
+    <button id="enableHighlight">✅ Habilitar highlight</button>
+  </div>
+  <div id="app">
+    <div id="testElement" class="box" data-chunk="draggable selectable resizable highlight" data-chunk-id="testElement">
+      <strong>Elemento Multi-comportamiento</strong><br>
+      <span style="font-size:12px; color:#888;">Haz clic para seleccionar, arrastra, redimensiona (simulado)</span>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createStatePulsar } from '../src/pulsar.js';
+    import { define, mount, unmount } from '../src/chunklet.js';
+
+    const output = document.getElementById('output');
+    let passed = 0, failed = 0;
+
+    function assert(condition, message) {
+      const div = document.createElement('div');
+      div.className = 'test';
+      if (condition) { div.innerHTML = `✅ <span class="pass">${message}</span>`; passed++; }
+      else { div.innerHTML = `❌ <span class="fail">${message}</span>`; failed++; }
+      output.appendChild(div);
+      console.assert(condition, message);
+    }
+
+    function log(message) {
+      const div = document.createElement('div');
+      div.className = 'test';
+      div.innerHTML = `📌 <span style="color:#d4a04a;">${message}</span>`;
+      output.appendChild(div);
+      console.log(message);
+    }
+
+    let mountOrder = [], unmountOrder = [];
+
+    define('draggable', (el, ctx) => {
+      const order = mountOrder.length + 1;
+      mountOrder.push('draggable');
+      log(`🔧 [${order}] Montando draggable`);
+      ctx.cleanup(() => {
+        const order2 = unmountOrder.length + 1;
+        unmountOrder.push('draggable');
+        log(`🧹 [${order2}] Limpiando draggable`);
+        el.classList.remove('draggable');
+      });
+      el.classList.add('draggable');
+      return { destroy: () => { const order2 = unmountOrder.length + 1; unmountOrder.push('draggable'); log(`💥 [${order2}] Destroy personalizado de draggable`); } };
+    });
+
+    define('selectable', (el, ctx) => {
+      const order = mountOrder.length + 1;
+      mountOrder.push('selectable');
+      log(`🔧 [${order}] Montando selectable`);
+      let selected = false;
+      const handler = () => {
+        selected = !selected;
+        el.classList.toggle('selectable', selected);
+        log(`📌 selectable: ${selected ? 'seleccionado' : 'deseleccionado'}`);
+      };
+      ctx.listen(el, 'click', handler);
+      ctx.cleanup(() => {
+        const order2 = unmountOrder.length + 1;
+        unmountOrder.push('selectable');
+        log(`🧹 [${order2}] Limpiando selectable`);
+        el.classList.remove('selectable');
+      });
+      el.classList.add('selectable');
+      return { destroy: () => { const order2 = unmountOrder.length + 1; unmountOrder.push('selectable'); log(`💥 [${order2}] Destroy personalizado de selectable`); } };
+    });
+
+    define('resizable', (el, ctx) => {
+      const order = mountOrder.length + 1;
+      mountOrder.push('resizable');
+      log(`🔧 [${order}] Montando resizable`);
+      ctx.cleanup(() => {
+        const order2 = unmountOrder.length + 1;
+        unmountOrder.push('resizable');
+        log(`🧹 [${order2}] Limpiando resizable`);
+        el.classList.remove('resizable');
+      });
+      el.classList.add('resizable');
+      return { destroy: () => { const order2 = unmountOrder.length + 1; unmountOrder.push('resizable'); log(`💥 [${order2}] Destroy personalizado de resizable`); } };
+    });
+
+    define('highlight', (el, ctx) => {
+      const order = mountOrder.length + 1;
+      mountOrder.push('highlight');
+      log(`🔧 [${order}] Montando highlight`);
+      ctx.cleanup(() => {
+        const order2 = unmountOrder.length + 1;
+        unmountOrder.push('highlight');
+        log(`🧹 [${order2}] Limpiando highlight`);
+        el.classList.remove('highlight');
+      });
+      el.classList.add('highlight');
+      return { destroy: () => { const order2 = unmountOrder.length + 1; unmountOrder.push('highlight'); log(`💥 [${order2}] Destroy personalizado de highlight`); } };
+    });
+
+    const store = createStatePulsar({
+      ui: { behaviors: { 'testElement': ['draggable', 'selectable', 'resizable', 'highlight'] } }
+    });
+
+    const testElement = document.getElementById('testElement');
+    const app = document.getElementById('app');
+
+    function resetOrders() { mountOrder = []; unmountOrder = []; }
+
+    function setBehaviors(elementId, behaviors) {
+      const state = store.getState();
+      const newBehaviors = behaviors && behaviors.length > 0 ? behaviors : undefined;
+      store.setState({
+        ui: {
+          ...state.ui,
+          behaviors: {
+            ...state.ui.behaviors,
+            [elementId]: newBehaviors
+          }
+        }
+      });
+    }
+
+    async function runTest() {
+      output.innerHTML = '';
+      passed = 0; failed = 0;
+      resetOrders();
+
+      log('=== CP4: Multi-behavior y Orden ===');
+
+      // -------- 1. Montaje inicial --------
+      log('--- 1. Montaje inicial ---');
+      mount(app, { pulsarStore: store, statePath: 'ui.behaviors' });
+      await new Promise(r => setTimeout(r, 100));
+
+      const expectedMount = ['draggable', 'selectable', 'resizable', 'highlight'];
+      assert(mountOrder.length === expectedMount.length, `Montaje: se montaron ${mountOrder.length} comportamientos (esperado ${expectedMount.length})`);
+      assert(JSON.stringify(mountOrder) === JSON.stringify(expectedMount), `Orden de montaje correcto: ${mountOrder.join(' → ')}`);
+      assert(testElement.classList.contains('draggable'), 'Clase draggable añadida');
+      assert(testElement.classList.contains('selectable'), 'Clase selectable añadida');
+      assert(testElement.classList.contains('resizable'), 'Clase resizable añadida');
+      assert(testElement.classList.contains('highlight'), 'Clase highlight añadida');
+
+      // -------- 2. Deshabilitar resizable (sin mount forzado) --------
+      log('--- 2. Deshabilitar resizable (vía Pulsar) ---');
+      resetOrders();
+      setBehaviors('testElement', ['draggable', 'selectable', 'highlight']);
+      await new Promise(r => setTimeout(r, 100));
+
+      assert(!testElement.classList.contains('resizable'), 'Clase resizable eliminada');
+      assert(testElement.classList.contains('draggable') && testElement.classList.contains('selectable') && testElement.classList.contains('highlight'),
+        'Los demás comportamientos siguen activos');
+
+      // -------- 3. Habilitar resizable (sin mount forzado) --------
+      log('--- 3. Habilitar resizable ---');
+      resetOrders();
+      setBehaviors('testElement', ['draggable', 'selectable', 'resizable', 'highlight']);
+      await new Promise(r => setTimeout(r, 100));
+
+      assert(testElement.classList.contains('resizable'), 'Clase resizable añadida de nuevo');
+
+      // -------- 4. Desmontar todo --------
+      log('--- 4. Desmontar todo ---');
+      resetOrders();
+      unmount(app);
+
+      assert(!testElement.classList.contains('draggable') && !testElement.classList.contains('selectable') && !testElement.classList.contains('resizable') && !testElement.classList.contains('highlight'),
+        'Todas las clases eliminadas');
+
+      assert(unmountOrder.length === 4, `Desmontaje: se desmontaron ${unmountOrder.length} comportamientos (esperado 4)`);
+      if (unmountOrder.length === 4) {
+        assert(unmountOrder[0] === 'highlight', `Primero en desmontarse: ${unmountOrder[0]} (esperado highlight)`);
+        assert(unmountOrder[3] === 'draggable', `Último en desmontarse: ${unmountOrder[3]} (esperado draggable)`);
+      }
+
+      // -------- 5. Volver a montar --------
+      log('--- 5. Volver a montar ---');
+      resetOrders();
+      mount(app, { pulsarStore: store, statePath: 'ui.behaviors' });
+      await new Promise(r => setTimeout(r, 100));
+
+      assert(testElement.classList.contains('draggable') && testElement.classList.contains('selectable') && testElement.classList.contains('resizable') && testElement.classList.contains('highlight'),
+        'Todos los comportamientos montados de nuevo');
+
+      const total = passed + failed;
+      const summary = document.createElement('div');
+      summary.className = 'summary';
+      summary.innerHTML = `📊 Resultados: ${passed}/${total} pasaron. ${failed === 0 ? '🎉 ¡Todos los tests del contrato pasaron!' : '⚠️ Revisa los fallos.'}`;
+      output.appendChild(summary);
+      document.body.style.background = failed === 0 ? '#1e3a2a' : '#3a1e1e';
+    }
+
+    // Controles manuales (solo actualizan estado, no llaman a mount)
+    document.getElementById('mountBtn').addEventListener('click', () => {
+      resetOrders();
+      mount(app, { pulsarStore: store, statePath: 'ui.behaviors' });
+      log('🔄 Montaje manual completado');
+    });
+
+    document.getElementById('unmountBtn').addEventListener('click', () => {
+      resetOrders();
+      unmount(app);
+      log('🔄 Desmontaje manual completado');
+    });
+
+    document.getElementById('disableResizable').addEventListener('click', () => {
+      setBehaviors('testElement', ['draggable', 'selectable', 'highlight']);
+      log('❌ Resizable deshabilitado (la suscripción actualizará el DOM)');
+    });
+
+    document.getElementById('enableResizable').addEventListener('click', () => {
+      setBehaviors('testElement', ['draggable', 'selectable', 'resizable', 'highlight']);
+      log('✅ Resizable habilitado (la suscripción actualizará el DOM)');
+    });
+
+    document.getElementById('disableHighlight').addEventListener('click', () => {
+      setBehaviors('testElement', ['draggable', 'selectable', 'resizable']);
+      log('❌ Highlight deshabilitado (la suscripción actualizará el DOM)');
+    });
+
+    document.getElementById('enableHighlight').addEventListener('click', () => {
+      setBehaviors('testElement', ['draggable', 'selectable', 'resizable', 'highlight']);
+      log('✅ Highlight habilitado (la suscripción actualizará el DOM)');
+    });
+
+    (async function main() {
+      await runTest();
+    })();
+  </script>
+</body>
+</html>

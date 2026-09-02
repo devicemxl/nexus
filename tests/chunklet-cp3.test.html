@@ -2,197 +2,112 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Chunklet CP3 - Multi-behavior</title>
+  <title>Chunklet CP3 - Integración con Pulsar</title>
   <style>
-    .box { 
-      width: 200px; 
-      height: 100px; 
-      border: 2px solid #333; 
-      padding: 20px;
-      margin: 20px 0;
-      background: #f0f0f0;
-    }
-    .resizable { resize: both; overflow: auto; }
-    .draggable { cursor: grab; }
-    .dragging { opacity: 0.7; }
-    .log { margin-top: 20px; padding: 10px; background: #2d2d2d; color: #4ec9b0; font-family: monospace; max-height: 200px; overflow-y: auto; }
+    .active { background: #4ec9b0; color: #1e1e1e; padding: 10px; }
+    .inactive { background: #333; color: #d4d4d4; padding: 10px; }
   </style>
 </head>
 <body>
-  <h1>Chunklet CP3 - Multi-behavior</h1>
-
+  <h1>Chunklet CP3 - Integración con Pulsar</h1>
   <div id="app">
-    <!-- Múltiples comportamientos en un solo elemento -->
-    <div class="box" data-chunk="draggable selectable resizable" id="multi">
-      Soy un elemento con 3 comportamientos
-    </div>
+    <div id="element1" data-chunk="draggable selectable resizable">Elemento 1</div>
+    <div id="element2" data-chunk="draggable highlight">Elemento 2</div>
   </div>
-
   <div>
-    <button id="addBehavior">Añadir 'highlight'</button>
-    <button id="removeBehavior">Eliminar 'resizable'</button>
-    <button id="unmountAll">Desmontar todo</button>
+    <button id="enableDraggable">Habilitar draggable en el1</button>
+    <button id="disableResizable">Deshabilitar resizable en el1</button>
+    <button id="showState">Mostrar estado</button>
   </div>
-
-  <div class="log" id="log"></div>
+  <pre id="stateDisplay"></pre>
 
   <script type="module">
-    import { define, mount, unmount } from '../src/chunklet.js';
+    import { createStatePulsar } from '../src/pulsar.js';
+    import { define, mount, enableBehavior, disableBehavior } from '../src/chunklet.js';
 
-    const log = document.getElementById('log');
-    function logMessage(msg) {
-      const entry = document.createElement('div');
-      entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-      log.appendChild(entry);
-      log.scrollTop = log.scrollHeight;
-    }
-
-    // ------------------------------------------------
-    // Definir comportamientos con orden de ejecución
-    // ------------------------------------------------
-
-    define('draggable', (element, ctx) => {
-      const name = 'draggable';
-      logMessage(`🔧 Montando ${name}`);
-      
-      let isDragging = false;
-      let startX, startY;
-
-      function onMouseDown(e) {
-        isDragging = true;
-        startX = e.clientX - element.offsetLeft;
-        startY = e.clientY - element.offsetTop;
-        element.classList.add('dragging');
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
+    // Crear store
+    const store = createStatePulsar({
+      ui: {
+        behaviors: {
+          'el1': ['draggable', 'selectable', 'resizable'],
+          'el2': ['draggable', 'highlight']
+        }
       }
+    });
 
-      function onMouseMove(e) {
-        if (!isDragging) return;
-        element.style.left = (e.clientX - startX) + 'px';
-        element.style.top = (e.clientY - startY) + 'px';
-      }
-
-      function onMouseUp() {
-        isDragging = false;
-        element.classList.remove('dragging');
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-      }
-
-      ctx.listen(element, 'mousedown', onMouseDown);
-      ctx.cleanup(() => {
-        logMessage(`🧹 Limpiando ${name}`);
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-      });
-
-      logMessage(`✅ ${name} montado`);
-      
+    // Definir comportamientos
+    define('draggable', (el, ctx) => {
+      console.log('🟢 draggable montado en', el);
+      el.classList.add('active');
       return {
         destroy: () => {
-          logMessage(`💥 Destroy personalizado de ${name}`);
+          console.log('🔴 draggable desmontado');
+          el.classList.remove('active');
         }
       };
     });
 
-    define('selectable', (element, ctx) => {
-      const name = 'selectable';
-      logMessage(`🔧 Montando ${name}`);
-
-      let selected = false;
-
-      function onClick() {
-        selected = !selected;
-        element.style.borderColor = selected ? 'blue' : '#333';
-        element.style.borderWidth = selected ? '4px' : '2px';
-        logMessage(`📌 ${name}: ${selected ? 'seleccionado' : 'deseleccionado'}`);
-      }
-
-      ctx.listen(element, 'click', onClick);
-      ctx.cleanup(() => {
-        logMessage(`🧹 Limpiando ${name}`);
-        element.style.borderColor = '#333';
-        element.style.borderWidth = '2px';
+    define('selectable', (el, ctx) => {
+      console.log('🟢 selectable montado en', el);
+      el.style.border = '2px solid blue';
+      ctx.listen(el, 'click', () => {
+        console.log('📌 selectable: click en', el);
       });
-
-      logMessage(`✅ ${name} montado`);
+      return {
+        destroy: () => {
+          console.log('🔴 selectable desmontado');
+          el.style.border = '';
+        }
+      };
     });
 
-    define('resizable', (element, ctx) => {
-      const name = 'resizable';
-      logMessage(`🔧 Montando ${name}`);
-
-      element.classList.add('resizable');
-
-      ctx.cleanup(() => {
-        logMessage(`🧹 Limpiando ${name}`);
-        element.classList.remove('resizable');
-      });
-
-      logMessage(`✅ ${name} montado`);
+    define('resizable', (el, ctx) => {
+      console.log('🟢 resizable montado en', el);
+      el.style.resize = 'both';
+      return {
+        destroy: () => {
+          console.log('🔴 resizable desmontado');
+          el.style.resize = '';
+        }
+      };
     });
 
-    define('highlight', (element, ctx) => {
-      const name = 'highlight';
-      logMessage(`🔧 Montando ${name}`);
-
-      element.style.backgroundColor = 'yellow';
-      element.style.transition = 'background-color 0.3s';
-
-      ctx.cleanup(() => {
-        logMessage(`🧹 Limpiando ${name}`);
-        element.style.backgroundColor = '';
-      });
-
-      logMessage(`✅ ${name} montado`);
+    define('highlight', (el, ctx) => {
+      console.log('🟢 highlight montado en', el);
+      el.style.background = 'yellow';
+      return {
+        destroy: () => {
+          console.log('🔴 highlight desmontado');
+          el.style.background = '';
+        }
+      };
     });
 
-    // ------------------------------------------------
-    // Montar inicial
-    // ------------------------------------------------
-
+    // Montar con Pulsar
     const app = document.getElementById('app');
-    mount(app);
-    logMessage('🚀 Montaje inicial completado');
+    mount(app, { pulsarStore: store, statePath: 'ui.behaviors' });
 
-    // ------------------------------------------------
+    // Mostrar estado
+    function showState() {
+      const state = store.getState();
+      document.getElementById('stateDisplay').textContent = JSON.stringify(state.ui.behaviors, null, 2);
+    }
+    showState();
+
     // Botones de control
-    // ------------------------------------------------
+    const el1 = document.getElementById('element1');
 
-    document.getElementById('addBehavior').addEventListener('click', () => {
-      const el = document.getElementById('multi');
-      const current = el.getAttribute('data-chunk');
-      if (!current.includes('highlight')) {
-        el.setAttribute('data-chunk', current + ' highlight');
-        mount(el);
-        logMessage('➕ Añadido comportamiento "highlight"');
-      } else {
-        logMessage('⚠️ "highlight" ya está presente');
-      }
+    document.getElementById('enableDraggable').addEventListener('click', () => {
+      enableBehavior(el1, 'draggable', store);
+      showState();
     });
 
-    document.getElementById('removeBehavior').addEventListener('click', () => {
-      const el = document.getElementById('multi');
-      const current = el.getAttribute('data-chunk');
-      const names = current.split(/\s+/).filter(n => n !== 'resizable');
-      el.setAttribute('data-chunk', names.join(' '));
-      // Necesitamos desmontar y volver a montar para eliminar el comportamiento
-      // Nota: esto es un poco drástico, pero es un ejemplo.
-      // En una implementación real, tendríamos un método para eliminar un comportamiento específico.
-      unmount(el);
-      mount(el);
-      logMessage('➖ Eliminado "resizable" (desmontado y remontado)');
+    document.getElementById('disableResizable').addEventListener('click', () => {
+      disableBehavior(el1, 'resizable', store);
+      showState();
     });
 
-    document.getElementById('unmountAll').addEventListener('click', () => {
-      unmount(app);
-      logMessage('🧹 Desmontado todo');
-    });
-
-    // Mostrar orden de montaje al cargar
-    logMessage('ℹ️ El orden de montaje es: draggable → selectable → resizable');
-    logMessage('ℹ️ El orden de desmontaje será: resizable → selectable → draggable');
+    document.getElementById('showState').addEventListener('click', showState);
   </script>
 </body>
 </html>
