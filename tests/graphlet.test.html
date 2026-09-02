@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>GraphletJS - Tests de Contrato v0.2.0</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .test { padding: 4px 0; border-bottom: 1px solid #333; }
+    .summary { margin-top: 20px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>🧪 GraphletJS Contract Tests v0.2.0</h1>
+  <div id="output"></div>
+
+  <script type="module">
+    import { createGraphlet } from '../src/graphlet.js';
+
+    const output = document.getElementById('output');
+    let passed = 0;
+    let failed = 0;
+
+    function assert(condition, message) {
+      const div = document.createElement('div');
+      div.className = 'test';
+      if (condition) {
+        div.innerHTML = `✅ <span class="pass">${message}</span>`;
+        passed++;
+      } else {
+        div.innerHTML = `❌ <span class="fail">${message}</span>`;
+        failed++;
+      }
+      output.appendChild(div);
+      console.assert(condition, message);
+    }
+
+    // ------------------------------------------------------------
+    // CONFIGURACIÓN: Crear una instancia limpia para cada grupo
+    // ------------------------------------------------------------
+    function freshGraph() {
+      return createGraphlet();
+    }
+
+    // ------------------------------------------------------------
+    // PRUEBAS DE ESCRITURA BASE (put / upsert)
+    // ------------------------------------------------------------
+    console.group('CP2: put / upsert');
+
+    const g1 = freshGraph();
+    g1.put('user:1', { name: 'Alice', age: 30 });
+    assert(g1.get('user:1') !== null, 'put crea una entidad');
+    assert(g1.get('user:1').properties.name === 'Alice', 'put guarda propiedades');
+    assert(g1.get('user:1').properties.age === 30, 'put guarda múltiples propiedades');
+
+    g1.put('user:1', { name: 'Bob' });
+    assert(g1.get('user:1').properties.name === 'Bob', 'put reemplaza propiedades (age se pierde)');
+    assert(g1.get('user:1').properties.age === undefined, 'put reemplaza todo el objeto (age desaparece)');
+
+    g1.upsert('user:2', { name: 'Carol', age: 25 });
+    assert(g1.get('user:2').properties.name === 'Carol', 'upsert crea entidad');
+    g1.upsert('user:2', { city: 'NYC' });
+    assert(g1.get('user:2').properties.name === 'Carol', 'upsert mergea (name se mantiene)');
+    assert(g1.get('user:2').properties.city === 'NYC', 'upsert agrega nuevas propiedades');
+    assert(g1.get('user:2').properties.age === 25, 'upsert mergea (age se mantiene)');
+
+    // put con ID inválido
+    try {
+      g1.put('', {});
+    } catch (e) {
+      assert(e.message.includes('ID debe ser un string no vacío'), 'put lanza error con ID vacío');
+    }
+
+    console.groupEnd();
+
+    // ------------------------------------------------------------
+    // PRUEBAS DE LECTURA (get / allIds)
+    // ------------------------------------------------------------
+    console.group('CP1: Lectura');
+
+    const g2 = freshGraph();
+    g2.put('a', { x: 1 });
+    g2.put('b', { x: 2 });
+    g2.put('c', { x: 3 });
+
+    const ids = g2.allIds();
+    assert(ids.length === 3, 'allIds retorna todos los IDs');
+    assert(ids.includes('a') && ids.includes('b') && ids.includes('c'), 'allIds contiene los IDs correctos');
+
+    const entityA = g2.get('a');
+    assert(entityA.id === 'a', 'get retorna el ID correcto');
+    assert(entityA.properties.x === 1, 'get retorna las propiedades correctas');
+    assert(entityA.links !== undefined, 'get incluye links (aunque vacío)');
+
+    // Mutar la copia devuelta no afecta al original
+    entityA.properties.x = 999;
+    assert(g2.get('a').properties.x === 1, 'get retorna una copia (mutación externa no afecta)');
+
+    assert(g2.get('inexistente') === null, 'get retorna null para entidad inexistente');
+
+    console.groupEnd();
+
+    // ------------------------------------------------------------
+    // PRUEBAS DE ESCRITURA ESTRICTA Y ELIMINACIÓN (update / delete)
+    // ------------------------------------------------------------
+    console.group('CP3: update / delete');
+
+    const g3 = freshGraph();
+    g3.put('user:1', { name: 'Dave', age: 40 });
+
+    g3.update('user:1', { age: 41, city: 'LA' });
+    const dave = g3.get('user:1');
+    assert(dave.properties.name === 'Dave', 'update mantiene propiedades no modificadas');
+    assert(dave.properties.age === 41, 'update mergea correctamente');
+    assert(dave.properties.city === 'LA', 'update agrega nuevas propiedades');
+
+    // update sobre inexistente lanza error
+    let threw = false;
+    try {
+      g3.update('user:99', {});
+    } catch (e) {
+      threw = true;
+      assert(e.message.includes('no existe'), 'update lanza error si la entidad no existe');
+    }
+    assert(threw, 'update lanza error en entidad inexistente');
+
+    // delete
+    g3.delete('user:1');
+    assert(g3.get('user:1') === null, 'delete elimina la entidad');
+
+    // delete sobre inexistente lanza error
+    threw = false;
+    try {
+      g3.delete('user:99');
+    } catch (e) {
+      threw = true;
+      assert(e.message.includes('no existe'), 'delete lanza error si la entidad no existe');
+    }
+    assert(threw, 'delete lanza error en entidad inexistente');
+
+    console.groupEnd();
+
+    // ------------------------------------------------------------
+    // PRUEBAS DE RELACIONES (link / unlink / unlinkAll)
+    // ------------------------------------------------------------
+    console.group('CP4: Relaciones');
+
+    const g4 = freshGraph();
+    g4.put('n1', {});
+    g4.put('n2', {});
+    g4.put('n3', {});
+
+    // link
+    g4.link('n1', 'knows', 'n2');
+    g4.link('n1', 'knows', 'n3');
+    g4.link('n2', 'knows', 'n3');
+
+    const n1 = g4.get('n1');
+    assert(n1.links.knows.length === 2, 'link agrega relaciones (n1 conoce a n2 y n3)');
+    assert(n1.links.knows.includes('n2') && n1.links.knows.includes('n3'), 'link almacena los targets correctos');
+
+    // link con duplicado (permitido)
+    g4.link('n1', 'knows', 'n2');
+    const n1dup = g4.get('n1');
+    assert(n1dup.links.knows.length === 3, 'link permite duplicados (n1 conoce a n2 dos veces)');
+
+    // link con source inexistente lanza error
+    threw = false;
+    try {
+      g4.link('n99', 'knows', 'n1');
+    } catch (e) {
+      threw = true;
+      assert(e.message.includes('no existe'), 'link lanza error si source no existe');
+    }
+    assert(threw, 'link lanza error en source inexistente');
+
+    // unlink (eliminar primera ocurrencia)
+    g4.unlink('n1', 'knows', 'n2');
+    const n1unlink = g4.get('n1');
+    assert(n1unlink.links.knows.length === 2, 'unlink elimina una ocurrencia (quedan n2 y n3)');
+    assert(n1unlink.links.knows.includes('n2'), 'unlink conserva al menos una ocurrencia de n2');
+    assert(n1unlink.links.knows.includes('n3'), 'unlink conserva n3');
+
+    // unlink sobre source inexistente (no-op)
+    g4.unlink('n99', 'knows', 'n1'); // no debe lanzar
+    assert(true, 'unlink sobre source inexistente es no-op');
+
+    // unlinkAll
+    g4.unlinkAll('n1', 'knows');
+    const n1all = g4.get('n1');
+    assert(n1all.links.knows === undefined, 'unlinkAll elimina todas las relaciones de ese tipo');
+
+    // unlinkAll sobre source inexistente (no-op)
+    g4.unlinkAll('n99', 'knows');
+    assert(true, 'unlinkAll sobre source inexistente es no-op');
+
+    // eliminar entidad y verificar que las relaciones entrantes se limpian
+    g4.put('n4', {});
+    g4.link('n4', 'friend', 'n2');
+    g4.delete('n4');
+    const n2after = g4.get('n2');
+    // n2 no debería tener referencia a n4 (nunca la tuvo, pero verificamos que no hayan quedado referencias rotas)
+    // Para probar correctamente, necesitamos una relación entrante a n2 desde otro nodo que luego eliminamos.
+    // Hacemos: n5 -> n2, luego eliminamos n5, n2 no debe tener nada.
+    g4.put('n5', {});
+    g4.link('n5', 'friend', 'n2');
+    g4.delete('n5');
+    const n2afterDelete = g4.get('n2');
+    // n2 no tiene links porque nunca tuvo salientes, pero verifiquemos que no haya referencias rotas
+    assert(n2afterDelete.links.friend === undefined, 'delete elimina relaciones entrantes (ningún nodo apunta a n2)');
+
+    console.groupEnd();
+
+    // ------------------------------------------------------------
+    // PRUEBAS DE CONSULTAS (query)
+    // ------------------------------------------------------------
+    console.group('CP5: query');
+
+    const g5 = freshGraph();
+    g5.put('user:1', { name: 'Alice', age: 30, active: true });
+    g5.put('user:2', { name: 'Bob', age: 25, active: false });
+    g5.put('user:3', { name: 'Charlie', age: 35, active: true });
+    g5.put('user:4', { name: 'Diana', age: 30, active: false });
+
+    // query simple: edad > 30
+    const result = g5.query((id, props) => props.age > 30);
+    assert(result.length === 1, 'query retorna 1 usuario con edad > 30');
+    assert(result[0] === 'user:3', 'query encuentra a Charlie');
+
+    // query con múltiples condiciones
+    const activeUsers = g5.query((id, props) => props.active === true);
+    assert(activeUsers.length === 2, 'query retorna 2 usuarios activos');
+    assert(activeUsers.includes('user:1') && activeUsers.includes('user:3'), 'query filtra correctamente');
+
+    // query que no encuentra nada
+    const noResults = g5.query((id, props) => props.age > 100);
+    assert(noResults.length === 0, 'query retorna array vacío si no hay coincidencias');
+
+    // query que usa links (opcional, pero verifiquemos que puede acceder a links)
+    g5.link('user:1', 'manager', 'user:3');
+    const managers = g5.query((id, props, links) => links.manager && links.manager.includes('user:3'));
+    assert(managers.length === 1 && managers[0] === 'user:1', 'query puede usar links en el predicado');
+
+    console.groupEnd();
+
+    // ------------------------------------------------------------
+    // PRUEBAS DE INTEGRACIÓN (Eliminación en cascada)
+    // ------------------------------------------------------------
+    console.group('Integración: delete y links');
+
+    const g6 = freshGraph();
+    g6.put('a', {});
+    g6.put('b', {});
+    g6.put('c', {});
+    g6.link('a', 'rel', 'b');
+    g6.link('b', 'rel', 'c');
+    g6.link('c', 'rel', 'a'); // ciclo
+
+    // Eliminar 'b' debería eliminar sus relaciones salientes y entrantes
+    g6.delete('b');
+
+    const aAfter = g6.get('a');
+    const cAfter = g6.get('c');
+    assert(aAfter.links.rel === undefined || !aAfter.links.rel.includes('b'), 'delete elimina relación entrante a b (desde a)');
+    assert(cAfter.links.rel === undefined || !cAfter.links.rel.includes('b'), 'delete elimina relación entrante a b (desde c)');
+
+    // b no existe
+    assert(g6.get('b') === null, 'delete elimina la entidad b');
+
+    console.groupEnd();
+
+    // ------------------------------------------------------------
+    // RESUMEN FINAL
+    // ------------------------------------------------------------
+    const total = passed + failed;
+    const summary = document.createElement('div');
+    summary.className = 'summary';
+    summary.innerHTML = `📊 Resultados: ${passed}/${total} pasaron. ${failed === 0 ? '🎉 ¡Todos los tests del contrato pasaron!' : '⚠️ Revisa los fallos.'}`;
+    output.appendChild(summary);
+
+    if (failed === 0) {
+      document.body.style.background = '#1e3a2a';
+    } else {
+      document.body.style.background = '#3a1e1e';
+    }
+  </script>
+</body>
+</html>

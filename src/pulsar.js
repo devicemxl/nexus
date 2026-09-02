@@ -368,4 +368,4 @@ export function createStatePulsar(initialState = {}, options = {}) {
 
 // El contrato solo exige createStatePulsar, pero podemos mantener
 // el default para no romper ejemplos existentes.
-// export default Pulsar; // la vía oficial es createStatePulsar
+export default Pulsar; // la vía oficial es createStatePulsar

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Binder CP1 - Fábrica y store</title>
+</head>
+<body>
+  <script type="module">
+    import { createStatePulsar } from '../src/pulsar.js';
+    import { createBinder } from '../src/binder.js';
+
+    const store = createStatePulsar({});
+    const binder = createBinder(store, { key: 'testForm' });
+
+    binder.setValue('user.name', 'Alice');
+    binder.setValue('user.age', 30);
+
+    const data = binder.getValues();
+    console.log('Datos:', data); // { user: { name: 'Alice', age: 30 } }
+
+    // Verificar que está en Pulsar
+    console.log('Store:', store.getState().testForm); // { user: { name: 'Alice', age: 30 } }
+
+    // Cambiar desde fuera
+    store.setState({ testForm: { user: { name: 'Bob' } } });
+    console.log('Binder después de cambio externo:', binder.getValues()); // { user: { name: 'Bob' } }
+
+    binder.destroy();
+    console.log('Binder destruido');
+  </script>
+</body>
+</html>
