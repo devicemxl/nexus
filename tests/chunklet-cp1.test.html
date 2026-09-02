@@ -2,63 +2,65 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Chunklet CP1+CP2 - Estructura y Contexto</title>
+  <title>Chunklet CP1 - Prueba básica</title>
 </head>
 <body>
-  <h1>Chunklet CP1+CP2 - Prueba básica</h1>
-
+  <h1>Chunklet CP1</h1>
   <div id="app">
-    <button data-chunk="counter">Clickeame</button>
+    <div data-chunk="saludador contador">Elemento</div>
   </div>
+  <button id="unmountBtn">Desmontar</button>
+  <button id="mountBtn">Montar de nuevo</button>
 
   <script type="module">
     import { define, mount, unmount } from '../src/chunklet.js';
 
-    // Definir un comportamiento contador
-    define('counter', (element, ctx) => {
-      let count = 0;
-
-      // Actualizar el texto
-      function update() {
-        element.textContent = `Clickeado: ${count} veces`;
-      }
-
-      // Listener de click
-      ctx.listen(element, 'click', () => {
-        count++;
-        update();
-      });
-
-      // Cleanup personalizado (opcional)
-      ctx.cleanup(() => {
-        console.log('Comportamiento counter destruido');
-      });
-
-      // Inicializar
-      update();
-
-      // Retornar destroy personalizado (opcional)
+    // Definir comportamiento "saludador"
+    define('saludador', (el, ctx) => {
+      console.log('🟢 saludador montado en', el);
+      el.style.border = '2px solid blue';
       return {
         destroy: () => {
-          console.log('Destroy personalizado de counter');
+          console.log('🔴 saludador desmontado');
+          el.style.border = '';
         }
       };
     });
 
-    // Montar el comportamiento
+    // Definir comportamiento "contador"
+    define('contador', (el, ctx) => {
+      let count = 0;
+      console.log('🟢 contador montado en', el);
+      const span = document.createElement('span');
+      span.textContent = '0';
+      el.appendChild(span);
+
+      // Simulamos un listener (sin contexto, solo para probar)
+      const handler = () => {
+        count++;
+        span.textContent = count;
+      };
+      el.addEventListener('click', handler);
+
+      return {
+        destroy: () => {
+          console.log('🔴 contador desmontado');
+          el.removeEventListener('click', handler);
+          span.remove();
+        }
+      };
+    });
+
     const app = document.getElementById('app');
     mount(app);
 
-    // Botón para desmontar y probar cleanup
-    const btn = document.createElement('button');
-    btn.textContent = 'Desmontar';
-    btn.addEventListener('click', () => {
+    document.getElementById('unmountBtn').addEventListener('click', () => {
       unmount(app);
-      console.log('Desmontado');
     });
-    document.body.appendChild(btn);
 
-    console.log('Chunklet CP1+CP2 listo. Haz clic en el botón y observa la consola.');
+    document.getElementById('mountBtn').addEventListener('click', () => {
+      mount(app);
+    });
   </script>
 </body>
 </html>

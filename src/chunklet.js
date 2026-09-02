@@ -1,107 +1,28 @@
 /**
- * ChunkletJS - DOM behaviors (Contrato v0.2.0)
- * Sistema de componentes y comportamientos para el DOM.
+ * ChunkletJS - CP1: API básica
  * 
- * Características:
- * - Definición de comportamientos con Chunklet.define(name, factory)
- * - Montaje/desmontaje manual con mount/unmount
- * - Descubrimiento automático con observe/disconnect
- * - Contexto (ctx) con gestión automática de recursos
- * - Soporte para múltiples comportamientos por elemento (data-chunk)
+ * - define(name, factory)
+ * - mount(element)
+ * - unmount(element)
+ * 
+ * Sin gestión de recursos, sin integración con Pulsar.
  */
 
-// ============================================
-// ALMACENAMIENTO INTERNO
-// ============================================
-
-const _behaviors = new Map(); // nombre -> función fábrica
-const _mounts = new Map(); // elemento -> Map<nombre, { ctx, destroy }>  (Map normal para poder iterar)
-let _observer = null; // MutationObserver para descubrimiento automático
-let _observing = false;
+// Almacenamiento de fábricas y montajes
+const _behaviors = new Map();          // nombre -> factory
+const _mounts = new Map();             // elemento -> Map<nombre, { factory, result, ctx }>
 
 // ============================================
-// CONTEXTO (CP2)
+// CONTEXTO MÍNIMO (vacío, solo para cumplir)
 // ============================================
 
-function _createContext(element, onDestroy) {
-  const resources = [];
-
-  function addResource(cleanupFn) {
-    if (typeof cleanupFn === 'function') {
-      resources.push(cleanupFn);
-    }
-  }
-
-  const ctx = {
-    listen(target, event, handler, options = {}) {
-      if (!target || typeof target.addEventListener !== 'function') {
-        throw new TypeError('[Chunklet] ctx.listen: target debe ser un EventTarget');
-      }
-      target.addEventListener(event, handler, options);
-      addResource(() => target.removeEventListener(event, handler, options));
-    },
-
-    subscribe(store, listener) {
-      if (!store || typeof store.subscribe !== 'function') {
-        throw new TypeError('[Chunklet] ctx.subscribe: store debe tener método subscribe');
-      }
-      const unsubscribe = store.subscribe(listener);
-      addResource(unsubscribe);
-    },
-
-    subscribeSelector(store, selector, listener, options = {}) {
-      if (!store || typeof store.subscribeSelector !== 'function') {
-        throw new TypeError('[Chunklet] ctx.subscribeSelector: store debe tener subscribeSelector');
-      }
-      const unsubscribe = store.subscribeSelector(selector, listener, options);
-      addResource(unsubscribe);
-    },
-
-    observe(target, callback, options = { childList: true, subtree: true }) {
-      if (!target || typeof target.nodeType !== 'number') {
-        throw new TypeError('[Chunklet] ctx.observe: target debe ser un Node');
-      }
-      const observer = new MutationObserver(callback);
-      observer.observe(target, options);
-      addResource(() => observer.disconnect());
-    },
-
-    timeout(handler, delay, ...args) {
-      const id = setTimeout(handler, delay, ...args);
-      addResource(() => clearTimeout(id));
-    },
-
-    interval(handler, interval, ...args) {
-      const id = setInterval(handler, interval, ...args);
-      addResource(() => clearInterval(id));
-    },
-
-    cleanup(fn) {
-      if (typeof fn !== 'function') {
-        throw new TypeError('[Chunklet] ctx.cleanup: fn debe ser una función');
-      }
-      addResource(fn);
-    },
-  };
-
-  const destroy = () => {
-    // LIFO: ejecutar recursos en orden inverso
-    for (let i = resources.length - 1; i >= 0; i--) {
-      try {
-        resources[i]();
-      } catch (error) {
-        console.error('[Chunklet] Error en cleanup de recurso:', error);
-      }
-    }
-    resources.length = 0;
-    if (typeof onDestroy === 'function') onDestroy();
-  };
-
-  return { ctx, destroy };
+function _createMinimalContext(element) {
+  // Por ahora, un objeto vacío. En CP2 añadiremos los métodos.
+  return {};
 }
 
 // ============================================
-// API GLOBAL (CP1)
+// API PÚBLICA
 // ============================================
 
 export function define(name, factory) {
@@ -122,22 +43,25 @@ export function mount(element) {
     throw new TypeError('[Chunklet] mount: element debe ser un Element');
   }
 
+  // Obtener todos los elementos con data-chunk (incluyendo el propio)
   const candidates = element.matches('[data-chunk]') ? [element] : [];
-  const descendants = element.querySelectorAll('[data-chunk]');
-  candidates.push(...descendants);
+  candidates.push(...element.querySelectorAll('[data-chunk]'));
 
   for (const el of candidates) {
-    const chunkAttr = el.getAttribute('data-chunk');
-    if (!chunkAttr) continue;
+    const attr = el.getAttribute('data-chunk');
+    if (!attr) continue;
 
+    // Obtener o crear el mapa de montajes para este elemento
     let elementMounts = _mounts.get(el);
     if (!elementMounts) {
       elementMounts = new Map();
       _mounts.set(el, elementMounts);
     }
 
-    const names = chunkAttr.split(/\s+/).filter(Boolean);
+    // Procesar cada nombre (separado por espacios)
+    const names = attr.split(/\s+/).filter(Boolean);
     for (const name of names) {
+      // Si ya está montado, saltar
       if (elementMounts.has(name)) continue;
 
       const factory = _behaviors.get(name);
@@ -146,40 +70,23 @@ export function mount(element) {
         continue;
       }
 
-      const { ctx, destroy: destroyContext } = _createContext(el, () => {
-        // Al destruir el contexto, eliminar del mapa
-        elementMounts.delete(name);
-        if (elementMounts.size === 0) {
-          _mounts.delete(el);
-        }
-      });
+      // Crear contexto mínimo
+      const ctx = _createMinimalContext(el);
 
+      // Ejecutar la fábrica
       let result;
       try {
         result = factory(el, ctx);
       } catch (error) {
         console.error(`[Chunklet] Error en fábrica "${name}":`, error);
-        destroyContext();
         continue;
       }
 
-      let customDestroy = null;
-      if (result && typeof result === 'object' && typeof result.destroy === 'function') {
-        customDestroy = result.destroy;
-      }
-
+      // Guardar el resultado (por si la fábrica devuelve un destroy)
       elementMounts.set(name, {
+        factory,
+        result,
         ctx,
-        destroy: () => {
-          if (customDestroy) {
-            try {
-              customDestroy();
-            } catch (error) {
-              console.error(`[Chunklet] Error en destroy personalizado de "${name}":`, error);
-            }
-          }
-          destroyContext();
-        },
       });
     }
   }
@@ -214,18 +121,26 @@ export function unmount(element) {
     const names = Array.from(elementMounts.keys()).reverse();
     for (const name of names) {
       const entry = elementMounts.get(name);
-      if (entry && typeof entry.destroy === 'function') {
-        entry.destroy(); // esto elimina la entrada del mapa via destroyContext
+      if (entry) {
+        // Si la fábrica devolvió un objeto con destroy, llamarlo
+        if (entry.result && typeof entry.result.destroy === 'function') {
+          try {
+            entry.result.destroy();
+          } catch (error) {
+            console.error(`[Chunklet] Error en destroy de "${name}":`, error);
+          }
+        }
+        elementMounts.delete(name);
       }
     }
-    // Después del bucle, el mapa debería estar vacío y _mounts.delete(el) ya se ejecutó
-    // por cada destroyContext, pero por si acaso:
-    if (_mounts.has(el) && _mounts.get(el).size === 0) {
+    // Si el mapa quedó vacío, eliminar la entrada
+    if (elementMounts.size === 0) {
       _mounts.delete(el);
     }
   }
 }
 
+// Función auxiliar para calcular la profundidad en el DOM
 function getDepth(element) {
   let depth = 0;
   let current = element;
@@ -236,47 +151,8 @@ function getDepth(element) {
   return depth;
 }
 
-export function observe(root) {
-  if (!root || typeof root.nodeType !== 'number') {
-    throw new TypeError('[Chunklet] observe: root debe ser un Node');
-  }
+// ============================================
+// EXPORTACIÓN POR DEFECTO (opcional)
+// ============================================
 
-  if (_observer) {
-    _observer.disconnect();
-    _observer = null;
-  }
-
-  _observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) {
-        if (node.nodeType === 1) {
-          mount(node);
-        }
-      }
-      // Nota: los nodos eliminados no se manejan automáticamente porque no podemos iterar WeakMap.
-      // Pero como ahora usamos Map, podríamos hacer un barrido periódico, pero lo dejamos así.
-      // Si el usuario quiere liberar recursos, debe llamar a unmount explícitamente.
-    }
-  });
-
-  _observer.observe(root, {
-    childList: true,
-    subtree: true,
-  });
-
-  _observing = true;
-
-  return () => {
-    disconnect();
-  };
-}
-
-export function disconnect() {
-  if (_observer) {
-    _observer.disconnect();
-    _observer = null;
-  }
-  _observing = false;
-}
-
-export default { define, mount, unmount, observe, disconnect };
+export default { define, mount, unmount };
