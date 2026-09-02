@@ -17,7 +17,11 @@
  * Estado de implementación:
  *   - Fase 0: preparación, imports, estado interno y utilidades privadas.
  *   - Fase 1: setup(options) completo.
- *   - Fases 2-8: pendientes (define, ctx, mount, unmount, observe, enable, disable).
+ *   - Fase 2: define(name, factory) completo.
+ *   - Fase 3: _createContext(element) completo.
+ *   - Fase 4: mount(element) y lógica de montaje.
+ *   - Fase 5: unmount(element) y reconciliación enable/disable.
+ *   - Fases 6-8: pendientes (observe, disconnect, enable, disable, exportaciones finales).
  */
 
 import { createStatePulsar } from './pulsar.js';
@@ -28,60 +32,28 @@ import { createVoyajer } from './voyajer.js';
 // ESTADO INTERNO DEL MÓDULO (SINGLETON)
 // ============================================
 
-/**
- * Stack Nexus resuelto por setup().
- * Forma: { pulsar: Object, graphlet: Object, voyajer: Object | undefined }
- * Inicialmente null → indica que setup() aún no ha sido llamado.
- */
 let _stack = null;
 
-/**
- * Configuración global de Chunklet.
- * Forma: { entityAttr: string, enabledPath: string | undefined }
- */
 let _config = null;
 
-/**
- * Registro de comportamientos definidos con Chunklet.define().
- * Map<string, Function>  (name → factory)
- */
 const _behaviors = new Map();
 
-/**
- * Registro de comportamientos montados por elemento.
- * Map<Element, Map<string, { ctx, destroy }>>
- *   element → (nombre de comportamiento → entries con contexto y destroy)
- */
 const _mounts = new Map();
 
-/**
- * Observadores activos creados con Chunklet.observe().
- * Set<MutationObserver>
- */
 const _observers = new Set();
 
-/**
- * Función para cancelar la suscripción al enabledPath.
- */
 let _enabledUnsubscribe = null;
 
 // ============================================
 // UTILIDADES PRIVADAS
 // ============================================
 
-/**
- * Verifica que setup() ya fue llamado.
- * Lanza un error descriptivo si no.
- */
 function _assertSetupCalled() {
   if (_stack === null || _config === null) {
     throw new Error('[Chunklet] setup() debe llamarse antes de usar esta API.');
   }
 }
 
-/**
- * Duck typing para detectar una instancia de Pulsar.
- */
 function _isPulsarInstance(value) {
   return (
     value !== null &&
@@ -93,9 +65,6 @@ function _isPulsarInstance(value) {
   );
 }
 
-/**
- * Duck typing para detectar una instancia de Graphlet.
- */
 function _isGraphletInstance(value) {
   return (
     value !== null &&
@@ -110,9 +79,6 @@ function _isGraphletInstance(value) {
   );
 }
 
-/**
- * Duck typing para detectar una instancia de Voyajer.
- */
 function _isVoyajerInstance(value) {
   return (
     value !== null &&
@@ -124,9 +90,6 @@ function _isVoyajerInstance(value) {
   );
 }
 
-/**
- * Verifica que un valor es un objeto plano.
- */
 function _isPlainObject(value) {
   if (value === null || typeof value !== 'object') return false;
   if (Array.isArray(value)) return false;
@@ -134,10 +97,6 @@ function _isPlainObject(value) {
   return proto === Object.prototype || proto === null;
 }
 
-/**
- * Calcula la profundidad de un elemento en el DOM.
- * Útil para desmontar hijos antes que padres (Fase 5).
- */
 function _getDepth(element) {
   let depth = 0;
   let current = element;
@@ -152,12 +111,6 @@ function _getDepth(element) {
 // RESOLUCIÓN DE DEPENDENCIAS (auto-create / override)
 // ============================================
 
-/**
- * Resuelve la instancia de Pulsar a partir de las opciones de setup.
- * - undefined → auto-crea con estado inicial vacío.
- * - instancia → la usa directamente.
- * - objeto plano { initialState, options } → crea una nueva instancia.
- */
 function _resolvePulsarOption(pulsarOption) {
   if (pulsarOption === undefined) {
     return createStatePulsar({});
@@ -178,11 +131,6 @@ function _resolvePulsarOption(pulsarOption) {
   );
 }
 
-/**
- * Resuelve la instancia de Graphlet a partir de las opciones de setup.
- * - undefined → auto-crea Graphlet vacío.
- * - instancia → la usa directamente.
- */
 function _resolveGraphletOption(graphletOption) {
   if (graphletOption === undefined) {
     return createGraphlet();
@@ -197,12 +145,6 @@ function _resolveGraphletOption(graphletOption) {
   );
 }
 
-/**
- * Resuelve la instancia de Voyajer a partir de las opciones de setup.
- * - undefined → no crea Voyajer.
- * - instancia → la usa directamente.
- * - objeto plano de opciones → crea Voyajer con la instancia de Pulsar resuelta.
- */
 function _resolveVoyajerOption(voyajerOption, pulsarInstance) {
   if (voyajerOption === undefined) {
     return undefined;
@@ -223,60 +165,20 @@ function _resolveVoyajerOption(voyajerOption, pulsarInstance) {
 }
 
 // ============================================
-// MECANISMO ENABLE/DISABLE
-// ============================================
-
-/**
- * Handler invocado cuando cambia el valor en `enabledPath`.
- * La reconciliación real se implementará en fases posteriores (Fase 5).
- */
-function _handleEnabledStateChange(enabledMap) {
-  if (_mounts.size === 0) return;
-
-  if (enabledMap !== undefined && !_isPlainObject(enabledMap)) {
-    console.warn(
-      '[Chunklet] El valor en enabledPath debe ser un objeto plano. ' +
-      'Se ignoran los cambios.'
-    );
-    return;
-  }
-
-  // TODO(Fase 5): iterar _mounts y aplicar la nueva máscara de comportamientos.
-}
-
-// ============================================
 // API PÚBLICA: setup
 // ============================================
 
-/**
- * Inicializa el stack Nexus del módulo.
- * Solo puede llamarse una vez por carga del módulo.
- *
- * @param {Object} options
- * @param {Pulsar|{initialState, options}|undefined} [options.pulsar]
- * @param {Graphlet|undefined} [options.graphlet]
- * @param {Voyajer|{...voyajerOptions}|undefined} [options.voyajer]
- * @param {string} [options.entityAttr='data-entity']
- * @param {string} [options.enabledPath]
- * @returns {{ pulsar: Object, graphlet: Object, voyajer: Object|undefined }}
- *
- * @throws {Error} Si setup ya fue llamado.
- * @throws {TypeError} Si options no es objeto o alguna primitiva es inválida.
- */
 export function setup(options = {}) {
-  // 1. Protección del singleton
   if (_stack !== null || _config !== null) {
     throw new Error(
       '[Chunklet] setup() ya fue llamado. Solo se permite una inicialización por módulo.'
     );
   }
 
-  // 2. Validación global de opciones
   if (!_isPlainObject(options)) {
     throw new TypeError('[Chunklet] setup: options debe ser un objeto plano.');
   }
 
-  // 3. Extraer y validar configuración
   const {
     pulsar: pulsarOption,
     graphlet: graphletOption,
@@ -298,25 +200,21 @@ export function setup(options = {}) {
     );
   }
 
-  // 4. Resolver instancias con auto-create / override
   const pulsarInstance = _resolvePulsarOption(pulsarOption);
   const graphletInstance = _resolveGraphletOption(graphletOption);
   const voyajerInstance = _resolveVoyajerOption(voyajerOption, pulsarInstance);
 
-  // 5. Guardar el stack resuelto
   _stack = {
     pulsar: pulsarInstance,
     graphlet: graphletInstance,
     voyajer: voyajerInstance,
   };
 
-  // 6. Guardar configuración
   _config = {
     entityAttr,
     enabledPath: enabledPath || undefined,
   };
 
-  // 7. Suscripción al mecanismo enable/disable (si aplica)
   if (_config.enabledPath) {
     _enabledUnsubscribe = pulsarInstance.subscribeSelector(
       _config.enabledPath,
@@ -324,7 +222,6 @@ export function setup(options = {}) {
     );
   }
 
-  // 8. Retornar el stack para que la aplicación conserve referencias
   return {
     pulsar: pulsarInstance,
     graphlet: graphletInstance,
@@ -336,24 +233,9 @@ export function setup(options = {}) {
 // API PÚBLICA: define
 // ============================================
 
-/**
- * Registra una nueva fábrica de comportamiento Chunklet.
- *
- * @param {string} name   Identificador único del comportamiento (sin espacios).
- *                        Se referencia en el atributo `data-chunk`.
- * @param {Function} factory
- *        Recibe `(element, ctx)` y opcionalmente devuelve `{ destroy }`.
- *
- * @throws {Error}      Si setup() no ha sido llamado todavía.
- * @throws {TypeError}  Si name no es string no vacío.
- * @throws {TypeError}  Si name contiene espacios en blanco.
- * @throws {TypeError}  Si factory no es una función.
- */
 export function define(name, factory) {
-  // El contrato exige que setup se ejecute antes de define.
   _assertSetupCalled();
 
-  // Validaciones de nombre
   if (typeof name !== 'string' || name.trim() === '') {
     throw new TypeError('[Chunklet] define: name debe ser un string no vacío');
   }
@@ -361,12 +243,10 @@ export function define(name, factory) {
     throw new TypeError('[Chunklet] define: name no puede contener espacios');
   }
 
-  // Validación de factory
   if (typeof factory !== 'function') {
     throw new TypeError('[Chunklet] define: factory debe ser una función');
   }
 
-  // Si ya existe un comportamiento con el mismo nombre, se sobreescribe.
   _behaviors.set(name, factory);
 }
 
@@ -374,39 +254,26 @@ export function define(name, factory) {
 // CREACIÓN DE CONTEXTO (Fase 3)
 // ============================================
 
-/**
- * Crea un contexto de comportamiento para un elemento.
- * Cada comportamiento montado recibe su propio ctx independiente.
- *
- * @param {Element} element - Elemento DOM que aloja el comportamiento.
- * @returns {{ ctx: Object, destroy: Function }}
- */
 function _createContext(element) {
-  // El contexto requiere que setup haya inicializado el stack.
   if (_stack === null) {
     throw new Error('[Chunklet] _createContext: setup() debe llamarse antes de crear contextos.');
   }
 
   const resources = [];
 
-  // Registra una función de limpieza. Se ejecutará en LIFO al destruir el contexto.
   function addResource(cleanupFn) {
     if (typeof cleanupFn === 'function') {
       resources.push(cleanupFn);
     }
   }
 
-  // ============================================
-  // CONTEXTO PÚBLICO (lo que recibe la factory)
-  // ============================================
   const ctx = {
     // --- Stack accessors ---
     pulsar: _stack.pulsar,
     graphlet: _stack.graphlet,
-    voyajer: _stack.voyajer, // puede ser undefined
+    voyajer: _stack.voyajer,
 
-    // --- Registro de recursos (auto-cleanup) ---
-
+    // --- Registro de recursos ---
     listen(target, event, handler, options) {
       if (!target || typeof target.addEventListener !== 'function') {
         throw new TypeError('[Chunklet] ctx.listen: target debe ser un EventTarget');
@@ -458,8 +325,7 @@ function _createContext(element) {
       addResource(fn);
     },
 
-    // --- Shortcuts puros (no registran recursos) ---
-
+    // --- Shortcuts puros ---
     getState() {
       return _stack.pulsar.getState();
     },
@@ -499,11 +365,7 @@ function _createContext(element) {
     },
   };
 
-  // ============================================
-  // DESTRUCCIÓN DEL CONTEXTO
-  // ============================================
   function destroy() {
-    // Recorre en LIFO: último recurso registrado se libera primero.
     for (let i = resources.length - 1; i >= 0; i--) {
       try {
         resources[i]();
@@ -521,21 +383,12 @@ function _createContext(element) {
 // MONTAJE DE COMPORTAMIENTOS (Fase 4)
 // ============================================
 
-/**
- * Lee el identificador de entidad declarado en el DOM.
- * Nunca genera IDs: si el elemento no tiene el atributo configurado,
- * retorna null.
- */
 function _getEntityId(element) {
   if (!_config || !_config.entityAttr) return null;
   const id = element.getAttribute(_config.entityAttr);
   return id && id.trim() !== '' ? id.trim() : null;
 }
 
-/**
- * Obtiene el mapa actual de enable/disable desde Pulsar.
- * Si no hay enabledPath configurado, retorna null.
- */
 function _getEnabledMap() {
   if (!_config || !_config.enabledPath) return null;
   const state = _stack.pulsar.getState();
@@ -543,17 +396,6 @@ function _getEnabledMap() {
   return value && typeof value === 'object' ? value : null;
 }
 
-/**
- * Determina qué comportamientos deben montarse en un elemento,
- * considerando el valor de data-chunk y la máscara enable/disable.
- *
- * @param {Element} element
- * @param {Array<string>|null} enabledBehaviors
- *        null → no hay restricción, se montan todos.
- *        []   → no se monta ninguno.
- *        [...] → solo se montan los que estén en la lista.
- * @returns {string[]} Lista final de nombres a montar.
- */
 function _computeBehaviorsToMount(element, enabledBehaviors) {
   const chunkAttr = element.getAttribute('data-chunk');
   if (!chunkAttr) return [];
@@ -568,19 +410,9 @@ function _computeBehaviorsToMount(element, enabledBehaviors) {
     return allNames.filter(name => enabledBehaviors.includes(name));
   }
 
-  // Si enabledBehaviors tiene una forma inesperada, montar todos por seguridad.
   return allNames;
 }
 
-/**
- * Instancia una fábrica para un elemento concreto.
- * Crea el contexto, invoca la fábrica, captura errores y combina
- * el destroy personalizado con el destroy del contexto.
- *
- * @param {Element} element
- * @param {string} name
- * @returns {{ ctx: Object, destroy: Function } | null}
- */
 function _instantiateBehavior(element, name) {
   const factory = _behaviors.get(name);
   if (!factory) {
@@ -588,7 +420,6 @@ function _instantiateBehavior(element, name) {
     return null;
   }
 
-  // Crear contexto independiente para este comportamiento.
   const { ctx, destroy: destroyContext } = _createContext(element);
 
   let factoryResult;
@@ -596,11 +427,10 @@ function _instantiateBehavior(element, name) {
     factoryResult = factory(element, ctx);
   } catch (error) {
     console.error(`[Chunklet] Error al montar "${name}":`, error);
-    destroyContext(); // Liberar cualquier recurso que el ctx hubiera registrado.
+    destroyContext();
     return null;
   }
 
-  // Extraer destroy personalizado si la fábrica devolvió { destroy }.
   let customDestroy = null;
   if (
     factoryResult &&
@@ -610,7 +440,6 @@ function _instantiateBehavior(element, name) {
     customDestroy = factoryResult.destroy;
   }
 
-  // Destroy combinado: primero el custom, luego el contexto.
   const destroy = () => {
     if (customDestroy) {
       try {
@@ -625,19 +454,10 @@ function _instantiateBehavior(element, name) {
   return { ctx, destroy };
 }
 
-/**
- * Monta los comportamientos declarados en un único elemento.
- * No toca los comportamientos ya montados en él.
- *
- * @param {Element} element
- * @param {Array<string>|null} [enabledBehaviors]
- */
 function _mountElement(element, enabledBehaviors = null) {
-  // Calcular nombres que deberían montarse según data-chunk y enable/disable.
   const namesToMount = _computeBehaviorsToMount(element, enabledBehaviors);
-  if (namesToMount.length === 0) return;
 
-  // Obtener (o crear) el registro de montajes de este elemento.
+  // Si el elemento no está registrado, lo registramos aunque montemos 0.
   let elementMounts = _mounts.get(element);
   if (!elementMounts) {
     elementMounts = new Map();
@@ -645,7 +465,6 @@ function _mountElement(element, enabledBehaviors = null) {
   }
 
   for (const name of namesToMount) {
-    // Si ya está montado, no remontar (idempotencia).
     if (elementMounts.has(name)) continue;
 
     const entry = _instantiateBehavior(element, name);
@@ -654,35 +473,23 @@ function _mountElement(element, enabledBehaviors = null) {
     }
   }
 
-  // Si tras intentar montar no quedó nada, limpiar el registro para no acumular.
-  if (elementMounts.size === 0) {
-    _mounts.delete(element);
-  }
+  // NO eliminar el elemento de _mounts aunque quede vacío.
+  // Así el enable/disable posterior puede encontrarlo.
 }
 
 // ============================================
 // API PÚBLICA: mount
 // ============================================
 
-/**
- * Descubre y monta todos los comportamientos `data-chunk`
- * dentro del subárbol del elemento dado (incluido el propio).
- *
- * @param {Element} element
- * @throws {Error} Si setup() no ha sido llamado.
- * @throws {TypeError} Si element no es un Element DOM.
- */
 export function mount(element) {
-  // Validaciones básicas.
   if (_stack === null || _config === null) {
     throw new Error('[Chunklet] mount: setup() debe llamarse antes de montar.');
   }
 
-  if (!element || typeof element.nodeType !== 'number' || element.nodeType !== 1) {
+  if (!element || element.nodeType !== 1) {
     throw new TypeError('[Chunklet] mount: element debe ser un Element DOM.');
   }
 
-  // Recoger candidatos: el propio elemento + todos los descendientes con data-chunk.
   const candidates = [];
   if (element.matches && element.matches('[data-chunk]')) {
     candidates.push(element);
@@ -691,10 +498,8 @@ export function mount(element) {
     candidates.push(...element.querySelectorAll('[data-chunk]'));
   }
 
-  // Si no hay nada que montar, terminar.
   if (candidates.length === 0) return;
 
-  // Obtener mapa de enable/disable una sola vez (si está configurado).
   const enabledMap = _getEnabledMap();
 
   for (const el of candidates) {
@@ -704,7 +509,6 @@ export function mount(element) {
       const entityId = _getEntityId(el);
       if (entityId && Object.prototype.hasOwnProperty.call(enabledMap, entityId)) {
         enabledBehaviors = enabledMap[entityId];
-        // Si no es un array, se trata como null (montar todos).
         if (!Array.isArray(enabledBehaviors)) {
           enabledBehaviors = null;
         }
@@ -716,6 +520,150 @@ export function mount(element) {
 }
 
 // ============================================
+// DESMONTAJE DE COMPORTAMIENTOS (Fase 5)
+// ============================================
+
+function _unmountElement(element) {
+  const elementMounts = _mounts.get(element);
+  if (elementMounts) {
+    const names = Array.from(elementMounts.keys()).reverse();
+    for (const name of names) {
+      const entry = elementMounts.get(name);
+      if (!entry) continue;
+      try {
+        entry.destroy();
+      } catch (error) {
+        console.error(`[Chunklet] Error al destruir "${name}":`, error);
+      }
+      elementMounts.delete(name);
+    }
+  }
+  // En unmount real, sí eliminamos el elemento del registro.
+  _mounts.delete(element);
+}
+
+// ============================================
+// API PÚBLICA: unmount
+// ============================================
+
+export function unmount(element) {
+  if (_stack === null || _config === null) {
+    throw new Error('[Chunklet] unmount: setup() debe llamarse antes de desmontar.');
+  }
+
+  if (!element || element.nodeType !== 1) {
+    throw new TypeError('[Chunklet] unmount: element debe ser un Element DOM.');
+  }
+
+  const affected = [];
+  for (const el of _mounts.keys()) {
+    if (el === element || element.contains(el)) {
+      affected.push(el);
+    }
+  }
+
+  affected.sort((a, b) => _getDepth(b) - _getDepth(a));
+
+  for (const el of affected) {
+    _unmountElement(el);
+  }
+}
+
+// ============================================
+// RECONCILIACIÓN ENABLE/DISABLE (Fase 5)
+// ============================================
+
+function _sameBehaviorSet(a, b) {
+  if (a.length !== b.length) return false;
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  return sortedA.every((name, i) => name === sortedB[i]);
+}
+
+function _computeDesiredBehaviors(element, restriction) {
+  const chunkAttr = element.getAttribute('data-chunk');
+  if (!chunkAttr) return [];
+  const allNames = chunkAttr.split(/\s+/).filter(Boolean);
+
+  if (restriction === null) return allNames;
+  if (Array.isArray(restriction)) {
+    return allNames.filter(name => restriction.includes(name));
+  }
+  return allNames;
+}
+
+function _destroyExistingBehaviors(element, elementMounts) {
+  const names = Array.from(elementMounts.keys()).reverse();
+  for (const name of names) {
+    const entry = elementMounts.get(name);
+    if (!entry) continue;
+    try {
+      entry.destroy();
+    } catch (error) {
+      console.error(`[Chunklet] Error al destruir "${name}":`, error);
+    }
+    elementMounts.delete(name);
+  }
+}
+
+function _setElementBehaviors(element, namesToMount) {
+  let elementMounts = _mounts.get(element);
+  if (!elementMounts) {
+    elementMounts = new Map();
+    _mounts.set(element, elementMounts);
+  }
+
+  // Destruir todos los comportamientos actuales
+  _destroyExistingBehaviors(element, elementMounts);
+
+  // Montar los deseados
+  for (const name of namesToMount) {
+    const entry = _instantiateBehavior(element, name);
+    if (entry) {
+      elementMounts.set(name, entry);
+    }
+  }
+
+  // Conservar el elemento en _mounts aunque quede vacío
+}
+
+function _handleEnabledStateChange(enabledMap) {
+  if (_mounts.size === 0) return;
+
+  if (enabledMap !== undefined && !_isPlainObject(enabledMap)) {
+    console.warn(
+      '[Chunklet] El valor en enabledPath debe ser un objeto plano. ' +
+      'Se ignoran los cambios.'
+    );
+    return;
+  }
+
+  const effectiveMap = enabledMap && _isPlainObject(enabledMap) ? enabledMap : null;
+
+  const mountedElements = Array.from(_mounts.keys());
+
+  for (const element of mountedElements) {
+    const entityId = _getEntityId(element);
+    if (!entityId) continue;
+
+    let restriction = null;
+    if (effectiveMap && Object.prototype.hasOwnProperty.call(effectiveMap, entityId)) {
+      const value = effectiveMap[entityId];
+      restriction = Array.isArray(value) ? value : null;
+    }
+
+    const elementMounts = _mounts.get(element);
+    const currentNames = elementMounts ? Array.from(elementMounts.keys()) : [];
+    const desiredNames = _computeDesiredBehaviors(element, restriction);
+
+    if (!_sameBehaviorSet(currentNames, desiredNames)) {
+      // Reemplazar comportamientos sin eliminar el elemento del registro.
+      _setElementBehaviors(element, desiredNames);
+    }
+  }
+}
+
+// ============================================
 // PRÓXIMAS FASES (a implementar)
 // ============================================
 // ✅ Fase 0: preparación, imports, estado interno y utilidades privadas.
@@ -723,7 +671,7 @@ export function mount(element) {
 // ✅ Fase 2: define(name, factory) completo.
 // ✅ Fase 3: _createContext(element) completo.
 // ✅ Fase 4: mount(element) y lógica de montaje.
-// ⏳ Fase 5: unmount(element) y reconciliación enable/disable
+// ✅ Fase 5: unmount(element) y reconciliación enable/disable.
 // ⏳ Fase 6: observe(root) y disconnect()
 // ⏳ Fase 7: enable(entity, name) y disable(entity, name)
 // ⏳ Fase 8: exportaciones finales y pruebas
