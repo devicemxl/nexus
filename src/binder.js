@@ -31,7 +31,7 @@ export function createBinder(pulsarStore, options = {}) {
   };
 
   // Estado interno
-  const _fields = new Map(); // name -> { element, path, unbindFn }
+  const _fields = new Map(); // key: nombre/path, value: { element, path, listeners }
   let _destroyed = false;
   let _unsubscribeStore = null;
 
@@ -170,11 +170,9 @@ export function createBinder(pulsarStore, options = {}) {
       (state) => state[config.key],
       (formData) => {
         if (_destroyed) return;
-        // Actualizar cada campo vinculado
-        for (const [name, field] of _fields) {
+        for (const [path, field] of _fields) {
           const value = _getValueByPath(formData, field.path);
           const currentDomValue = _getElementValue(field.element);
-          // Solo actualizar si el valor del DOM es diferente al del store (evitar bucles)
           if (value !== currentDomValue) {
             _setElementValue(field.element, value);
           }
@@ -191,128 +189,126 @@ export function createBinder(pulsarStore, options = {}) {
   // ============================================
 
   /**
-   * Vincula un elemento o un contenedor de elementos al store.
+   * Vincula un elemento o un conjunto de elementos.
+   * @param {string|HTMLElement|HTMLFormElement} element - Selector, elemento o formulario.
    */
   function bind(element) {
-    if (_destroyed) {
-      throw new Error('[Binder] bind: El binder ya fue destruido');
-    }
+    if (_destroyed) throw new Error('[Binder] bind: Binder ya fue destruido');
 
-    // Si es un contenedor, vincular todos los descendientes con data-bind
-    if (element.querySelectorAll) {
-      const elements = element.querySelectorAll('[data-bind]');
-      if (elements.length === 0 && element.hasAttribute('data-bind')) {
-        // Es un solo elemento con data-bind
-        _bindSingle(element);
-      } else {
-        elements.forEach(el => _bindSingle(el));
+    // Normalizar: si es string, buscar elemento
+    let target = element;
+    if (typeof element === 'string') {
+      target = document.querySelector(element);
+      if (!target) {
+        throw new Error(`[Binder] bind: Elemento "${element}" no encontrado`);
       }
-      return;
     }
 
-    // Si es un elemento individual
-    _bindSingle(element);
+    // Si es un formulario, vincular todos los hijos con data-bind o name
+    if (target.tagName === 'FORM') {
+      const inputs = target.querySelectorAll('[data-bind], input[name], select[name], textarea[name]');
+      inputs.forEach(el => _bindSingle(el));
+    } else {
+      // Si es un solo elemento, vincularlo
+      _bindSingle(target);
+    }
   }
 
   /**
-   * Vincula un solo elemento.
+   * Vincula un único elemento.
    */
   function _bindSingle(element) {
-    const path = element.getAttribute('data-bind');
+    // Obtener el path de binding (data-bind o name)
+    let path = element.getAttribute('data-bind');
     if (!path) {
-      console.warn('[Binder] Elemento sin data-bind, ignorado');
+      path = element.getAttribute('name');
+    }
+    if (!path) {
+      console.warn('[Binder] Elemento sin data-bind ni name:', element);
       return;
     }
 
-    // Usar path como nombre único para el campo
-    const name = path;
-
-    // Si ya está vinculado, no hacer nada
-    if (_fields.has(name)) {
+    // Evitar duplicados
+    if (_fields.has(path)) {
+      console.warn(`[Binder] El campo "${path}" ya está vinculado`);
       return;
     }
 
-    // Determinar el evento a escuchar según el tipo de input
+    // Guardar referencia
+    const field = {
+      element,
+      path,
+      listeners: [],
+    };
+
+    // Función para actualizar el store cuando el DOM cambia
+    function handleInput() {
+      const value = _getElementValue(element);
+      const currentData = _getFormData();
+      _setValueByPath(currentData, path, value);
+      _setFormData(currentData);
+    }
+
+    // Determinar evento según tipo de input
     let eventType = 'input';
     if (element.type === 'checkbox' || element.type === 'radio' || element.tagName === 'SELECT') {
       eventType = 'change';
     }
 
-    // Crear el handler que actualiza el store
-    const handler = (e) => {
-      if (_destroyed) return;
+    // Añadir listener
+    element.addEventListener(eventType, handleInput);
+    field.listeners.push({ event: eventType, handler: handleInput });
 
-      // Obtener el valor actual del DOM
-      const domValue = _getElementValue(element);
+    // Guardar en el mapa
+    _fields.set(path, field);
 
-      // Obtener el valor actual del store para evitar bucles
-      const currentData = _getFormData();
-      const storeValue = _getValueByPath(currentData, path);
-
-      // Solo actualizar si el valor cambió realmente
-      if (domValue !== storeValue) {
-        // Actualizar el store (setValue actualiza el store y notifica a los suscriptores)
-        // Pero cuidado: setValue llamará a _setFormData, que dispara la suscripción.
-        // Para evitar un bucle, la suscripción ya se encarga de NO actualizar el DOM si el valor es igual.
-        setValue(path, domValue);
-      }
-    };
-
-    // Añadir el listener
-    element.addEventListener(eventType, handler);
-
-    // Registrar el campo
-    _fields.set(name, {
-      element,
-      path,
-      unbindFn: () => {
-        element.removeEventListener(eventType, handler);
-      }
-    });
-
-    // Establecer el valor inicial desde el store
-    const initialData = _getFormData();
-    const initialValue = _getValueByPath(initialData, path);
+    // Inicializar el DOM con el valor del store (usando la suscripción inmediata)
+    // Pero la suscripción ya se encarga de eso; sin embargo, forzamos una actualización
+    // para asegurar que el DOM tenga el valor correcto.
+    const formData = _getFormData();
+    const initialValue = _getValueByPath(formData, path);
     if (initialValue !== undefined) {
       _setElementValue(element, initialValue);
     }
   }
 
   /**
-   * Desvincula un elemento o contenedor.
+   * Desvincula un elemento o conjunto de elementos.
+   * @param {string|HTMLElement|HTMLFormElement} element - Selector, elemento o formulario.
    */
   function unbind(element) {
-    if (_destroyed) return;
-
-    if (element.querySelectorAll) {
-      const elements = element.querySelectorAll('[data-bind]');
-      if (elements.length === 0 && element.hasAttribute('data-bind')) {
-        _unbindSingle(element);
-      } else {
-        elements.forEach(el => _unbindSingle(el));
-      }
-      return;
+    let target = element;
+    if (typeof element === 'string') {
+      target = document.querySelector(element);
+      if (!target) return;
     }
 
-    _unbindSingle(element);
+    if (target.tagName === 'FORM') {
+      const inputs = target.querySelectorAll('[data-bind], input[name], select[name], textarea[name]');
+      inputs.forEach(el => _unbindSingle(el));
+    } else {
+      _unbindSingle(target);
+    }
   }
 
   function _unbindSingle(element) {
-    const path = element.getAttribute('data-bind');
+    let path = element.getAttribute('data-bind') || element.getAttribute('name');
     if (!path) return;
 
     const field = _fields.get(path);
-    if (field) {
-      // Ejecutar la función de unbind para eliminar listeners
-      if (field.unbindFn) {
-        field.unbindFn();
-      }
-      _fields.delete(path);
-    }
+    if (!field) return;
+
+    // Remover listeners
+    field.listeners.forEach(({ event, handler }) => {
+      element.removeEventListener(event, handler);
+    });
+
+    // Eliminar del mapa
+    _fields.delete(path);
   }
 
   // ============================================
-  // API PÚBLICA
+  // API PÚBLICA (CP1 + CP2)
   // ============================================
 
   function getValues() {
@@ -337,22 +333,6 @@ export function createBinder(pulsarStore, options = {}) {
     _setFormData(data);
   }
 
-  function destroy() {
-    if (_destroyed) return;
-    _destroyed = true;
-    if (_unsubscribeStore) {
-      _unsubscribeStore();
-      _unsubscribeStore = null;
-    }
-    // Desvincular todos los campos
-    for (const [name, field] of _fields) {
-      if (field.unbindFn) {
-        field.unbindFn();
-      }
-    }
-    _fields.clear();
-  }
-
   // Stubs para CP3 y CP4
   function validate(validateFn) {
     throw new Error('[Binder] validate: Pendiente de implementación (CP3)');
@@ -364,6 +344,20 @@ export function createBinder(pulsarStore, options = {}) {
 
   function submit(onSubmit) {
     throw new Error('[Binder] submit: Pendiente de implementación (CP4)');
+  }
+
+  function destroy() {
+    if (_destroyed) return;
+    _destroyed = true;
+    if (_unsubscribeStore) {
+      _unsubscribeStore();
+      _unsubscribeStore = null;
+    }
+    // Limpiar todos los campos
+    for (const [path, field] of _fields) {
+      _unbindSingle(field.element);
+    }
+    _fields.clear();
   }
 
   // ============================================
