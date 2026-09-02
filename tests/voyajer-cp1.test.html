@@ -6,7 +6,7 @@
 </head>
 <body>
   <h1>Voyajer CP1 - URL → Store</h1>
-  <p>Abre la consola y cambia la URL (hash o history) para ver los cambios.</p>
+  <p>Abre la consola y cambia la URL (hash) para ver los cambios.</p>
   <p>Estado actual: <span id="routeDisplay">(cargando...)</span></p>
   <nav>
     <a href="#/">Inicio</a>
@@ -18,11 +18,16 @@
     import { createStatePulsar } from '../src/pulsar.js';
     import { createVoyajer } from '../src/voyajer.js';
 
+    // Nota (v0.2.1): en modo 'hash', Voyajer normaliza la URL antes
+    // de pasarla al parse — el contenido del hash aparece como
+    // url.pathname. El mismo parse funciona igual en modo 'history'.
     const store = createStatePulsar({});
     const voyajer = createVoyajer(store, {
       mode: 'hash',
       parse: (url) => ({
-        path: url.pathname + url.search + url.hash,
+        path: url.pathname,
+        search: url.search,
+        hash: url.hash,
       }),
       serialize: (state) => state.path,
     });

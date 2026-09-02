@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>VoyajerJS - Tests de Contrato v0.2.0</title>
+  <title>VoyajerJS - Tests de Contrato v0.2.1</title>
   <style>
     body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
     .pass { color: #4ec9b0; }
@@ -12,7 +12,7 @@
   </style>
 </head>
 <body>
-  <h1>🧪 VoyajerJS Contract Tests v0.2.0</h1>
+  <h1>🧪 VoyajerJS Contract Tests v0.2.1</h1>
   <div id="output"></div>
 
   <script type="module">
@@ -52,7 +52,11 @@
     }
 
     // ============================================
-    // PRUEBAS
+    // Nota sobre el modelo de URL virtual (v0.2.1):
+    // En modo 'hash', Voyajer promueve el contenido del hash a
+    // pathname antes de pasar la URL al parse. Por eso los parses
+    // de estos tests usan url.pathname en lugar de url.hash.slice(1),
+    // aunque el modo sea 'hash'. Ver spec §5.4.
     // ============================================
 
     // -------- CP1: URL → Store --------
@@ -61,7 +65,7 @@
     const store1 = createStatePulsar({});
     const voyajer1 = createVoyajer(store1, {
       mode: 'hash',
-      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      parse: (url) => ({ path: url.pathname }),
       serialize: (state) => state.path,
       writeOnInit: true,
     });
@@ -74,7 +78,7 @@
     const store2 = createStatePulsar({});
     const voyajer2 = createVoyajer(store2, {
       mode: 'hash',
-      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      parse: (url) => ({ path: url.pathname }),
       serialize: (state) => state.path,
       writeOnInit: false,
     });
@@ -92,7 +96,7 @@
     const store3 = createStatePulsar({});
     const voyajer3 = createVoyajer(store3, {
       mode: 'hash',
-      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      parse: (url) => ({ path: url.pathname }),
       serialize: (state) => state.path,
       writeOnInit: false,
     });
@@ -106,7 +110,7 @@
     const store4 = createStatePulsar({});
     const voyajer4 = createVoyajer(store4, {
       mode: 'hash',
-      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      parse: (url) => ({ path: url.pathname }),
       serialize: (state) => state.path,
       writeOnInit: false,
     });
@@ -123,11 +127,11 @@
     // -------- CP3: back/forward/go --------
     log('=== CP3: Historial (back/forward/go) ===', 'info');
 
-    // Test 5: back y forward
+    // Test: back y forward
     const store5 = createStatePulsar({});
     const voyajer5 = createVoyajer(store5, {
       mode: 'hash',
-      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      parse: (url) => ({ path: url.pathname }),
       serialize: (state) => state.path,
       writeOnInit: false,
     });
@@ -153,11 +157,11 @@
     assert(route5b.path === '/contact', 'forward: navega a la siguiente entrada');
     assert(window.location.hash === '#/contact', 'forward: la URL cambia a #/contact');
 
-    // Test 6: go(delta)
+    // Test: go(delta)
     const store6 = createStatePulsar({});
     const voyajer6 = createVoyajer(store6, {
       mode: 'hash',
-      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      parse: (url) => ({ path: url.pathname }),
       serialize: (state) => state.path,
       writeOnInit: false,
     });
@@ -188,11 +192,11 @@
     // -------- Casos límite --------
     log('=== Casos límite y errores ===', 'info');
 
-    // Test 7: push con state inválido
+    // Test: push con state inválido
     const store7 = createStatePulsar({});
     const voyajer7 = createVoyajer(store7, {
       mode: 'hash',
-      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      parse: (url) => ({ path: url.pathname }),
       serialize: (state) => state.path,
     });
 
@@ -205,11 +209,11 @@
     }
     assert(threw, 'push valida que state sea objeto');
 
-    // Test 8: serialize retorna null
+    // Test: serialize retorna null
     const store8 = createStatePulsar({});
     const voyajer8 = createVoyajer(store8, {
       mode: 'hash',
-      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      parse: (url) => ({ path: url.pathname }),
       serialize: () => null,
       writeOnInit: false,
     });
@@ -217,15 +221,14 @@
     const routeBefore = store8.getState().route || null;
     voyajer8.push({ path: '/anything' });
     await delay(100);
-    // NO llamamos a sync() para no alterar el estado
     const routeAfter = store8.getState().route || null;
     assert(routeBefore === routeAfter, 'serialize null: no navega ni actualiza el store');
 
-    // Test 9: destroy limpia listeners
+    // Test: destroy limpia listeners
     const store9 = createStatePulsar({});
     const voyajer9 = createVoyajer(store9, {
       mode: 'hash',
-      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      parse: (url) => ({ path: url.pathname }),
       serialize: (state) => state.path,
     });
 
@@ -234,11 +237,11 @@
     await delay(100);
     assert(window.location.hash !== '#/after-destroy', 'destroy: limpia listeners y no navega');
 
-    // Test 10: getCurrent
+    // Test: getCurrent
     const store10 = createStatePulsar({ route: { path: '/custom' } });
     const voyajer10 = createVoyajer(store10, {
       mode: 'hash',
-      parse: (url) => ({ path: url.hash ? url.hash.slice(1) : '/' }),
+      parse: (url) => ({ path: url.pathname }),
       serialize: (state) => state.path,
       writeOnInit: false,
     });

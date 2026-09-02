@@ -24,11 +24,17 @@
     import { createStatePulsar } from '../src/pulsar.js';
     import { createVoyajer } from '../src/voyajer.js';
 
+    // Nota (v0.2.1): parse recibe la URL virtual con hash promovido a
+    // pathname. Ver spec §5.4.
     const store = createStatePulsar({});
     const voyajer = createVoyajer(store, {
       mode: 'hash',
-      parse: (url) => ({ path: url.pathname + url.search + url.hash }),
-      serialize: (state) => state.path,
+      parse: (url) => ({
+        path: url.pathname,
+        search: url.search,
+        hash: url.hash,
+      }),
+      serialize: (state) => state.path + (state.search || '') + (state.hash || ''),
     });
 
     const display = document.getElementById('routeDisplay');

@@ -11,22 +11,27 @@
   <button id="goUsers">Ir a Usuarios</button>
   <button id="goUser123">Ir a Usuario 123</button>
   <button id="goReplace">Reemplazar con About</button>
-  <button id="goCustom">Ir a Custom /test/hello</button>
+  <button id="goCustom">Ir a Custom /test/hello?q=123</button>
+  <button id="goSame">Push repetido (idempotente)</button>
 
   <script type="module">
     import { createStatePulsar } from '../src/pulsar.js';
     import { createVoyajer } from '../src/voyajer.js';
 
+    // Nota (v0.2.1): en modo 'hash', Voyajer normaliza la URL antes
+    // de pasarla al parse. Un enlace #/foo?bar=1 llega al parse como
+    // { pathname: '/foo', search: '?bar=1' }.
     const store = createStatePulsar({});
     const voyajer = createVoyajer(store, {
       mode: 'hash',
-      parse: (url) => {
-        // Parseo simple: path completo incluyendo hash
-        return { path: url.pathname + url.search + url.hash };
-      },
+      parse: (url) => ({
+        path: url.pathname,
+        search: url.search,
+        hash: url.hash,
+      }),
       serialize: (state) => {
         if (state.path === undefined) return '/';
-        return state.path;
+        return state.path + (state.search || '') + (state.hash || '');
       },
     });
 
@@ -55,7 +60,17 @@
     });
 
     document.getElementById('goCustom').addEventListener('click', () => {
-      voyajer.push({ path: '/test/hello?q=123#section' });
+      voyajer.push({ path: '/test/hello', search: '?q=123' });
+    });
+
+    // Demostración de idempotencia (v0.2.1): dos pushes al mismo path
+    // solo generan una entrada en el history.
+    document.getElementById('goSame').addEventListener('click', () => {
+      const before = window.history.length;
+      voyajer.push({ path: '/users' });
+      voyajer.push({ path: '/users' });
+      const after = window.history.length;
+      console.log(`Historial antes: ${before}, después: ${after} (diff = ${after - before})`);
     });
 
     // Botón para mostrar historial
