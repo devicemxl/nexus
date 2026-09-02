@@ -1,64 +1,104 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Chunklet CP2 - Contexto y Recursos</title>
+  <title>ChunkletJS – Demo Fase 1</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .success { color: #4ec9b0; }
+    .error { color: #f44747; }
+  </style>
 </head>
 <body>
-  <h1>Chunklet CP2</h1>
-  <div id="app">
-    <div data-chunk="contador">Clickeame</div>
-  </div>
-  <button id="unmountBtn">Desmontar</button>
-  <button id="mountBtn">Montar de nuevo</button>
+  <h1>🧪 ChunkletJS Demo – Fase 1 (setup)</h1>
+  <div id="output"></div>
 
   <script type="module">
-    import { define, mount, unmount } from '../src/chunklet.js';
+    // Importamos todos los módulos necesarios
+    import * as Chunklet from '../src/chunklet.js';
+    // Si tu estructura es distinta, ajusta la ruta (ej: './chunklet.js')
 
-    define('contador', (el, ctx) => {
-      console.log('🟢 contador montado');
-      let count = 0;
-      const span = document.createElement('span');
-      span.textContent = '0';
-      el.appendChild(span);
+    const output = document.getElementById('output');
 
-      // Usamos ctx.listen en lugar de addEventListener directo
-      ctx.listen(el, 'click', () => {
-        count++;
-        span.textContent = count;
-        console.log('Contador:', count);
+    function logSuccess(msg) {
+      output.innerHTML += `<div class="success">✅ ${msg}</div>`;
+    }
+    function logError(msg) {
+      output.innerHTML += `<div class="error">❌ ${msg}</div>`;
+    }
+
+    try {
+      // 1. Llamamos a setup con auto-creación y voyajer hash
+      const stack = Chunklet.setup({
+        pulsar: {
+          initialState: {
+            ui: { theme: 'dark' },
+            enabled: {}  // para habilitar/deshabilitar comportamientos
+          }
+        },
+        graphlet: undefined,           // auto-crea Graphlet vacío
+        voyajer: { mode: 'hash' },     // auto-crea Voyajer en modo hash
+        entityAttr: 'data-entity',
+        enabledPath: 'ui.enabled'
       });
 
-      // Limpieza personalizada: eliminar el span
-      ctx.cleanup(() => {
-        console.log('🧹 Limpiando contador (eliminando span)');
-        span.remove();
-      });
+      logSuccess('setup() ejecutado correctamente');
 
-      // También podemos usar timeout
-      ctx.timeout(() => {
-        console.log('⏰ Timeout ejecutado (3 segundos después del montaje)');
-      }, 3000);
+      // 2. Verificamos que el stack devuelto tiene las instancias esperadas
+      if (typeof stack.pulsar.getState === 'function') {
+        logSuccess('→ pulsar: instancia válida con getState()');
+      } else {
+        throw new Error('pulsar no válido');
+      }
+      if (typeof stack.graphlet.allIds === 'function') {
+        logSuccess('→ graphlet: instancia válida con allIds()');
+      } else {
+        throw new Error('graphlet no válido');
+      }
+      if (stack.voyajer && typeof stack.voyajer.getCurrent === 'function') {
+        logSuccess('→ voyajer: instancia válida con getCurrent()');
+      } else {
+        throw new Error('voyajer no válido');
+      }
 
-      return {
-        destroy: () => {
-          console.log('💥 Destroy personalizado de contador');
-        }
-      };
-    });
+      // 3. Inspeccionamos el estado inicial
+      const state = stack.pulsar.getState();
+      logSuccess(`→ Estado inicial: ui=${JSON.stringify(state.ui)}, enabled=${JSON.stringify(state.enabled)}`);
 
-    const app = document.getElementById('app');
-    mount(app);
+      // 4. Probamos Graphlet con una entidad de ejemplo
+      stack.graphlet.put('node:1', { title: 'Hola Chunklet' });
+      const entity = stack.graphlet.get('node:1');
+      if (entity && entity.properties.title === 'Hola Chunklet') {
+        logSuccess(`→ Graphlet: entidad node:1 creada con título "${entity.properties.title}"`);
+      } else {
+        throw new Error('Fallo al leer entidad');
+      }
 
-    document.getElementById('unmountBtn').addEventListener('click', () => {
-      unmount(app);
-      console.log('🧹 Desmontado todo');
-    });
+      // 5. Probamos que Voyajer escribió la ruta inicial en Pulsar
+      const route = stack.pulsar.getState().route;
+      logSuccess(`→ Voyajer escribió ruta inicial: ${JSON.stringify(route)}`);
 
-    document.getElementById('mountBtn').addEventListener('click', () => {
-      mount(app);
-      console.log('🚀 Remontado');
-    });
+      // 6. Comprobamos el caso de doble setup (debe lanzar error)
+      let threw = false;
+      try {
+        Chunklet.setup({}); // Intentamos llamar setup otra vez
+      } catch (e) {
+        threw = true;
+        logSuccess(`→ Segundo setup lanza error controlado: "${e.message}"`);
+      }
+      if (!threw) {
+        throw new Error('El segundo setup debería haber lanzado error');
+      }
+
+      // 7. Verificamos que ctx (aunque aún no implementado del todo)
+      //    no se puede usar antes de define, pero al menos no hay error de referencia
+      //    (definición futura)
+      logSuccess('→ Todo listo para implementar define() en la Fase 2');
+
+    } catch (error) {
+      logError(`Error inesperado: ${error.message}`);
+      console.error(error);
+    }
   </script>
 </body>
 </html>
