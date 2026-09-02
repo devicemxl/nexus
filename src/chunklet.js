@@ -518,13 +518,211 @@ function _createContext(element) {
 }
 
 // ============================================
+// MONTAJE DE COMPORTAMIENTOS (Fase 4)
+// ============================================
+
+/**
+ * Lee el identificador de entidad declarado en el DOM.
+ * Nunca genera IDs: si el elemento no tiene el atributo configurado,
+ * retorna null.
+ */
+function _getEntityId(element) {
+  if (!_config || !_config.entityAttr) return null;
+  const id = element.getAttribute(_config.entityAttr);
+  return id && id.trim() !== '' ? id.trim() : null;
+}
+
+/**
+ * Obtiene el mapa actual de enable/disable desde Pulsar.
+ * Si no hay enabledPath configurado, retorna null.
+ */
+function _getEnabledMap() {
+  if (!_config || !_config.enabledPath) return null;
+  const state = _stack.pulsar.getState();
+  const value = state[_config.enabledPath];
+  return value && typeof value === 'object' ? value : null;
+}
+
+/**
+ * Determina qué comportamientos deben montarse en un elemento,
+ * considerando el valor de data-chunk y la máscara enable/disable.
+ *
+ * @param {Element} element
+ * @param {Array<string>|null} enabledBehaviors
+ *        null → no hay restricción, se montan todos.
+ *        []   → no se monta ninguno.
+ *        [...] → solo se montan los que estén en la lista.
+ * @returns {string[]} Lista final de nombres a montar.
+ */
+function _computeBehaviorsToMount(element, enabledBehaviors) {
+  const chunkAttr = element.getAttribute('data-chunk');
+  if (!chunkAttr) return [];
+
+  const allNames = chunkAttr.split(/\s+/).filter(Boolean);
+
+  if (enabledBehaviors === null) {
+    return allNames;
+  }
+
+  if (Array.isArray(enabledBehaviors)) {
+    return allNames.filter(name => enabledBehaviors.includes(name));
+  }
+
+  // Si enabledBehaviors tiene una forma inesperada, montar todos por seguridad.
+  return allNames;
+}
+
+/**
+ * Instancia una fábrica para un elemento concreto.
+ * Crea el contexto, invoca la fábrica, captura errores y combina
+ * el destroy personalizado con el destroy del contexto.
+ *
+ * @param {Element} element
+ * @param {string} name
+ * @returns {{ ctx: Object, destroy: Function } | null}
+ */
+function _instantiateBehavior(element, name) {
+  const factory = _behaviors.get(name);
+  if (!factory) {
+    console.warn(`[Chunklet] Comportamiento "${name}" no registrado. Se omite.`);
+    return null;
+  }
+
+  // Crear contexto independiente para este comportamiento.
+  const { ctx, destroy: destroyContext } = _createContext(element);
+
+  let factoryResult;
+  try {
+    factoryResult = factory(element, ctx);
+  } catch (error) {
+    console.error(`[Chunklet] Error al montar "${name}":`, error);
+    destroyContext(); // Liberar cualquier recurso que el ctx hubiera registrado.
+    return null;
+  }
+
+  // Extraer destroy personalizado si la fábrica devolvió { destroy }.
+  let customDestroy = null;
+  if (
+    factoryResult &&
+    typeof factoryResult === 'object' &&
+    typeof factoryResult.destroy === 'function'
+  ) {
+    customDestroy = factoryResult.destroy;
+  }
+
+  // Destroy combinado: primero el custom, luego el contexto.
+  const destroy = () => {
+    if (customDestroy) {
+      try {
+        customDestroy();
+      } catch (error) {
+        console.error(`[Chunklet] Error en destroy personalizado de "${name}":`, error);
+      }
+    }
+    destroyContext();
+  };
+
+  return { ctx, destroy };
+}
+
+/**
+ * Monta los comportamientos declarados en un único elemento.
+ * No toca los comportamientos ya montados en él.
+ *
+ * @param {Element} element
+ * @param {Array<string>|null} [enabledBehaviors]
+ */
+function _mountElement(element, enabledBehaviors = null) {
+  // Calcular nombres que deberían montarse según data-chunk y enable/disable.
+  const namesToMount = _computeBehaviorsToMount(element, enabledBehaviors);
+  if (namesToMount.length === 0) return;
+
+  // Obtener (o crear) el registro de montajes de este elemento.
+  let elementMounts = _mounts.get(element);
+  if (!elementMounts) {
+    elementMounts = new Map();
+    _mounts.set(element, elementMounts);
+  }
+
+  for (const name of namesToMount) {
+    // Si ya está montado, no remontar (idempotencia).
+    if (elementMounts.has(name)) continue;
+
+    const entry = _instantiateBehavior(element, name);
+    if (entry) {
+      elementMounts.set(name, entry);
+    }
+  }
+
+  // Si tras intentar montar no quedó nada, limpiar el registro para no acumular.
+  if (elementMounts.size === 0) {
+    _mounts.delete(element);
+  }
+}
+
+// ============================================
+// API PÚBLICA: mount
+// ============================================
+
+/**
+ * Descubre y monta todos los comportamientos `data-chunk`
+ * dentro del subárbol del elemento dado (incluido el propio).
+ *
+ * @param {Element} element
+ * @throws {Error} Si setup() no ha sido llamado.
+ * @throws {TypeError} Si element no es un Element DOM.
+ */
+export function mount(element) {
+  // Validaciones básicas.
+  if (_stack === null || _config === null) {
+    throw new Error('[Chunklet] mount: setup() debe llamarse antes de montar.');
+  }
+
+  if (!element || typeof element.nodeType !== 'number' || element.nodeType !== 1) {
+    throw new TypeError('[Chunklet] mount: element debe ser un Element DOM.');
+  }
+
+  // Recoger candidatos: el propio elemento + todos los descendientes con data-chunk.
+  const candidates = [];
+  if (element.matches && element.matches('[data-chunk]')) {
+    candidates.push(element);
+  }
+  if (element.querySelectorAll) {
+    candidates.push(...element.querySelectorAll('[data-chunk]'));
+  }
+
+  // Si no hay nada que montar, terminar.
+  if (candidates.length === 0) return;
+
+  // Obtener mapa de enable/disable una sola vez (si está configurado).
+  const enabledMap = _getEnabledMap();
+
+  for (const el of candidates) {
+    let enabledBehaviors = null;
+
+    if (enabledMap) {
+      const entityId = _getEntityId(el);
+      if (entityId && Object.prototype.hasOwnProperty.call(enabledMap, entityId)) {
+        enabledBehaviors = enabledMap[entityId];
+        // Si no es un array, se trata como null (montar todos).
+        if (!Array.isArray(enabledBehaviors)) {
+          enabledBehaviors = null;
+        }
+      }
+    }
+
+    _mountElement(el, enabledBehaviors);
+  }
+}
+
+// ============================================
 // PRÓXIMAS FASES (a implementar)
 // ============================================
 // ✅ Fase 0: preparación, imports, estado interno y utilidades privadas.
 // ✅ Fase 1: setup(options) completo.
 // ✅ Fase 2: define(name, factory) completo.
 // ✅ Fase 3: _createContext(element) completo.
-// ⏳ Fase 4: mount(element) y lógica de montaje.
+// ✅ Fase 4: mount(element) y lógica de montaje.
 // ⏳ Fase 5: unmount(element) y reconciliación enable/disable
 // ⏳ Fase 6: observe(root) y disconnect()
 // ⏳ Fase 7: enable(entity, name) y disable(entity, name)
