@@ -734,6 +734,130 @@ export function disconnect() {
   _observers.clear();
 }
 
+// ============================================
+// HELPERS DE ENABLE/DISABLE
+// ============================================
+
+/**
+ * Lee el mapa actual de enabledPath.
+ * Si no existe o no es objeto, devuelve objeto vacío.
+ */
+function _getEnabledState() {
+  const state = _stack.pulsar.getState();
+  const value = state[_config.enabledPath];
+  return _isPlainObject(value) ? value : {};
+}
+
+/**
+ * Escribe un nuevo mapa en enabledPath.
+ */
+function _setEnabledState(newMap) {
+  _stack.pulsar.setState({ [_config.enabledPath]: newMap });
+}
+
+/**
+ * Recoge todos los nombres de comportamientos declarados en el DOM
+ * para una entidad concreta (mediante data-entity y data-chunk).
+ */
+function _getDeclaredBehaviorsForEntity(entity) {
+  const names = new Set();
+  const selector = `[${_config.entityAttr}="${entity}"]`;
+  const elements = document.querySelectorAll(selector);
+
+  for (const el of elements) {
+    const chunk = el.getAttribute('data-chunk');
+    if (!chunk) continue;
+    for (const name of chunk.split(/\s+/)) {
+      if (name) names.add(name);
+    }
+  }
+
+  return Array.from(names);
+}
+
+// ============================================
+// API PÚBLICA: enable / disable
+// ============================================
+
+/**
+ * Habilita un comportamiento para una entidad.
+ * Si la entidad no tiene entrada en enabledPath, no hace nada
+ * (porque todos los comportamientos ya están activos).
+ */
+export function enable(entity, name) {
+  _assertSetupCalled();
+
+  if (!_config.enabledPath) {
+    throw new Error('[Chunklet] enable: enabledPath no configurado en setup().');
+  }
+  if (typeof entity !== 'string' || entity.trim() === '') {
+    throw new TypeError('[Chunklet] enable: entity debe ser un string no vacío.');
+  }
+  if (typeof name !== 'string' || name.trim() === '') {
+    throw new TypeError('[Chunklet] enable: name debe ser un string no vacío.');
+  }
+
+  const map = _getEnabledState();
+
+  // Sin entrada: todos activos, no hay nada que habilitar.
+  if (!Object.prototype.hasOwnProperty.call(map, entity)) {
+    return;
+  }
+
+  const entry = map[entity];
+  if (!Array.isArray(entry) || entry.includes(name)) {
+    return; // Ya está habilitado explícitamente.
+  }
+
+  const nextEntry = [...entry, name];
+  const nextMap = { ...map, [entity]: nextEntry };
+  _setEnabledState(nextMap);
+}
+
+/**
+ * Deshabilita un comportamiento para una entidad.
+ * Si la entidad no tiene entrada, busca en el DOM los comportamientos
+ * declarados y crea una lista explícita sin el indicado.
+ */
+export function disable(entity, name) {
+  _assertSetupCalled();
+
+  if (!_config.enabledPath) {
+    throw new Error('[Chunklet] disable: enabledPath no configurado en setup().');
+  }
+  if (typeof entity !== 'string' || entity.trim() === '') {
+    throw new TypeError('[Chunklet] disable: entity debe ser un string no vacío.');
+  }
+  if (typeof name !== 'string' || name.trim() === '') {
+    throw new TypeError('[Chunklet] disable: name debe ser un string no vacío.');
+  }
+
+  const map = _getEnabledState();
+
+  if (!Object.prototype.hasOwnProperty.call(map, entity)) {
+    // Sin entrada: todos los comportamientos están activos.
+    // Necesitamos saber cuáles están declarados en el DOM.
+    const declared = _getDeclaredBehaviorsForEntity(entity);
+
+    if (declared.length === 0 || !declared.includes(name)) {
+      return; // No hay nada que deshabilitar.
+    }
+
+    const nextEntry = declared.filter(n => n !== name);
+    const nextMap = { ...map, [entity]: nextEntry };
+    _setEnabledState(nextMap);
+    return;
+  }
+
+  const entry = map[entity];
+  if (!Array.isArray(entry) || !entry.includes(name)) {
+    return; // Ya está deshabilitado.
+  }
+
+  const nextEntry = entry.filter(n => n !== name);
+  const nextMap = { ...map, [entity]: nextEntry };
+  _setEnabledState(nextMap);
+}
 
 // ============================================
 // PRÓXIMAS FASES (a implementar)
@@ -745,5 +869,5 @@ export function disconnect() {
 // ✅ Fase 4: mount(element) y lógica de montaje.
 // ✅ Fase 5: unmount(element) y reconciliación enable/disable.
 // ✅ Fase 6: observe(root) y disconnect().
-// ⏳ Fase 7: enable(entity, name) y disable(entity, name)
-// ⏳ Fase 8: exportaciones finales y pruebas
+// ✅ Fase 7: enable(entity, name) y disable(entity, name).
+// ⏳ Fase 8: exportaciones finales y pruebas.

@@ -183,6 +183,21 @@
         log('❌ No se montaron ambos behaviors', 'error');
       }
 
+      
+      // Tras setup con enabledPath: 'ui.enabled' y haber montado un nodo:
+      // <div data-entity="node:42" data-chunk="marcable ctx-demo">...</div>
+
+      // Deshabilitar sólo 'marcable'. Como no hay entrada en enabledPath,
+      // Chunklet buscará en el DOM los data-chunk de node:42 y creará:
+      //   ui.enabled = { 'node:42': ['ctx-demo'] }
+      Chunklet.disable('node:42', 'marcable');
+
+      // Habilitar de nuevo 'marcable'. Añade a la lista existente:
+      //   ui.enabled = { 'node:42': ['ctx-demo', 'marcable'] }
+      Chunklet.enable('node:42', 'marcable');
+
+
+
       // Deshabilitar todo para node:42
       stack.pulsar.setState({
         ui: { ...stack.pulsar.getState().ui, enabled: { 'node:42': [] } }
