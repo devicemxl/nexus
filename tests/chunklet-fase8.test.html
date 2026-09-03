@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>ChunkletJS – Pruebas Integradas Fase 8</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .info { color: #dcdcaa; }
+    .test { padding: 3px 0; }
+    .summary { margin-top: 20px; font-weight: bold; padding: 10px; border-top: 2px solid #555; }
+    .box {
+      padding: 15px;
+      margin: 10px 0;
+      background: #2d2d2d;
+      border-left: 4px solid transparent;
+    }
+    .box.demo-a { border-left-color: #4ec9b0; }
+    .box.demo-b { border-left-color: #dcdcaa; }
+    .box.selected { outline: 2px solid orange; }
+  </style>
+</head>
+<body>
+  <h1>🧪 ChunkletJS – Pruebas Integradas</h1>
+  <div id="output"></div>
+
+  <script type="module">
+    import * as Chunklet from '../src/chunklet.js';
+    import { createStatePulsar } from '../src/pulsar.js';
+
+    window.Chunklet = Chunklet;
+
+    const output = document.getElementById('output');
+    let passed = 0;
+    let failed = 0;
+
+    function pass(msg) {
+      const div = document.createElement('div');
+      div.className = 'test';
+      div.innerHTML = `✅ <span class="pass">${msg}</span>`;
+      output.appendChild(div);
+      passed++;
+    }
+
+    function fail(msg) {
+      const div = document.createElement('div');
+      div.className = 'test';
+      div.innerHTML = `❌ <span class="fail">${msg}</span>`;
+      output.appendChild(div);
+      failed++;
+    }
+
+    function info(msg) {
+      const div = document.createElement('div');
+      div.className = 'test';
+      div.innerHTML = `ℹ️ <span class="info">${msg}</span>`;
+      output.appendChild(div);
+    }
+
+    function assert(condition, msg) {
+      if (condition) move(msg);
+    }
+
+    // Espera breve para que MutationObserver procese
+    function waitForMutation() {
+      return new Promise(resolve => setTimeout(resolve, 20));
+    }
+
+    // ============================================
+    // 1. SETUP
+    // ============================================
+    info('=== SETUP ===');
+
+    const pulsar = createStatePulsar({
+      ui: {
+        count: 0,
+        selected: null,
+        enabled: {}
+      }
+    });
+
+    const stack = Chunklet.setup({
+      pulsar,
+      graphlet: undefined,
+      voyajer: { mode: 'hash' },
+      entityAttr: 'data-entity',
+      enabledPath: 'ui.enabled'
+    });
+
+    if (stack.pulsar === pulsar) pass('setup usa la instancia de Pulsar proporcionada');
+    else fail('setup no conservó la instancia de Pulsar');
+
+    if (stack.graphlet && typeof stack.graphlet.put === 'function') {
+      pass('setup auto-creó Graphlet vacío');
+    } else {
+      fail('No se creó Graphlet');
+    }
+
+    if (stack.voyajer && typeof stack.voyajer.push === 'function') {
+      pass('setup auto-creó Voyajer en modo hash');
+    } else {
+      fail('No se creó Voyajer');
+    }
+
+    // ============================================
+    // 2. DEFINE
+    // ============================================
+    info('=== DEFINE ===');
+
+    // Behavior A: muestra el contador y permite incrementar.
+    Chunklet.define('demo-a', (el, ctx) => {
+      el.classList.add('demo-a');
+
+      function render() {
+        el.setAttribute('data-count', String(ctx.getState().ui.count));
+        const sel = ctx.getState().ui.selected;
+        el.classList.toggle('selected', sel === el.dataset.entity);
+      }
+
+      ctx.subscribeSelector('ui.count', render, { immediate: true });
+      ctx.subscribeSelector('ui.selected', render, { immediate: true });
+
+      ctx.listen(el, 'click', () => {
+        const state = ctx.getState();
+        ctx.setState({
+          ui: {
+            ...state.ui,
+            count: (state.ui.count || 0) + 1,
+            selected: el.dataset.entity
+          }
+        });
+      });
+
+      ctx.cleanup(() => {
+        el.classList.remove('demo-a', 'selected');
+        el.removeAttribute('data-count');
+      });
+    });
+
+    // Behavior B: registra presencia en un registro global del comportamiento.
+    const behaviorRegistry = new Set();
+    Chunklet.define('demo-b', (el, ctx) => {
+      behaviorRegistry.add(el);
+      ctx.cleanup(() => behaviorRegistry.delete(el));
+    });
+
+    // Behavior C: usa Graphlet (lee entidad y muestra su título).
+    Chunklet.define('demo-c', (el, ctx) => {
+      const id = el.dataset.entity;
+      const entity = ctx.entity(id);
+      if (entity) {
+        el.setAttribute('data-title', entity.properties.title || '');
+      } else {
+        el.setAttribute('data-title', 'NO-ENTITY');
+      }
+      ctx.cleanup(() => el.removeAttribute('data-title'));
+    });
+
+    if (Chunklet.define === 'function') {
+      // No hay getter para verificar, simplemente definimos otros.
+      Chunklet.define('temp', () => {});
+      Chunklet.define('temp', () => {});
+      pass('define funciona y sobreescribe sin error');
+    }
+
+    // ============================================
+    // 3. MOUNT / UNMOUNT
+    // ============================================
+    info('=== MOUNT / UNMOUNT ===');
+
+    const container = document.createElement('div');
+    container.id = 'container-test';
+    document.body.appendChild(container);
+
+    const node1 = document.createElement('div');
+    node1.className = 'box';
+    node1.id = 'node-1';
+    node1.dataset.entity = 'node:1';
+    node1.dataset.chunk = 'demo-a demo-b';
+    container.appendChild(node1);
+
+    const node2 = document.createElement('div');
+    node2.className = 'box';
+    node2.id = 'node-2';
+    node2.dataset.entity = 'node:2';
+    node2.dataset.chunk = 'demo-a demo-c';
+    container.appendChild(node2);
+
+    Chunklet.mount(container);
+
+    // Verificar montaje
+    if (node1.classList.contains('demo-a') && behaviorRegistry.has(node1)) {
+      pass('node1: demo-a y demo-b montados');
+    } else {
+      fail('node1: montaje incompleto');
+    }
+
+    if (node2.classList.contains('demo-a') && node2.getAttribute('data-title') === 'NO-ENTITY') {
+      pass('node2: demo-a y demo-c montados (demo-c lee Graphlet vacío)');
+    } else {
+      fail('node2: montaje incompleto');
+    }
+
+    // Poblar Graphlet y remontar demo-c forzando unmount/mount
+    stack.graphlet.put('node:2', { title: 'Soy Node 2' });
+
+    Chunklet.unmount(node2);
+    Chunklet.mount(node2);
+
+    if (node2.getAttribute('data-title') === 'Soy Node 2') {
+      pass('demo-c lee entidad de Graphlet tras remontaje');
+    } else {
+      fail('demo-c no reflejó la entidad');
+    }
+
+    // Hacer clic para probar ctx.listen y setState
+    node1.click();
+    if (node1.getAttribute('data-count') === '1') {
+      pass('click en node1 incrementa ui.count y actualiza DOM');
+    } else {
+      fail('listener de node1 no funcionó');
+    }
+
+    // Probar unmount completo
+    Chunklet.unmount(container);
+    if (!behaviorRegistry.has(node1) && !behaviorRegistry.has(node2)) {
+      pass('unmount de contenedor desmonta todos los behaviors hijos');
+    } else {
+      fail('unmount incompleto');
+    }
+
+    // ============================================
+    // 4. OBSERVE / DISCONNECT
+    // ============================================
+    info('=== OBSERVE / DISCONNECT ===');
+
+    const stopObserving = Chunklet.observe(document.body);
+
+    const dynamicNode = document.createElement('div');
+    dynamicNode.className = 'box';
+    dynamicNode.dataset.entity = 'node:3';
+    dynamicNode.dataset.chunk = 'demo-a';
+    container.appendChild(dynamicNode);
+
+    // Esperar a que MutationObserver reaccione
+    await waitForMutation();
+
+    if (dynamicNode.classList.contains('demo-a')) {
+      pass('observe detecta y monta nodos añadidos');
+    } else {
+      fail('observe no montó el nodo dinámico');
+    }
+
+    // Probar que unmount automático al eliminar
+    dynamicNode.remove();
+    await waitForMutation();
+
+    if (!behaviorRegistry.has(dynamicNode)) {
+      pass('observe desmonta automáticamente nodos eliminados');
+    } else {
+      fail('observe no desmontó el nodo eliminado');
+    }
+
+    // Desconectar y verificar que ya no observa
+    stopObserving();
+    const otro = document.createElement('div');
+    otro.className = 'box';
+    otro.dataset.entity = 'node:4';
+    otro.dataset.chunk = 'demo-b';
+    container.appendChild(otro);
+
+    await waitForMutation();
+
+    if (!behaviorRegistry.has(otro)) {
+      pass('disconnect detiene la observación');
+    } else {
+      fail('disconnect no detuvo la observación');
+    }
+
+    // ============================================
+    // 5. ENABLE / DISABLE
+    // ============================================
+    info('=== ENABLE / DISABLE ===');
+
+    // Reset del estado enable
+    pulsar.setState({
+      ui: {
+        ...pulsar.getState().ui,
+        enabled: {}
+      }
+    });
+
+    // Montar un elemento con dos behaviors
+    const node5 = document.createElement('div');
+    node5.className = 'box';
+    node5.id = 'node-5';
+    node5.dataset.entity = 'node:5';
+    node5.dataset.chunk = 'demo-a demo-b';
+    container.appendChild(node5);
+
+    Chunklet.mount(node5);
+
+    if (behaviorRegistry.has(node5) && node5.classList.contains('demo-a')) {
+      pass('sin restricciones: ambos behaviors montados');
+    } else {
+      fail('montaje inicial de node5 incompleto');
+    }
+
+    // Deshabilitar demo-a explícitamente
+    Chunklet.disable('node:5', 'demo-a');
+    await waitForMutation(); // para que Pulsar notifique y se reconcilie
+
+    if (!behaviorRegistry.has(node5) || node5.classList.contains('demo-a')) {
+      fail('disable no desmontó demo-a');
+    } else {
+      pass('disable de demo-a funciona');
+    }
+
+    // Habilitar demo-a de nuevo
+    Chunklet.enable('node:5', 'demo-a');
+    await waitForMutation();
+
+    if (behaviorRegistry.has(node5) && node5.classList.contains('demo-a')) {
+      pass('enable de demo-a vuelve a montarlo');
+    } else {
+      fail('enable no restauró demo-a');
+    }
+
+    // ============================================
+    // RESUMEN
+    // ============================================
+    const total = passed + failed;
+    const summary = document.createElement('div');
+    summary.className = 'summary';
+    summary.innerHTML = `📊 Resultados: ${passed}/${total} pasaron. ${
+      failed === 0 ? '🎉 ¡Todo correcto!' : '⚠️ Revisa los fallos.'
+    }`;
+    output.appendChild(summary);
+
+    document.body.style.background = failed === 0 ? '#1e3a2a' : '#3a1e1e';
+  </script>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Tabs con configuración diferida (funcional)</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f0f2f5;
+      padding: 2rem;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: #fff;
+      border: 1px solid #d1d5db;
+      border-radius: 10px 10px 0 0;
+      padding: 0 1.5rem;
+    }
+
+    .tabs-nav {
+      display: flex;
+      gap: 1.5rem;
+    }
+
+    .tab-button {
+      background: none;
+      border: none;
+      padding: 1rem 0;
+      font-size: 1rem;
+      font-weight: 500;
+      color: #6b7280;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      font-family: inherit;
+    }
+
+    .tab-button:hover { color: #111827; }
+
+    .tab-button.is-active {
+      color: #111827;
+      border-bottom-color: #111827;
+    }
+
+    main {
+      background: #fff;
+      border: 1px solid #d1d5db;
+      border-top: none;
+      border-radius: 0 0 10px 10px;
+      padding: 1.5rem;
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.is-active { display: block; }
+
+    .tab-panel h3 { margin-top: 0; }
+    .tab-panel p { color: #4b5563; line-height: 1.6; }
+  </style>
+</head>
+<body>
+
+  <!-- Botones: YA tienen data-chunk desde el HTML -->
+  <header>
+    <nav class="tabs-nav">
+      <button class="tab-button"
+              data-tab-key="overview"
+              data-entity="tab:overview"
+              data-chunk="tab-button">Overview</button>
+
+      <button class="tab-button"
+              data-tab-key="features"
+              data-entity="tab:features"
+              data-chunk="tab-button">Features</button>
+
+      <button class="tab-button"
+              data-tab-key="settings"
+              data-entity="tab:settings"
+              data-chunk="tab-button">Settings</button>
+    </nav>
+  </header>
+
+  <!-- Separación -->
+  <p style="text-align:center; color:#9ca3af;">Los paneles se insertarán aquí abajo dinámicamente</p>
+
+  <!-- Paneles: se insertan luego con data-chunk -->
+  <main id="panel-container"></main>
+
+  <script type="module">
+    import * as Chunklet from '../src/chunklet.js';
+
+    // ========== 1. SETUP CASI VACÍO ==========
+    const stack = Chunklet.setup({
+      pulsar: { initialState: { ui: {} } }
+      // Graphlet se auto-crea
+      // Voyajer NO se configura todavía
+    });
+
+    // ========== 2. CONTENIDO EN GRAPHLET ==========
+    stack.graphlet.put('tab:overview', {
+      title: 'Overview Content',
+      body: 'This is a clean, minimal UI pattern perfect for layout structure.'
+    });
+    stack.graphlet.put('tab:features', {
+      title: 'Features Content',
+      body: 'Zero dependencies, lightweight footprint, fully responsive behavior.'
+    });
+    stack.graphlet.put('tab:settings', {
+      title: 'Settings Content',
+      body: 'Customize the accent properties directly in the CSS variables block.'
+    });
+
+    // ========== 3. DEFINIR COMPORTAMIENTOS ==========
+    Chunklet.define('tab-button', (button, ctx) => {
+      const tabKey = button.dataset.tabKey;
+
+      function applyActive(routeTab) {
+        button.classList.toggle('is-active', routeTab === tabKey);
+      }
+
+      // Al no estar Voyajer configurado aún, route aún no existe.
+      // El selector devuelve undefined; con immediate escuchamos igualmente.
+      ctx.subscribeSelector(
+        state => state.route && state.route.tab,
+        applyActive,
+        { immediate: true }
+      );
+
+      ctx.listen(button, 'click', () => {
+        // Si Voyajer no estuviera configurado, aquí lanzaría error.
+        // Pero antes de que el usuario haga clic ya lo habremos configurado.
+        ctx.navigate({ view: 'tabs', tab: tabKey });
+      });
+    });
+
+    Chunklet.define('tab-panel', (panel, ctx) => {
+      const tabKey = panel.dataset.tabPanel;
+      const titleEl = panel.querySelector('[data-field="title"]');
+      const bodyEl = panel.querySelector('[data-field="body"]');
+
+      const entity = ctx.entity(panel.dataset.entity);
+      if (entity) {
+        titleEl.textContent = entity.properties.title || '';
+        bodyEl.textContent = entity.properties.body || '';
+      }
+
+      function applyVisibility(routeTab) {
+        panel.classList.toggle('is-active', routeTab === tabKey);
+      }
+
+      ctx.subscribeSelector(
+        state => state.route && state.route.tab,
+        applyVisibility,
+        { immediate: true }
+      );
+    });
+
+    // ========== 4. MONTAR LOS BOTONES YA EXISTENTES ==========
+    // IMPORTANTE: los botones YA tienen data-chunk en el HTML,
+    // así que basta con montar el header.
+    Chunklet.mount(document.querySelector('header'));
+
+    // ========== 5. ACTIVAR OBSERVADOR PARA PANELES FUTUROS ==========
+    Chunklet.observe(document.getElementById('panel-container'));
+
+    // ========== 6. CONFIGURAR VOYAJER DESPUÉS DEL MOUNT ==========
+    Chunklet.configure({
+      voyajer: {
+        mode: 'hash',
+        parse(url) {
+          const tab = ['overview', 'features', 'settings'].find(
+            t => url.pathname === `/tab/${t}`
+          );
+          if (tab) return { view: 'tabs', tab };
+
+          if (url.pathname === '/' || url.pathname === '/tab') {
+            return { view: 'tabs', tab: 'overview' };
+          }
+          return null;
+        },
+        serialize(state) {
+          if (state.view === 'tabs' && ['overview', 'features', 'settings'].includes(state.tab)) {
+            return `/tab/${state.tab}`;
+          }
+          return null;
+        }
+      }
+    });
+
+    // ========== 7. INSERTAR LOS PANELES DINÁMICAMENTE ==========
+    // ===== (gracias al observer, se montarán solos) =====
+    document.getElementById('panel-container').innerHTML = `
+      <section class="tab-panel"
+               data-tab-panel="overview"
+               data-entity="tab:overview"
+               data-chunk="tab-panel">
+        <h3 data-field="title"></h3>
+        <p data-field="body"></p>
+      </section>
+
+      <section class="tab-panel"
+               data-tab-panel="features"
+               data-entity="tab:features"
+               data-chunk="tab-panel">
+        <h3 data-field="title"></h3>
+        <p data-field="body"></p>
+      </section>
+
+      <section class="tab-panel"
+               data-tab-panel="settings"
+               data-entity="tab:settings"
+               data-chunk="tab-panel">
+        <h3 data-field="title"></h3>
+        <p data-field="body"></p>
+      </section>
+    `;
+  </script>
+</body>
+</html>

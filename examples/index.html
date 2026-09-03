@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Tabs Separados – Nexus Stack</title>
+  <style>
+    /* Reset básico box-sizing */
+    * { box-sizing: border-box; }
+
+    /* Estilos globales del documento */
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f9fafb;
+      padding: 2rem;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    /* ---- Header con la navegación ---- */
+    header {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px 8px 0 0;
+      padding: 0 1.5rem;
+    }
+
+    .tabs-nav {
+      display: flex;
+      gap: 1.5rem;
+    }
+
+    .tab-button {
+      background: none;
+      border: none;
+      padding: 0.9rem 0;
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: #6b7280;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      font-family: inherit;
+    }
+
+    .tab-button:hover { color: #111827; }
+    
+    /* Estado activo visual para las pestañas seleccionadas */
+    .tab-button.is-active {
+      color: #111827;
+      border-bottom-color: #111827;
+    }
+
+    /* ---- Separación visual entre nav y paneles ---- */
+    main {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-top: none;
+      border-radius: 0 0 8px 8px;
+      padding: 1.5rem;
+    }
+
+    .tabs-content {
+      /* Sin lógica de contenedor: cada panel se controla de forma independiente */
+    }
+
+    /* Ocultar paneles por defecto */
+    .tab-panel {
+      display: none;
+    }
+    
+    /* Mostrar el panel cuando posee la clase activa */
+    .tab-panel.is-active {
+      display: block;
+    }
+
+    .tab-panel h3 { margin-top: 0; }
+    .tab-panel p { color: #374151; line-height: 1.6; }
+  </style>
+</head>
+<body>
+
+  <!-- 
+    ==========================================================================
+    BLOQUE 1: NAVEGACIÓN (HEADER)
+    ==========================================================================
+    Atributos clave:
+    - data-chunk="tab-button": Identifica a estos botones como objetivos del comportamiento
+      'tab-button' registrado en Chunklet.
+    - data-tab-key: Identificador local de la pestaña asociada a cada botón.
+  -->
+  <header>
+    <nav class="tabs-nav">
+      <button class="tab-button"
+              data-tab-key="overview"
+              data-chunk="tab-button">Overview</button>
+      <button class="tab-button"
+              data-tab-key="features"
+              data-chunk="tab-button">Features</button>
+      <button class="tab-button"
+              data-tab-key="settings"
+              data-chunk="tab-button">Settings</button>
+    </nav>
+  </header>
+
+  <!-- Demostración de desacoplamiento estructural en el DOM -->
+  <p style="color:#888; text-align:center;">↓ Los paneles viven en otra parte del DOM ↓</p>
+
+  <!-- 
+    ==========================================================================
+    BLOQUE 2: PANELES DE CONTENIDO (MAIN)
+    ==========================================================================
+    Atributos clave:
+    - data-chunk="tab-panel": Vincula cada elemento con la fábrica de comportamiento 'tab-panel'.
+    - data-tab-panel: Clave del panel para sincronizar visibilidad con la ruta actual.
+    - data-entity: Referencia semántica a la entidad alojada en el grafo de Graphlet (ej. 'tab:overview').
+    - data-field: Marcador de posición donde se insertarán dinámicamente las propiedades de la entidad.
+  -->
+  <main>
+    <div class="tabs-content">
+      <section class="tab-panel"
+               data-tab-panel="overview"
+               data-entity="tab:overview"
+               data-chunk="tab-panel">
+        <h3 data-field="title"></h3>
+        <p data-field="body"></p>
+      </section>
+
+      <section class="tab-panel"
+               data-tab-panel="features"
+               data-entity="tab:features"
+               data-chunk="tab-panel">
+        <h3 data-field="title"></h3>
+        <p data-field="body"></p>
+      </section>
+
+      <section class="tab-panel"
+               data-tab-panel="settings"
+               data-entity="tab:settings"
+               data-chunk="tab-panel">
+        <h3 data-field="title"></h3>
+        <p data-field="body"></p>
+      </section>
+    </div>
+  </main>
+
+  <!-- 
+    ==========================================================================
+    ORQUESTACIÓN CON CHUNKLET JS & NEXUS STACK
+    ==========================================================================
+  -->
+  <script type="module">
+    // Importación del orquestador principal de comportamientos
+    import * as Chunklet from '../src/chunklet.js';
+
+    try {
+      // ----------------------------------------------------------------------
+      // 1. SETUP DEL STACK NEXUS
+      // ----------------------------------------------------------------------
+      // Chunklet.setup() inicializa internamente la tríada:
+      // - Pulsar: Manejador de estado reactivo.
+      // - Graphlet: Modelo de datos semántico (entidades y relaciones).
+      // - Voyajer: Router sincronizador de URL.
+      const stack = Chunklet.setup({
+        // Configuración de Pulsar (Estado inicial global)
+        pulsar: { initialState: { ui: {} } },
+        
+        // Al pasar 'undefined', Chunklet crea automáticamente una instancia limpia de Graphlet
+        graphlet: undefined,
+
+        // Configuración de Voyajer (Enrutamiento mediante hash URL #)
+        voyajer: {
+          mode: 'hash', // Usa `#` para controlar la navegación sin recargar página
+          
+          // Convierte la URL física/virtual en un objeto de estado para Pulsar (se guarda en state.route)
+          parse(url) {
+            const tab = ['overview', 'features', 'settings'].find(t => url.pathname === `/tab/${t}`);
+            if (tab) return { view: 'tabs', tab };
+            
+            // Ruta por defecto si estamos en la raíz
+            if (url.pathname === '/' || url.pathname === '/tab') return { view: 'tabs', tab: 'overview' };
+            
+            return null; // Ruta no reconocida
+          },
+          
+          // Convierte el estado de navegación en una cadena URL
+          serialize(state) {
+            if (state.view === 'tabs' && ['overview', 'features', 'settings'].includes(state.tab)) {
+              return `/tab/${state.tab}`;
+            }
+            return null;
+          }
+        }
+      });
+
+      // ----------------------------------------------------------------------
+      // 2. POBLADO DE DATOS SEMÁNTICOS (GRAPHLET)
+      // ----------------------------------------------------------------------
+      // Se registran las entidades en el almacén semántico, separando totalmente 
+      // los datos del marcado HTML y la lógica de visualización.
+      stack.graphlet.put('tab:overview', {
+        title: 'Overview Content',
+        body: 'This is a clean, minimal UI pattern perfect for layout structure.'
+      });
+      stack.graphlet.put('tab:features', {
+        title: 'Features Content',
+        body: 'Zero dependencies, lightweight footprint, fully responsive behavior.'
+      });
+      stack.graphlet.put('tab:settings', {
+        title: 'Settings Content',
+        body: 'Customize the accent properties directly in the CSS variables block.'
+      });
+
+      // ----------------------------------------------------------------------
+      // 3. DEFINICIÓN DEL COMPORTAMIENTO: TAB-BUTTON
+      // ----------------------------------------------------------------------
+      // Define la lógica para cada elemento con `data-chunk="tab-button"`.
+      // La función recibe el elemento DOM y el contexto `ctx` de Chunklet.
+      Chunklet.define('tab-button', (button, ctx) => {
+        // Obtiene la clave de la pestaña asignada al botón en HTML
+        const tabKey = button.dataset.tabKey;
+
+        // Callback para alternar la clase visual activa
+        const applyActive = (routeTab) => {
+          button.classList.toggle('is-active', routeTab === tabKey);
+        };
+
+        // Se suscribe selectivamente a cambios en `state.route.tab` dentro de Pulsar.
+        // `immediate: true` ejecuta la función al suscribirse para reflejar el estado actual.
+        // `ctx.subscribeSelector` gestiona el ciclo de vida y limpia la suscripción automáticamente al desmontar.
+        ctx.subscribeSelector(
+          state => state.route && state.route.tab,
+          applyActive,
+          { immediate: true }
+        );
+
+        // Agrega escuchador de eventos click de forma segura.
+        // Se desregistra automáticamente al destruir o unmount.
+        ctx.listen(button, 'click', () => {
+          // Invoca a Voyajer para cambiar la ruta (actualiza la URL y el store de Pulsar)
+          ctx.navigate({ view: 'tabs', tab: tabKey });
+        });
+      });
+
+      // ----------------------------------------------------------------------
+      // 4. DEFINICIÓN DEL COMPORTAMIENTO: TAB-PANEL
+      // ----------------------------------------------------------------------
+      // Define la lógica para los paneles con `data-chunk="tab-panel"`.
+      Chunklet.define('tab-panel', (panel, ctx) => {
+        const tabKey = panel.dataset.tabPanel;
+        const titleEl = panel.querySelector('[data-field="title"]');
+        const bodyEl = panel.querySelector('[data-field="body"]');
+
+        // Consulta y renderizado de la entidad desde Graphlet
+        // Obtiene el ID de la entidad del atributo `data-entity`
+        const entity = ctx.entity(panel.dataset.entity);
+        if (entity) {
+          titleEl.textContent = entity.properties.title || '';
+          bodyEl.textContent = entity.properties.body || '';
+        }
+
+        // Callback para visibilidad de los paneles
+        const applyVisibility = (routeTab) => {
+          panel.classList.toggle('is-active', routeTab === tabKey);
+        };
+
+        // Suscripción al estado de la ruta en Pulsar
+        ctx.subscribeSelector(
+          state => state.route && state.route.tab,
+          applyVisibility,
+          { immediate: true }
+        );
+      });
+
+      // ----------------------------------------------------------------------
+      // 5. MONTAJE DE COMPORTAMIENTOS EN EL DOM
+      // ----------------------------------------------------------------------
+      // Escanea el árbol DOM especificado (document.body), busca elementos con
+      // el atributo `data-chunk` e instancia los comportamientos asociados.
+      Chunklet.mount(document.body);
+
+      console.log('✅ Tabs dispersos inicializados');
+    } catch (error) {
+      console.error('❌ Error:', error);
+    }
+  </script>
+</body>
+</html>
+</html>
