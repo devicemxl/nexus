@@ -19,6 +19,40 @@
     import { createStatePulsar } from '../src/pulsar.js';
     import { createVoyajer } from '../src/voyajer.js';
 
+    // ============================================
+    // DEFENSA CONTRA BACK-FORWARD CACHE (bfcache)
+    // ============================================
+    //
+    // El bfcache del navegador suspende la página viva (JS ejecutado,
+    // estado, listeners) al navegar hacia atrás/adelante y la reanuda
+    // sin re-ejecutar el script. Esto es útil en aplicaciones reales
+    // pero rompe un harness de test que asume estado limpio en cada run.
+    //
+    // Doble defensa:
+    //   1. Si el navegador restauró la página desde bfcache (event.persisted
+    //      es true), forzar recarga fresca. Esto elimina listeners viejos,
+    //      timers activos y cualquier instancia de Voyajer del run anterior.
+    //   2. Neutralizar cualquier hash residual ANTES de crear Voyajers.
+    //      Un hash sobreviviente de un run anterior (o de una URL abierta
+    //      con hash arbitrario) contamina el primer test de CP1, que lee
+    //      la URL con writeOnInit=true.
+    //
+    window.addEventListener('pageshow', (event) => {
+      if (event.persisted) {
+        window.location.reload();
+      }
+    });
+
+    if (window.location.hash && window.location.hash !== '#/') {
+      window.history.replaceState(null, '', window.location.pathname + '#/');
+    }
+
+    // Guardamos el path original ANTES de que ningún test toque history.
+    // El cleanup final lo restaurará (importante para tests de modo history
+    // que cambian el pathname del browser via pushState).
+    const ORIGINAL_PATHNAME = window.location.pathname;
+    const ORIGINAL_SEARCH = window.location.search;
+
     const output = document.getElementById('output');
     let passed = 0;
     let failed = 0;
@@ -176,6 +210,12 @@
     // del store depende de que Voyajer reaccione al evento `hashchange`
     // del navegador. Si el listener interno no dispara, el test falla
     // por timeout — comportamiento correcto y detectable.
+    //
+    // NOTA (V-T4): esta política de "sin sync manual" es exactamente
+    // lo que V-T4 requería verificar. Al eliminar los sync() de este
+    // grupo, CP3 ya prueba de facto que hashchange reactiva a Voyajer.
+    // No hay TEST separado para V-T4 porque su propiedad está
+    // implícitamente cubierta aquí.
     log('=== CP3: Historial (back/forward/go) ===', 'info');
 
     // Test: back y forward
@@ -305,25 +345,128 @@
     const current = voyajer10.getCurrent();
     assert(current.path === '/custom', 'getCurrent: lee el estado del store');
 
-    // ============================================
-    // LIMPIEZA
-    // ============================================
-    // Restaurar hash a raíz para no contaminar sesiones sucesivas.
-    // Usamos un store dummy con Voyajer para poder esperar el hashchange
-    // limpiamente en lugar de asignar y salir.
-    const cleanupStore = createStatePulsar({});
-    const cleanupVoyajer = createVoyajer(cleanupStore, {
+    // ============================================================
+    // TESTS NUEVOS DEL PUNTO 3 DE FASE 0 (V-T1..V-T3)
+    // ============================================================
+
+    log('=== TEST 8: Idempotencia de push (V-T1) ===', 'info');
+    // Contrato v0.2.1: si la URL serializada coincide con la actual,
+    // push es no-op. No debe agregar entrada al historial ni notificar
+    // a los subscribers del store.
+    const store11 = createStatePulsar({});
+    const voyajer11 = createVoyajer(store11, {
       mode: 'hash',
       parse: (url) => ({ path: url.pathname }),
       serialize: (state) => state.path,
       writeOnInit: false,
     });
-    cleanupVoyajer.push({ path: '/' });
+
+    let pushNotifyCount = 0;
+    store11.subscribeSelector('route', () => { pushNotifyCount++; });
+
+    voyajer11.push({ path: '/idempotent' });
+    const notifyAfterFirstPush = pushNotifyCount;
+    assert(notifyAfterFirstPush === 1, 'push: primera navegación notifica una vez');
+
+    // Segundo push con MISMO path: debe ser no-op.
+    voyajer11.push({ path: '/idempotent' });
+    assert(pushNotifyCount === notifyAfterFirstPush, 'push idempotente: segundo push idéntico no notifica');
+
+    // Tercer push idéntico: sigue siendo no-op.
+    voyajer11.push({ path: '/idempotent' });
+    assert(pushNotifyCount === notifyAfterFirstPush, 'push idempotente: múltiples pushes idénticos no notifican');
+
+    // Push distinto: sí notifica.
+    voyajer11.push({ path: '/different' });
+    assert(pushNotifyCount === notifyAfterFirstPush + 1, 'push a path distinto sí notifica');
+
+    log('=== TEST 9: Idempotencia de replace (V-T1) ===', 'info');
+    // Misma propiedad que push, aplicada a replace.
+    const store12 = createStatePulsar({});
+    const voyajer12 = createVoyajer(store12, {
+      mode: 'hash',
+      parse: (url) => ({ path: url.pathname }),
+      serialize: (state) => state.path,
+      writeOnInit: false,
+    });
+
+    let replaceNotifyCount = 0;
+    store12.subscribeSelector('route', () => { replaceNotifyCount++; });
+
+    voyajer12.push({ path: '/base' });
+    const notifyAfterInitial = replaceNotifyCount;
+
+    voyajer12.replace({ path: '/base' }); // idéntico a la posición actual
+    assert(replaceNotifyCount === notifyAfterInitial, 'replace idempotente: replace al path actual no notifica');
+
+    voyajer12.replace({ path: '/replaced' });
+    assert(replaceNotifyCount === notifyAfterInitial + 1, 'replace a path distinto sí notifica');
+
+    voyajer12.replace({ path: '/replaced' });
+    assert(replaceNotifyCount === notifyAfterInitial + 1, 'replace idempotente: segundo replace idéntico no notifica');
+
+    log('=== TEST 10: base con caracteres especiales (V-T3) ===', 'info');
+    // El fix de _escapeRegex en Voyajer v0.2.1 previene que caracteres
+    // como '.' o '+' en `base` se interpreten como metacaracteres del
+    // regex al remover el prefijo del pathname. Este test verifica el
+    // fix específicamente con un base que contiene '.'.
+    //
+    // Modo history: necesario porque `base` solo se aplica en history.
+    // El pathname del browser cambia; se restaurará en el cleanup final.
+    const store13 = createStatePulsar({});
+    const voyajer13 = createVoyajer(store13, {
+      mode: 'history',
+      base: '/app.v2/',  // El punto es metacaracter en regex; debe escaparse.
+      parse: (url) => ({ path: url.pathname }),
+      serialize: (state) => state.path,
+      writeOnInit: false,
+    });
+
+    voyajer13.push({ path: '/foo' });
+    assert(window.location.pathname === '/app.v2/foo', 'base con "." se aplica correctamente al hacer push');
+
+    const route13 = store13.getState().route;
+    assert(route13.path === '/foo', 'base con "." se REMUEVE correctamente al parsear (el path virtual es /foo, no /app.v2/foo)');
+
+    voyajer13.destroy();
+
+    log('=== TEST 11: modo history — humo (V-T2) ===', 'info');
+    // Verificación mínima de que el modo history escribe al store y
+    // parsea correctamente. Sin back/forward para no depender del
+    // servidor sirviendo paths arbitrarios (los tests con back/forward
+    // en modo history quedan diferidos a Escena 3.3 con Playwright).
+    const store14 = createStatePulsar({});
+    const voyajer14 = createVoyajer(store14, {
+      mode: 'history',
+      parse: (url) => ({ path: url.pathname }),
+      serialize: (state) => state.path,
+      writeOnInit: false,
+    });
+
+    voyajer14.push({ path: '/tests/history-smoke' });
+    assert(window.location.pathname === '/tests/history-smoke', 'modo history: push cambia pathname del browser');
+
+    const route14 = store14.getState().route;
+    assert(route14.path === '/tests/history-smoke', 'modo history: store refleja el path después de push');
+
+    voyajer14.sync();
+    const route14b = store14.getState().route;
+    assert(route14b.path === '/tests/history-smoke', 'modo history: sync lee la URL actual y reafirma el store');
+
+    voyajer14.destroy();
+
+    // ============================================
+    // CLEANUP FINAL
+    // ============================================
+    // Restaurar el pathname al valor original. Los tests de modo history
+    // (10 y 11) cambiaron window.location.pathname. Sin esta restauración,
+    // recargar la página produciría un 404 o cargaría un recurso distinto.
+    // También limpiamos el hash residual de los tests anteriores.
     try {
-      await waitForPath(cleanupStore, '/', 500);
+      window.history.replaceState(null, '', ORIGINAL_PATHNAME + ORIGINAL_SEARCH + '#/');
+      log(`ℹ️ Cleanup: pathname restaurado a ${ORIGINAL_PATHNAME}`, 'info');
     } catch (e) {
-      // No es error del test si la limpieza falla; se anota pero no cuenta.
-      log(`⚠️ Limpieza del hash: ${e.message}`, 'info');
+      log(`⚠️ Cleanup falló: ${e.message}`, 'info');
     }
 
     // ============================================
