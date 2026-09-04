@@ -1,1 +1,0 @@
-// Adapter de hidratación

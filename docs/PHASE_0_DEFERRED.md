@@ -6,7 +6,6 @@
 
 **When to resolve:** No later than the establishment of the Playwright-based CI environment (roadmap Escena 3.3). Items that only require harness reorganization may be resolved earlier if the opportunity arises.
 
----
 
 ## Deferred Items
 
@@ -18,7 +17,6 @@
 
 **Resolution path.** Playwright with a test server that serves arbitrary routes; per-test isolation guaranteed by the runner.
 
----
 
 ### V-T3 — VoyajerJS: base with special regex characters
 
@@ -28,7 +26,6 @@
 
 **Resolution path.** Same as V-T2. Test can be a direct copy of the intended TEST 10 in an earlier version of `voyajer.test.html`.
 
----
 
 ### C-T7 — ChunkletJS: enable/disable with configured `enabledPath`
 
@@ -43,7 +40,6 @@
 1. **Dedicated harness file** `chunklet-enable.test.html` with its own setup including `enabledPath`. Same browser-native environment, no new infrastructure. Cheapest option.
 2. **Playwright with module isolation.** Each test gets a fresh module context. More work but resolves the deferred item alongside V-T2 and V-T3.
 
----
 
 ### C-2 symmetry — ChunkletJS: toggle predictability
 
@@ -53,7 +49,6 @@
 
 **Resolution path.** Same as C-T7. Test can be a natural extension of the C-T7 tests in the dedicated harness.
 
----
 
 ## Not Debt (Recorded for Clarity)
 
@@ -64,7 +59,6 @@ The following observations were closed during Phase 0 and are recorded here only
 - **C-T1..C-T6, C-T8, C-T9** — Covered by TESTS 1-8, 12-13 of `chunklet.test.html`.
 - **All Pulsar and Graphlet observations** — Covered fully in their respective harnesses.
 
----
 
 ## Summary
 
@@ -78,6 +72,5 @@ The following observations were closed during Phase 0 and are recorded here only
 **Total items deferred:** 4.
 **All identified in-scope observations from Phase 0 have been either closed or deferred with explicit resolution paths.** No item is in "unresolved" or "unknown" status.
 
----
 
 *This document is complete as of the closing of Phase 0 Point 3. It should be updated (items removed as they are closed, new items added if any emerge) as the roadmap advances.*

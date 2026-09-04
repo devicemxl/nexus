@@ -1,1 +1,0 @@
-// Exportaciones de adapters

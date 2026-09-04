@@ -9,7 +9,6 @@
 - Documented the URL normalization performed before invoking `parse`, which lets a single parse/serialize pair work symmetrically in both `history` and `hash` modes.
 - Clarified the idempotence rule for `push` and `replace`, which was stated but not fully specified in v0.2.0.
 
----
 
 ## 1. Core Principles
 
@@ -22,7 +21,6 @@
 - The core does not handle route matching, parameter extraction, or authorization. These are delegated to the application via a parse/serialize contract.
 - No DOM manipulation. Voyajer does not set classes, attributes, or text content on any element. It interacts only with `window.history`, `window.location`, and the Pulsar store.
 
----
 
 ## 2. Core Concepts
 
@@ -55,7 +53,6 @@ Voyajer supports two routing modes. Both are equally first-class; the default is
 
 The `base` option (default `'/'`) is a path prefix in front of every URL Voyajer produces. Useful when the application is mounted at a subpath like `/admin/` or `/tool.v2/`. In history mode, `base` is prepended to every `pushState`/`replaceState` call and subtracted from the URL before parsing. In hash mode, `base` is ignored because the hash fragment is inherently rooted.
 
----
 
 ## 3. Factory Function
 
@@ -92,7 +89,6 @@ Creates a new Voyajer instance.
 
 An instance with the methods defined in Section 4.
 
----
 
 ## 4. Instance API
 
@@ -124,7 +120,6 @@ Navigates to a new location, adding a new entry to the browser history stack.
 
 `void`
 
----
 
 ### `replace(state)`
 
@@ -138,13 +133,11 @@ Identical to `push(state)` in terms of validation, idempotence, and store update
 
 `void`
 
----
 
 ### `back()`, `forward()`, `go(delta)`
 
 Direct proxies to the corresponding methods of `window.history`. The `popstate` event that follows (in history mode) or the `hashchange` event (in hash mode) triggers `_updateStoreFromURL()` internally and refreshes the Pulsar store.
 
----
 
 ### `getCurrent()`
 
@@ -154,7 +147,6 @@ Returns the current navigation state from the Pulsar store.
 
 `object | null` – The current navigation state, or `null` if no state has been written.
 
----
 
 ### `sync()`
 
@@ -176,7 +168,6 @@ Reads the current browser URL, parses it, and writes the resulting state to the 
 - This method is automatically called on `popstate` and `hashchange` events while the instance is active.
 - It may also be called manually to force synchronization after external URL changes that do not trigger these events.
 
----
 
 ### `destroy()`
 
@@ -192,7 +183,6 @@ Stops all event listeners and marks the instance as inert.
 
 `void`
 
----
 
 ## 5. URL Parsing and Serialization Contract
 
@@ -273,7 +263,6 @@ const voyajer = createVoyajer(store, {
 
 The same parse and serialize functions would work unchanged if `mode: 'hash'` were passed instead, because the URLs they see (via normalization) look identical.
 
----
 
 ## 6. Event Handling
 
@@ -293,7 +282,6 @@ The same parse and serialize functions would work unchanged if `mode: 'hash'` we
 - `pushState` and `replaceState` do not trigger `popstate`. Voyajer updates the store synchronously within the method call.
 - In hash mode, assigning to `window.location.hash` does trigger `hashchange`, but Voyajer's synchronous update inside `push`/`replace` happens before the event fires, and the event handler's `_updateStoreFromURL` writes the same state — this is a redundant but harmless double write.
 
----
 
 ## 7. Behavioral Guarantees
 
@@ -308,7 +296,6 @@ The same parse and serialize functions would work unchanged if `mode: 'hash'` we
 | **Symmetric defaults** | The default `parse` and `serialize` are round-trip compatible: `serialize(parse(url))` reproduces the input URL. |
 | **Mode-agnostic parsing** | Custom parse/serialize functions written against pathname and search work identically in both `history` and `hash` modes, thanks to URL normalization before parse. |
 
----
 
 ## 8. Integration with ChunkletJS
 
@@ -333,7 +320,6 @@ Chunklet.define('nav-link', (element, ctx) => {
 });
 ```
 
----
 
 ## 9. Export Contract
 
@@ -351,7 +337,6 @@ The module must be compatible with the following import semantics:
 </script>
 ```
 
----
 
 ## 10. Versioning and Backward Compatibility
 
@@ -361,6 +346,5 @@ The module must be compatible with the following import semantics:
 
 The default `parse` and `serialize` symmetry is a first-class contract element. Breaking the round-trip property in a future default is a breaking change. The URL normalization performed before `parse` (§5.4) is also part of the contract: any change that requires parsers to know the mode is a breaking change.
 
----
 
 *End of Specification.*

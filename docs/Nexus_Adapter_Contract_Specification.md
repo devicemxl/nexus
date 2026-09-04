@@ -9,7 +9,6 @@
 - All references to the Command Layer removed (archived in Phase 0 Commit 2).
 - Aligned with Nexus Contract v0.3.0 and ChunkletJS v0.4.0.
 
----
 
 ## 1. Purpose
 
@@ -17,7 +16,6 @@ Adapters are optional utilities that connect Nexus primitives to each other or t
 
 This document defines the **generic contract** that every adapter must satisfy. Individual adapters have their own mini-specifications produced at implementation time, following the principle of evidence-first design.
 
----
 
 ## 2. Definition
 
@@ -28,7 +26,6 @@ Adapters are:
 - **Composable.** Multiple adapters may operate on the same primitive without interfering with each other.
 - **Lifecycle-owned by the application.** The application is responsible for creating, retaining, and destroying adapters at appropriate times.
 
----
 
 ## 3. Generic Contract
 
@@ -86,7 +83,6 @@ Adapters must not:
 - Throw during `destroy` under normal conditions. Cleanup errors should be caught and logged internally.
 - Depend on other adapters implicitly. If adapter A requires adapter B to have run first, the mini-specification of A must document this dependency and the application is responsible for the ordering.
 
----
 
 ## 4. Composition Rules
 
@@ -115,7 +111,6 @@ Adapters and Chunklet behaviors overlap in scope: both can react to state change
 
 When both approaches would work for a given task, prefer the one whose lifecycle matches the task. Global data synchronization is adapter work; per-element event handling and rendering is Chunklet work.
 
----
 
 ## 5. Catalog of First-Generation Adapters
 
@@ -155,7 +150,6 @@ The **correct long-term implementation** projects reactively per entity: only th
 
 The initial snapshot-based version is sufficient for early applications where the entity set is small, but it does not scale. The mini-specification of the bridge will describe the correct behavior; the first implementation will document its own limitations and the path to the reactive version.
 
----
 
 ## 6. Behavioral Guarantees
 
@@ -170,7 +164,6 @@ The initial snapshot-based version is sufficient for early applications where th
 | **No implicit dependencies** | An adapter that depends on another adapter documents this explicitly. |
 | **Composable** | Multiple adapters may operate on the same primitive without interfering. |
 
----
 
 ## 7. Versioning
 
@@ -182,6 +175,5 @@ This contract is versioned independently of the individual adapter mini-specific
 
 Individual adapter mini-specifications have their own versions. A patch release of an adapter does not require a change to this document.
 
----
 
 *End of Specification.*
