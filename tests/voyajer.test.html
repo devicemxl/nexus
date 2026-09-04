@@ -47,11 +47,11 @@
       window.history.replaceState(null, '', window.location.pathname + '#/');
     }
 
-    // Guardamos el path original ANTES de que ningún test toque history.
-    // El cleanup final lo restaurará (importante para tests de modo history
-    // que cambian el pathname del browser via pushState).
+    // Guardamos el path original al inicio, por si un cleanup futuro lo
+    // necesita. Los tests de este harness (todos en modo hash) no lo
+    // modifican; los que sí lo harían (modo history) fueron diferidos a
+    // Playwright con motivo documentado más abajo.
     const ORIGINAL_PATHNAME = window.location.pathname;
-    const ORIGINAL_SEARCH = window.location.search;
 
     const output = document.getElementById('output');
     let passed = 0;
@@ -405,66 +405,49 @@
     voyajer12.replace({ path: '/replaced' });
     assert(replaceNotifyCount === notifyAfterInitial + 1, 'replace idempotente: segundo replace idéntico no notifica');
 
-    log('=== TEST 10: base con caracteres especiales (V-T3) ===', 'info');
-    // El fix de _escapeRegex en Voyajer v0.2.1 previene que caracteres
-    // como '.' o '+' en `base` se interpreten como metacaracteres del
-    // regex al remover el prefijo del pathname. Este test verifica el
-    // fix específicamente con un base que contiene '.'.
+    // ============================================================
+    // TESTS DIFERIDOS A PLAYWRIGHT (Escena 3.3 de la hoja de ruta)
+    // ============================================================
     //
-    // Modo history: necesario porque `base` solo se aplica en history.
-    // El pathname del browser cambia; se restaurará en el cleanup final.
-    const store13 = createStatePulsar({});
-    const voyajer13 = createVoyajer(store13, {
-      mode: 'history',
-      base: '/app.v2/',  // El punto es metacaracter en regex; debe escaparse.
-      parse: (url) => ({ path: url.pathname }),
-      serialize: (state) => state.path,
-      writeOnInit: false,
-    });
-
-    voyajer13.push({ path: '/foo' });
-    assert(window.location.pathname === '/app.v2/foo', 'base con "." se aplica correctamente al hacer push');
-
-    const route13 = store13.getState().route;
-    assert(route13.path === '/foo', 'base con "." se REMUEVE correctamente al parsear (el path virtual es /foo, no /app.v2/foo)');
-
-    voyajer13.destroy();
-
-    log('=== TEST 11: modo history — humo (V-T2) ===', 'info');
-    // Verificación mínima de que el modo history escribe al store y
-    // parsea correctamente. Sin back/forward para no depender del
-    // servidor sirviendo paths arbitrarios (los tests con back/forward
-    // en modo history quedan diferidos a Escena 3.3 con Playwright).
-    const store14 = createStatePulsar({});
-    const voyajer14 = createVoyajer(store14, {
-      mode: 'history',
-      parse: (url) => ({ path: url.pathname }),
-      serialize: (state) => state.path,
-      writeOnInit: false,
-    });
-
-    voyajer14.push({ path: '/tests/history-smoke' });
-    assert(window.location.pathname === '/tests/history-smoke', 'modo history: push cambia pathname del browser');
-
-    const route14 = store14.getState().route;
-    assert(route14.path === '/tests/history-smoke', 'modo history: store refleja el path después de push');
-
-    voyajer14.sync();
-    const route14b = store14.getState().route;
-    assert(route14b.path === '/tests/history-smoke', 'modo history: sync lee la URL actual y reafirma el store');
-
-    voyajer14.destroy();
+    // V-T2 (modo history — humo) y V-T3 (base con caracteres especiales)
+    // fueron intentados en este harness pero se retiraron por una razón
+    // honesta: ambos requieren cambiar `window.location.pathname` a valores
+    // que el servidor de tests HTTP simple no sirve.
+    //
+    // Consecuencia:
+    //   - Un push a un pathname inexistente deja el navegador en un estado
+    //     donde CUALQUIER navegación posterior (bfcache reload, F5 del
+    //     usuario, click accidental) golpea el servidor con un 404.
+    //   - El cleanup post-test que restaura el pathname vive en una carrera
+    //     con eventos del navegador que pueden ganarle: bfcache captura el
+    //     estado corrupto y el `pageshow` de defensa gatilla `location.reload()`
+    //     hacia el pathname corrupto, produciendo un loop de recarga o página
+    //     rota.
+    //
+    // "Casi siempre funciona" no es un contrato aceptable para un harness
+    // (Artículo I: evidencia primero; un test que a veces pasa por motivos
+    // ajenos al código no es evidencia). Por eso se retiran del harness
+    // browser-nativo y se difieren al futuro entorno Playwright (Escena
+    // 3.3), donde el servidor de test sí puede servir rutas arbitrarias
+    // y donde el aislamiento entre runs es garantizado por el runner.
+    //
+    // La cobertura hoy queda así:
+    //   - V-T1 (idempotencia): cubierta por TESTS 8 y 9.
+    //   - V-T2 (modo history humo): DIFERIDO a Playwright.
+    //   - V-T3 (base con caracteres especiales): DIFERIDO a Playwright.
+    //   - V-T4 (hashchange sin sync manual): cubierta implícitamente por
+    //     CP3 desde V-T0.
 
     // ============================================
     // CLEANUP FINAL
     // ============================================
-    // Restaurar el pathname al valor original. Los tests de modo history
-    // (10 y 11) cambiaron window.location.pathname. Sin esta restauración,
-    // recargar la página produciría un 404 o cargaría un recurso distinto.
-    // También limpiamos el hash residual de los tests anteriores.
+    // Limpieza defensiva: aunque ningún test de este harness cambia el
+    // pathname (los tests de history fueron diferidos), un hash residual
+    // sí puede quedar de los tests de modo hash. Restauramos a un estado
+    // conocido para que recargas subsecuentes no arrastren estado.
     try {
-      window.history.replaceState(null, '', ORIGINAL_PATHNAME + ORIGINAL_SEARCH + '#/');
-      log(`ℹ️ Cleanup: pathname restaurado a ${ORIGINAL_PATHNAME}`, 'info');
+      window.history.replaceState(null, '', ORIGINAL_PATHNAME + '#/');
+      log(`ℹ️ Cleanup: hash restaurado a '#/' sobre ${ORIGINAL_PATHNAME}`, 'info');
     } catch (e) {
       log(`⚠️ Cleanup falló: ${e.message}`, 'info');
     }
