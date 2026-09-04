@@ -12,7 +12,7 @@
   </style>
 </head>
 <body>
-  <h1>🧪 PulsarJS Contract Tests v0.2.0 (código v0.2.1)</h1>
+  <h1>🧪 PulsarJS Contract Tests v0.2.1 (código v0.2.2)</h1>
   <div id="output"></div>
 
   <script type="module">
@@ -106,18 +106,25 @@
 
     outerUnsub();
 
-    section('TEST 5: Inmutabilidad (deepFreeze)');
-    const store5 = createStatePulsar({ nested: { value: 42 } }, { freeze: true });
-    const frozenState = store5.getState();
-    try {
-      frozenState.nested.value = 100;
-    } catch (e) {
-      // strict mode lanza; no-strict silencia. Ambos son aceptables.
-    }
-    assert(store5.getState().nested.value === 42, 'El estado permanece inmutable (freeze activo)');
+    section('TEST 5: Inmutabilidad (deep freeze real) — P-T1');
+    // El test previo solo verificaba que el valor no cambiaba tras un intento
+    // de mutación, lo cual pasa incluso con freeze shallow (el nested no
+    // cambia porque nadie logra escribir en él en no-strict, y en strict
+    // el error se captura). Para verificar que el freeze es DEEP, hay que
+    // preguntar explícitamente por `Object.isFrozen` en cada nivel.
+    const store5 = createStatePulsar({
+      nested: { value: 42, deeper: { flag: true } }
+    }, { freeze: true });
+    const s5 = store5.getState();
+
+    assert(Object.isFrozen(s5), 'freeze: nivel raíz está congelado');
+    assert(Object.isFrozen(s5.nested), 'freeze: nivel intermedio (nested) está congelado');
+    assert(Object.isFrozen(s5.nested.deeper), 'freeze: nivel profundo (nested.deeper) está congelado');
+    assert(s5.nested.value === 42, 'freeze: los valores del estado son accesibles');
+    assert(s5.nested.deeper.flag === true, 'freeze: los valores profundos son accesibles');
 
     // ============================================================
-    // TESTS NUEVOS PARA CAMBIOS DE v0.2.1
+    // TESTS PARA CAMBIOS DE v0.2.1
     // ============================================================
 
     section('TEST 6: Simetría de "immediate" en subscribeSelector (fix v0.2.1)');
@@ -173,6 +180,197 @@
     unsubA();
 
     // ============================================================
+    // TESTS NUEVOS DEL PUNTO 3 DE FASE 0 (P-T2..P-T5)
+    // ============================================================
+
+    section('TEST 8: skipEqualUpdates evita notificaciones redundantes (P-T2)');
+    // Con skipEqualUpdates: true, un setState cuyo shallow-merge resulte
+    // en un estado con las mismas claves y los mismos valores (por Object.is)
+    // NO debe disparar _notify. El listener no ve el "cambio" que no fue.
+    const store8 = createStatePulsar({ x: 1, y: 2 }, { skipEqualUpdates: true });
+    let notifyCount = 0;
+    store8.subscribe(() => { notifyCount++; });
+
+    store8.setState({ x: 1 }); // shallow-merge → { x: 1, y: 2 } — idéntico
+    assert(notifyCount === 0, 'skipEqualUpdates: setState con mismo shallow-merge no dispara notificación');
+
+    store8.setState({ x: 3 }); // cambio real
+    assert(notifyCount === 1, 'skipEqualUpdates: setState con cambio real sí dispara notificación');
+
+    store8.setState({ x: 3, y: 2 }); // idéntico al estado actual
+    assert(notifyCount === 1, 'skipEqualUpdates: setState explícito con mismos valores no re-notifica');
+
+    // Verificar el default: sin skipEqualUpdates, cada setState notifica
+    // incluso si el resultado es indistinguible.
+    const store8b = createStatePulsar({ x: 1 }); // default: skipEqualUpdates false
+    let notifyCountB = 0;
+    store8b.subscribe(() => { notifyCountB++; });
+
+    store8b.setState({ x: 1 });
+    store8b.setState({ x: 1 });
+    assert(notifyCountB === 2, 'Sin skipEqualUpdates: cada setState notifica aunque el estado sea idéntico');
+
+    section('TEST 9: Validación de tipo en createStatePulsar y setState (P-T3)');
+    // El contrato exige que initialState y partial sean "objetos planos".
+    // Casos que deben lanzar TypeError:
+    //   - null
+    //   - arrays
+    //   - instancias de Date
+    //   - instancias de clase custom (prototipo distinto de Object.prototype)
+
+    // 9a: createStatePulsar
+    const badInitials = [
+      { value: null, label: 'null' },
+      { value: [], label: 'array vacío' },
+      { value: [1, 2, 3], label: 'array con elementos' },
+      { value: new Date(), label: 'instancia de Date' },
+      { value: new (class Foo {})(), label: 'instancia de clase custom' },
+    ];
+    for (const { value, label } of badInitials) {
+      let threw = false;
+      try {
+        createStatePulsar(value);
+      } catch (e) {
+        threw = e instanceof TypeError;
+      }
+      assert(threw, `createStatePulsar rechaza ${label} con TypeError`);
+    }
+
+    // 9b: setState
+    const store9 = createStatePulsar({});
+    const badPartials = [
+      { value: null, label: 'null' },
+      { value: [], label: 'array vacío' },
+      { value: new Date(), label: 'instancia de Date' },
+      { value: new (class Bar {})(), label: 'instancia de clase custom' },
+    ];
+    for (const { value, label } of badPartials) {
+      let threw = false;
+      try {
+        store9.setState(value);
+      } catch (e) {
+        threw = e instanceof TypeError;
+      }
+      assert(threw, `setState rechaza ${label} con TypeError`);
+    }
+
+    // 9c: casos válidos (Object.create(null) es objeto plano según el contrato)
+    let didNotThrow = true;
+    try {
+      const nullProto = Object.create(null);
+      nullProto.foo = 1;
+      const okStore = createStatePulsar(nullProto);
+      okStore.setState({ bar: 2 });
+    } catch (e) {
+      didNotThrow = false;
+    }
+    assert(didNotThrow, 'Object.create(null) se acepta como objeto plano válido');
+
+    section('TEST 10: Errores en listeners no interrumpen la notificación (P-T4)');
+    // Contrato §5: errores en listeners se capturan y loguean; los demás
+    // listeners de la misma notificación se ejecutan igual, y el listener
+    // que lanzó NO queda desregistrado — vuelve a ser llamado en el
+    // siguiente setState.
+    const store10 = createStatePulsar({ n: 0 });
+    let boomCallCount = 0;
+    let goodCallCount = 0;
+
+    // Silenciar el console.error esperado durante este test para no
+    // contaminar la consola del navegador (mismo mecanismo que usaría
+    // un runner sensato).
+    const originalConsoleError = console.error;
+    const capturedErrors = [];
+    console.error = (...args) => { capturedErrors.push(args); };
+
+    const unsubBoom = store10.subscribe(() => {
+      boomCallCount++;
+      throw new Error('boom');
+    });
+    const unsubGood = store10.subscribe(() => {
+      goodCallCount++;
+    });
+
+    store10.setState({ n: 1 });
+    assert(boomCallCount === 1, 'El listener que lanza es invocado');
+    assert(goodCallCount === 1, 'El listener siguiente NO se salta por el error del anterior');
+    assert(capturedErrors.length >= 1, 'El error es logueado (no silenciado ni propagado)');
+
+    store10.setState({ n: 2 });
+    assert(boomCallCount === 2, 'El listener que lanzó sigue registrado y se invoca en la siguiente notificación');
+    assert(goodCallCount === 2, 'El listener bueno también se invoca en la segunda notificación');
+
+    // Restaurar console.error
+    console.error = originalConsoleError;
+
+    unsubBoom();
+    unsubGood();
+
+    section('TEST 11: equality custom en subscribeSelector (P-T5)');
+    // El contrato permite pasar options.equality: (a, b) => boolean.
+    // Cuando el selector retorna objetos, la comparación por defecto
+    // (Object.is) casi siempre resulta en "distinto" — cada mutación
+    // produce referencia nueva. Con equality custom, se puede pedir
+    // que el listener solo se llame cuando cambia un campo específico.
+    const store11 = createStatePulsar({
+      user: { name: 'Alice', age: 30 }
+    });
+
+    let listenerCalls = 0;
+    let lastReceivedName = null;
+
+    // equality custom: solo consideramos "cambio" si el name difiere
+    const byName = (a, b) => {
+      if (!a || !b) return a === b;
+      return a.name === b.name;
+    };
+
+    store11.subscribeSelector(
+      (state) => state.user,
+      (current) => {
+        listenerCalls++;
+        lastReceivedName = current?.name;
+      },
+      { equality: byName, immediate: true }
+    );
+
+    // immediate: true dispara la primera invocación
+    assert(listenerCalls === 1, 'equality custom: immediate dispara la primera invocación');
+    assert(lastReceivedName === 'Alice', 'equality custom: valor inicial correcto');
+
+    // Cambiar age (name igual) → equality dice "iguales" → NO invoca
+    store11.setState({ user: { name: 'Alice', age: 31 } });
+    assert(listenerCalls === 1, 'equality custom: cambio de campo no relevante no dispara');
+    assert(lastReceivedName === 'Alice', 'equality custom: el valor recibido sigue siendo Alice');
+
+    // Cambiar name → equality dice "distintos" → invoca
+    store11.setState({ user: { name: 'Bob', age: 31 } });
+    assert(listenerCalls === 2, 'equality custom: cambio de campo relevante dispara');
+    assert(lastReceivedName === 'Bob', 'equality custom: valor recibido actualizado a Bob');
+
+    // Volver a cambiar age (name igual) → sigue sin disparar
+    store11.setState({ user: { name: 'Bob', age: 32 } });
+    assert(listenerCalls === 2, 'equality custom: nuevo cambio irrelevante tampoco dispara');
+
+    section('TEST 12: equality por defecto compara por identidad (control)');
+    // Contraparte de TEST 11: sin equality custom, un selector que
+    // retorna el objeto entero notifica en cada setState, porque cada
+    // shallow-merge produce un objeto raíz nuevo (y el sub-objeto
+    // también, si se pasó reemplazado).
+    const store12 = createStatePulsar({ user: { name: 'Alice' } });
+    let defaultCalls = 0;
+
+    store12.subscribeSelector(
+      (state) => state.user,
+      () => { defaultCalls++; },
+      { immediate: true }
+    );
+
+    assert(defaultCalls === 1, 'equality por defecto: immediate dispara la primera invocación');
+
+    store12.setState({ user: { name: 'Alice' } }); // objeto nuevo, misma forma
+    assert(defaultCalls === 2, 'equality por defecto (Object.is): un objeto con misma forma pero referencia nueva dispara');
+
+    // ============================================================
     // Resumen final
     // ============================================================
     const total = passed + failed;
@@ -184,6 +382,12 @@
     summary.style.borderTop = '2px solid #555';
     summary.innerHTML = `📊 Resultados: ${passed}/${total} pasaron. ${failed === 0 ? '🎉 ¡Todos los tests del contrato pasaron!' : `⚠️ ${failed} fallo(s). Revisa arriba.`}`;
     output.appendChild(summary);
+
+    if (failed === 0) {
+      document.body.style.background = '#1e3a2a';
+    } else {
+      document.body.style.background = '#3a1e1e';
+    }
   </script>
 </body>
 </html>

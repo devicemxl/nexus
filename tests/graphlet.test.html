@@ -2,17 +2,18 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>GraphletJS - Tests de Contrato v0.2.0</title>
+  <title>GraphletJS - Tests de Contrato v0.3.0</title>
   <style>
     body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
     .pass { color: #4ec9b0; }
     .fail { color: #f44747; }
     .test { padding: 4px 0; border-bottom: 1px solid #333; }
     .summary { margin-top: 20px; font-weight: bold; }
+    .section { margin-top: 20px; padding: 6px 0; color: #dcdcaa; font-weight: bold; border-bottom: 2px solid #333; }
   </style>
 </head>
 <body>
-  <h1>🧪 GraphletJS Contract Tests v0.2.0</h1>
+  <h1>🧪 GraphletJS Contract Tests v0.3.0</h1>
   <div id="output"></div>
 
   <script type="module">
@@ -21,6 +22,13 @@
     const output = document.getElementById('output');
     let passed = 0;
     let failed = 0;
+
+    function section(title) {
+      const div = document.createElement('div');
+      div.className = 'section';
+      div.textContent = title;
+      output.appendChild(div);
+    }
 
     function assert(condition, message) {
       const div = document.createElement('div');
@@ -43,10 +51,10 @@
       return createGraphlet();
     }
 
-    // ------------------------------------------------------------
-    // PRUEBAS DE ESCRITURA BASE (put / upsert)
-    // ------------------------------------------------------------
-    console.group('CP2: put / upsert');
+    // ============================================================
+    // CP2: put / upsert
+    // ============================================================
+    section('CP2: put / upsert');
 
     const g1 = freshGraph();
     g1.put('user:1', { name: 'Alice', age: 30 });
@@ -72,12 +80,10 @@
       assert(e.message.includes('ID debe ser un string no vacío'), 'put lanza error con ID vacío');
     }
 
-    console.groupEnd();
-
-    // ------------------------------------------------------------
-    // PRUEBAS DE LECTURA (get / allIds)
-    // ------------------------------------------------------------
-    console.group('CP1: Lectura');
+    // ============================================================
+    // CP1: Lectura
+    // ============================================================
+    section('CP1: Lectura (get / allIds)');
 
     const g2 = freshGraph();
     g2.put('a', { x: 1 });
@@ -99,12 +105,10 @@
 
     assert(g2.get('inexistente') === null, 'get retorna null para entidad inexistente');
 
-    console.groupEnd();
-
-    // ------------------------------------------------------------
-    // PRUEBAS DE ESCRITURA ESTRICTA Y ELIMINACIÓN (update / delete)
-    // ------------------------------------------------------------
-    console.group('CP3: update / delete');
+    // ============================================================
+    // CP3: update / delete
+    // ============================================================
+    section('CP3: update / delete');
 
     const g3 = freshGraph();
     g3.put('user:1', { name: 'Dave', age: 40 });
@@ -139,19 +143,22 @@
     }
     assert(threw, 'delete lanza error en entidad inexistente');
 
-    console.groupEnd();
-
+    // ============================================================
+    // CP4: Relaciones (link / unlink / unlinkAll)
     // ------------------------------------------------------------
-    // PRUEBAS DE RELACIONES (link / unlink / unlinkAll)
-    // ------------------------------------------------------------
-    console.group('CP4: Relaciones');
+    // REESCRITO en v0.3.0 para reflejar la decisión G-0: link tiene
+    // semántica de set idempotente. Los tests anteriores fijaban
+    // multigrafo (duplicados permitidos) y son incompatibles con el
+    // contrato v0.3.0.
+    // ============================================================
+    section('CP4: Relaciones (set idempotente — G-0)');
 
     const g4 = freshGraph();
     g4.put('n1', {});
     g4.put('n2', {});
     g4.put('n3', {});
 
-    // link
+    // link: agrega si no existe
     g4.link('n1', 'knows', 'n2');
     g4.link('n1', 'knows', 'n3');
     g4.link('n2', 'knows', 'n3');
@@ -160,10 +167,17 @@
     assert(n1.links.knows.length === 2, 'link agrega relaciones (n1 conoce a n2 y n3)');
     assert(n1.links.knows.includes('n2') && n1.links.knows.includes('n3'), 'link almacena los targets correctos');
 
-    // link con duplicado (permitido)
+    // G-0: link duplicado es no-op (semántica de set)
     g4.link('n1', 'knows', 'n2');
     const n1dup = g4.get('n1');
-    assert(n1dup.links.knows.length === 3, 'link permite duplicados (n1 conoce a n2 dos veces)');
+    assert(n1dup.links.knows.length === 2, 'link duplicado no agrega (semántica de set)');
+    assert(n1dup.links.knows.filter(t => t === 'n2').length === 1, 'link duplicado: n2 aparece exactamente una vez');
+
+    // Múltiples link duplicados siguen siendo no-op
+    g4.link('n1', 'knows', 'n2');
+    g4.link('n1', 'knows', 'n2');
+    g4.link('n1', 'knows', 'n2');
+    assert(g4.get('n1').links.knows.length === 2, 'muchos link duplicados: sigue sin agregar');
 
     // link con source inexistente lanza error
     threw = false;
@@ -175,47 +189,63 @@
     }
     assert(threw, 'link lanza error en source inexistente');
 
-    // unlink (eliminar primera ocurrencia)
+    // link con target inexistente lanza error
+    threw = false;
+    try {
+      g4.link('n1', 'knows', 'n99');
+    } catch (e) {
+      threw = true;
+      assert(e.message.includes('no existe'), 'link lanza error si target no existe');
+    }
+    assert(threw, 'link lanza error en target inexistente');
+
+    // unlink: elimina la única ocurrencia (sin ambigüedad, gracias a G-0)
     g4.unlink('n1', 'knows', 'n2');
     const n1unlink = g4.get('n1');
-    assert(n1unlink.links.knows.length === 2, 'unlink elimina una ocurrencia (quedan n2 y n3)');
-    assert(n1unlink.links.knows.includes('n2'), 'unlink conserva al menos una ocurrencia de n2');
-    assert(n1unlink.links.knows.includes('n3'), 'unlink conserva n3');
+    assert(n1unlink.links.knows.length === 1, 'unlink elimina la relación (quedan solo n3)');
+    assert(!n1unlink.links.knows.includes('n2'), 'unlink: n2 ya no está en los links');
+    assert(n1unlink.links.knows.includes('n3'), 'unlink: n3 permanece');
 
     // unlink sobre source inexistente (no-op)
     g4.unlink('n99', 'knows', 'n1'); // no debe lanzar
     assert(true, 'unlink sobre source inexistente es no-op');
 
+    // unlink sobre target no presente en la relación (no-op) — G-T2
+    g4.unlink('n1', 'knows', 'n99'); // n99 no está en los links de n1
+    const n1noopUnlink = g4.get('n1');
+    assert(n1noopUnlink.links.knows.length === 1, 'unlink sobre target no presente es no-op silencioso');
+    assert(n1noopUnlink.links.knows.includes('n3'), 'unlink no-op: los links existentes no se tocan');
+
+    // unlink sobre relación inexistente (no-op)
+    g4.unlink('n1', 'noSuchRelation', 'n3');
+    assert(true, 'unlink sobre relación inexistente es no-op');
+
     // unlinkAll
     g4.unlinkAll('n1', 'knows');
     const n1all = g4.get('n1');
-    assert(n1all.links.knows === undefined, 'unlinkAll elimina todas las relaciones de ese tipo');
+    assert(
+      n1all.links.knows === undefined || (Array.isArray(n1all.links.knows) && n1all.links.knows.length === 0),
+      'unlinkAll elimina todas las relaciones de ese tipo (array vacío o clave ausente)'
+    );
 
     // unlinkAll sobre source inexistente (no-op)
     g4.unlinkAll('n99', 'knows');
     assert(true, 'unlinkAll sobre source inexistente es no-op');
 
-    // eliminar entidad y verificar que las relaciones entrantes se limpian
-    g4.put('n4', {});
-    g4.link('n4', 'friend', 'n2');
-    g4.delete('n4');
-    const n2after = g4.get('n2');
-    // n2 no debería tener referencia a n4 (nunca la tuvo, pero verificamos que no hayan quedado referencias rotas)
-    // Para probar correctamente, necesitamos una relación entrante a n2 desde otro nodo que luego eliminamos.
-    // Hacemos: n5 -> n2, luego eliminamos n5, n2 no debe tener nada.
+    // Eliminar entidad y verificar que las relaciones entrantes se limpian
     g4.put('n5', {});
     g4.link('n5', 'friend', 'n2');
     g4.delete('n5');
     const n2afterDelete = g4.get('n2');
-    // n2 no tiene links porque nunca tuvo salientes, pero verifiquemos que no haya referencias rotas
-    assert(n2afterDelete.links.friend === undefined, 'delete elimina relaciones entrantes (ningún nodo apunta a n2)');
+    assert(
+      n2afterDelete.links.friend === undefined || (Array.isArray(n2afterDelete.links.friend) && n2afterDelete.links.friend.length === 0),
+      'delete elimina las referencias entrantes desde otras entidades'
+    );
 
-    console.groupEnd();
-
-    // ------------------------------------------------------------
-    // PRUEBAS DE CONSULTAS (query)
-    // ------------------------------------------------------------
-    console.group('CP5: query');
+    // ============================================================
+    // CP5: query
+    // ============================================================
+    section('CP5: query (predicado)');
 
     const g5 = freshGraph();
     g5.put('user:1', { name: 'Alice', age: 30, active: true });
@@ -237,17 +267,15 @@
     const noResults = g5.query((id, props) => props.age > 100);
     assert(noResults.length === 0, 'query retorna array vacío si no hay coincidencias');
 
-    // query que usa links (opcional, pero verifiquemos que puede acceder a links)
+    // query que usa links
     g5.link('user:1', 'manager', 'user:3');
     const managers = g5.query((id, props, links) => links.manager && links.manager.includes('user:3'));
     assert(managers.length === 1 && managers[0] === 'user:1', 'query puede usar links en el predicado');
 
-    console.groupEnd();
-
-    // ------------------------------------------------------------
-    // PRUEBAS DE INTEGRACIÓN (Eliminación en cascada)
-    // ------------------------------------------------------------
-    console.group('Integración: delete y links');
+    // ============================================================
+    // Integración: delete y links
+    // ============================================================
+    section('Integración: delete con ciclos de relaciones');
 
     const g6 = freshGraph();
     g6.put('a', {});
@@ -262,13 +290,189 @@
 
     const aAfter = g6.get('a');
     const cAfter = g6.get('c');
-    assert(aAfter.links.rel === undefined || !aAfter.links.rel.includes('b'), 'delete elimina relación entrante a b (desde a)');
-    assert(cAfter.links.rel === undefined || !cAfter.links.rel.includes('b'), 'delete elimina relación entrante a b (desde c)');
+    assert(
+      aAfter.links.rel === undefined || !aAfter.links.rel.includes('b'),
+      'delete elimina relación entrante a b (desde a)'
+    );
+    assert(
+      cAfter.links.rel === undefined || !cAfter.links.rel.includes('b'),
+      'delete elimina relación entrante a b (desde c)'
+    );
 
-    // b no existe
     assert(g6.get('b') === null, 'delete elimina la entidad b');
 
-    console.groupEnd();
+    // ============================================================
+    // TESTS NUEVOS DEL PUNTO 3 DE FASE 0 (G-T1..G-T4)
+    // ============================================================
+
+    section('G-T1: inmutabilidad defensiva de query sobre links');
+    // El fix v0.2.1 introdujo _cloneLinks para que un predicate mal escrito
+    // no pueda mutar los arrays de links. El caso sobre `properties` ya
+    // estaba cubierto en un checkpoint anterior; este verifica el fix
+    // específicamente sobre `links`, que fue el motivo del changelog.
+    const gT1 = freshGraph();
+    gT1.put('src', {});
+    gT1.put('tgt1', {});
+    gT1.put('tgt2', {});
+    gT1.link('src', 'knows', 'tgt1');
+    gT1.link('src', 'knows', 'tgt2');
+
+    // Predicate malicioso: intenta empujar un target al array de links
+    gT1.query((id, props, links) => {
+      if (links.knows) {
+        links.knows.push('malicious');
+      }
+      return false;
+    });
+
+    const srcAfterQuery = gT1.get('src');
+    assert(srcAfterQuery.links.knows.length === 2, 'query no permite mutar links (length permanece 2)');
+    assert(!srcAfterQuery.links.knows.includes('malicious'), 'query no permite mutar links (target inyectado no aparece)');
+
+    // Similar sobre properties (contra-test del fix histórico)
+    const gT1b = freshGraph();
+    gT1b.put('e', { name: 'original' });
+    gT1b.query((id, props) => {
+      props.name = 'MUTATED';
+      props.injected = 'BAD';
+      return false;
+    });
+    assert(gT1b.get('e').properties.name === 'original', 'query no permite mutar properties.name');
+    assert(gT1b.get('e').properties.injected === undefined, 'query no permite añadir campos via mutación');
+
+    section('G-T2: unlink sobre target no presente es no-op silencioso');
+    // Este caso ya está cubierto arriba en CP4, pero lo repito aislado
+    // para tener trazabilidad explícita al ítem G-T2 de la lista.
+    const gT2 = freshGraph();
+    gT2.put('src', {});
+    gT2.put('t1', {});
+    gT2.put('t2', {});
+    gT2.link('src', 'r', 't1');
+    // Estado: src → r → [t1]
+
+    gT2.unlink('src', 'r', 't2'); // t2 no está en r
+    const srcAfterNoopUnlink = gT2.get('src');
+    assert(srcAfterNoopUnlink.links.r.length === 1, 'unlink sobre target no presente: length inalterado');
+    assert(srcAfterNoopUnlink.links.r.includes('t1'), 'unlink sobre target no presente: t1 sigue');
+
+    gT2.unlink('src', 'noSuchRelation', 't1'); // relación no existe
+    assert(gT2.get('src').links.r.length === 1, 'unlink sobre relación inexistente: no toca otras relaciones');
+
+    section('G-T3: validación de tipo en put/upsert/update');
+    // El contrato exige que properties/patch sean "objetos planos".
+    // Casos que deben lanzar TypeError:
+    //   - null (aunque el código puede tratarlo distinto: si es válido, marcarlo)
+    //   - arrays
+    //   - instancias de Date
+    //   - instancias de clase custom (prototipo distinto de Object.prototype)
+    const gT3 = freshGraph();
+    gT3.put('e', { name: 'x' }); // preparar para update
+
+    const badValues = [
+      { value: [], label: 'array vacío' },
+      { value: [1, 2], label: 'array con elementos' },
+      { value: new Date(), label: 'instancia de Date' },
+      { value: new (class Custom {})(), label: 'instancia de clase custom' },
+    ];
+
+    for (const { value, label } of badValues) {
+      let threwPut = false;
+      try {
+        gT3.put('newId', value);
+      } catch (e) {
+        threwPut = e instanceof TypeError;
+      }
+      assert(threwPut, `put rechaza ${label} con TypeError`);
+
+      let threwUpsert = false;
+      try {
+        gT3.upsert('newId2', value);
+      } catch (e) {
+        threwUpsert = e instanceof TypeError;
+      }
+      assert(threwUpsert, `upsert rechaza ${label} con TypeError`);
+
+      let threwUpdate = false;
+      try {
+        gT3.update('e', value);
+      } catch (e) {
+        threwUpdate = e instanceof TypeError;
+      }
+      assert(threwUpdate, `update rechaza ${label} con TypeError`);
+    }
+
+    // Caso positivo: Object.create(null) se acepta como objeto plano
+    let didNotThrow = true;
+    try {
+      const nullProto = Object.create(null);
+      nullProto.foo = 'bar';
+      const gT3b = freshGraph();
+      gT3b.put('n', nullProto);
+      gT3b.upsert('n', nullProto);
+      gT3b.update('n', nullProto);
+    } catch (e) {
+      didNotThrow = false;
+    }
+    assert(didNotThrow, 'Object.create(null) se acepta como objeto plano en put/upsert/update');
+
+    section('G-T4: query con predicate que lanza propaga el error');
+    // Contrato v0.3.0 §4 y Definición: "If the predicate throws, the
+    // error propagates to the caller. Graphlet does not capture, log,
+    // or continue with the remaining entities. Iteration stops at the
+    // point of the throw."
+    const gT4 = freshGraph();
+    gT4.put('a', {});
+    gT4.put('b', {});
+    gT4.put('c', {});
+
+    // Predicate que lanza siempre
+    let propagatedError = null;
+    try {
+      gT4.query(() => {
+        throw new Error('predicate boom');
+      });
+    } catch (e) {
+      propagatedError = e;
+    }
+    assert(propagatedError !== null, 'query propaga el error del predicate al llamador');
+    assert(propagatedError.message === 'predicate boom', 'query propaga el error tal cual (mensaje intacto)');
+
+    // Predicate que lanza en la segunda entidad: verificar que la iteración
+    // se detiene y no acumula resultados de las siguientes.
+    let evaluatedCount = 0;
+    let stoppedError = null;
+    try {
+      gT4.query((id) => {
+        evaluatedCount++;
+        if (evaluatedCount === 2) {
+          throw new Error('stop at second');
+        }
+        return true;
+      });
+    } catch (e) {
+      stoppedError = e;
+    }
+    assert(stoppedError !== null, 'query propaga el error incluso a mitad de iteración');
+    assert(evaluatedCount === 2, 'query detiene la iteración en el punto del error (no evalúa la tercera entidad)');
+
+    // Contra-test: si el consumidor quiere tolerancia, debe envolver
+    // su predicate en try/catch. Esto es guía documentada, no
+    // implementada por Graphlet.
+    const gT4b = freshGraph();
+    gT4b.put('x', { safe: true });
+    gT4b.put('y', { safe: false });
+    gT4b.put('z', { safe: true });
+
+    const tolerantResult = gT4b.query((id, props) => {
+      try {
+        if (!props.safe) throw new Error('unsafe');
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    assert(tolerantResult.length === 2, 'consumer-side try/catch permite tolerancia opt-in');
+    assert(tolerantResult.includes('x') && tolerantResult.includes('z'), 'consumer-side try/catch retorna solo las entidades safe');
 
     // ------------------------------------------------------------
     // RESUMEN FINAL

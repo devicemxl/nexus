@@ -45,10 +45,58 @@
     }
 
     // ============================================
-    // UTILIDAD: Espera fija (más fiable que eventos)
+    // TIMING DIRIGIDO POR EVENTOS (V-T0)
     // ============================================
-    function delay(ms = 200) {
-      return new Promise(resolve => setTimeout(resolve, ms));
+    //
+    // Reemplaza los antiguos `delay(200-300)` fijos por una espera que
+    // resuelve en cuanto el store refleja el estado esperado. Esta forma
+    // tiene tres ventajas sobre el reloj:
+    //   1. Es rápida en el caso feliz (microtasks, no ms).
+    //   2. En CI cargado no falla por flakiness: el timeout de rescate
+    //      solo dispara ante un bug real.
+    //   3. Al eliminar los `sync()` manuales que compensaban timing,
+    //      los tests de back/forward/go prueban de verdad que
+    //      `hashchange` reactiva a Voyajer. Si el listener no dispara,
+    //      el test falla por timeout, no por comparación silenciosa.
+    //
+    // El timeout por defecto (1000ms) actúa como cap de rescate para no
+    // colgar el runner ante un bug que impida el evento.
+    //
+    function waitForRoute(store, predicate, timeoutMs = 1000, label = '') {
+      return new Promise((resolve, reject) => {
+        // Si ya está en el estado esperado, resolver inmediatamente.
+        const currentRoute = store.getState().route;
+        if (predicate(currentRoute)) {
+          resolve(currentRoute);
+          return;
+        }
+
+        let timeoutId;
+        const unsubscribe = store.subscribeSelector('route', (route) => {
+          if (predicate(route)) {
+            clearTimeout(timeoutId);
+            unsubscribe();
+            resolve(route);
+          }
+        });
+
+        timeoutId = setTimeout(() => {
+          unsubscribe();
+          const suffix = label ? ` (${label})` : '';
+          reject(new Error(`Timeout esperando ruta después de ${timeoutMs}ms${suffix}`));
+        }, timeoutMs);
+      });
+    }
+
+    // Helper conveniente para el caso más frecuente: esperar a que
+    // route.path llegue a un valor específico.
+    function waitForPath(store, expectedPath, timeoutMs = 1000) {
+      return waitForRoute(
+        store,
+        (route) => route && route.path === expectedPath,
+        timeoutMs,
+        `path=${expectedPath}`
+      );
     }
 
     // ============================================
@@ -70,7 +118,7 @@
       writeOnInit: true,
     });
 
-    await delay(50);
+    // writeOnInit es síncrono en el constructor, no requiere espera.
     const route1 = store1.getState().route;
     assert(route1 !== undefined && route1 !== null, 'writeOnInit: el store tiene el estado inicial');
     assert(route1.path !== undefined, 'writeOnInit: el estado contiene la ruta');
@@ -101,8 +149,9 @@
       writeOnInit: false,
     });
 
+    // push es síncrono: escribe al store dentro del método.
+    // No requiere espera; el assert puede leer inmediatamente.
     voyajer3.push({ path: '/test-push' });
-    await delay(200);
     const route3 = store3.getState().route;
     assert(route3.path === '/test-push', 'push: la URL cambia y el store se actualiza');
     assert(window.location.hash === '#/test-push', 'push: la URL del navegador se actualiza');
@@ -116,15 +165,17 @@
     });
 
     voyajer4.push({ path: '/first' });
-    await delay(200);
     voyajer4.replace({ path: '/replaced' });
-    await delay(200);
 
     const route4 = store4.getState().route;
     assert(route4.path === '/replaced', 'replace: el store se actualiza correctamente');
     assert(window.location.hash === '#/replaced', 'replace: la URL se reemplaza');
 
     // -------- CP3: back/forward/go --------
+    // Estos tests NO llaman voyajer.sync() manualmente. La actualización
+    // del store depende de que Voyajer reaccione al evento `hashchange`
+    // del navegador. Si el listener interno no dispara, el test falla
+    // por timeout — comportamiento correcto y detectable.
     log('=== CP3: Historial (back/forward/go) ===', 'info');
 
     // Test: back y forward
@@ -137,25 +188,26 @@
     });
 
     voyajer5.push({ path: '/home' });
-    await delay(200);
     voyajer5.push({ path: '/about' });
-    await delay(200);
     voyajer5.push({ path: '/contact' });
-    await delay(200);
 
     voyajer5.back();
-    await delay(300); // esperar a que el navegador procese
-    voyajer5.sync(); // forzar sincronización
-    const route5a = store5.getState().route;
-    assert(route5a.path === '/about', 'back: navega a la entrada anterior');
-    assert(window.location.hash === '#/about', 'back: la URL cambia a #/about');
+    try {
+      await waitForPath(store5, '/about');
+      assert(store5.getState().route.path === '/about', 'back: navega a la entrada anterior');
+      assert(window.location.hash === '#/about', 'back: la URL cambia a #/about');
+    } catch (e) {
+      assert(false, `back: timeout esperando /about (${e.message})`);
+    }
 
     voyajer5.forward();
-    await delay(300);
-    voyajer5.sync();
-    const route5b = store5.getState().route;
-    assert(route5b.path === '/contact', 'forward: navega a la siguiente entrada');
-    assert(window.location.hash === '#/contact', 'forward: la URL cambia a #/contact');
+    try {
+      await waitForPath(store5, '/contact');
+      assert(store5.getState().route.path === '/contact', 'forward: navega a la siguiente entrada');
+      assert(window.location.hash === '#/contact', 'forward: la URL cambia a #/contact');
+    } catch (e) {
+      assert(false, `forward: timeout esperando /contact (${e.message})`);
+    }
 
     // Test: go(delta)
     const store6 = createStatePulsar({});
@@ -167,27 +219,27 @@
     });
 
     voyajer6.push({ path: '/a' });
-    await delay(200);
     voyajer6.push({ path: '/b' });
-    await delay(200);
     voyajer6.push({ path: '/c' });
-    await delay(200);
     voyajer6.push({ path: '/d' });
-    await delay(200);
 
     voyajer6.go(-2);
-    await delay(300);
-    voyajer6.sync();
-    const route6a = store6.getState().route;
-    assert(route6a.path === '/b', 'go(-2): retrocede 2 entradas');
-    assert(window.location.hash === '#/b', 'go(-2): la URL cambia a #/b');
+    try {
+      await waitForPath(store6, '/b');
+      assert(store6.getState().route.path === '/b', 'go(-2): retrocede 2 entradas');
+      assert(window.location.hash === '#/b', 'go(-2): la URL cambia a #/b');
+    } catch (e) {
+      assert(false, `go(-2): timeout esperando /b (${e.message})`);
+    }
 
     voyajer6.go(1);
-    await delay(300);
-    voyajer6.sync();
-    const route6b = store6.getState().route;
-    assert(route6b.path === '/c', 'go(1): avanza 1 entrada');
-    assert(window.location.hash === '#/c', 'go(1): la URL cambia a #/c');
+    try {
+      await waitForPath(store6, '/c');
+      assert(store6.getState().route.path === '/c', 'go(1): avanza 1 entrada');
+      assert(window.location.hash === '#/c', 'go(1): la URL cambia a #/c');
+    } catch (e) {
+      assert(false, `go(1): timeout esperando /c (${e.message})`);
+    }
 
     // -------- Casos límite --------
     log('=== Casos límite y errores ===', 'info');
@@ -210,6 +262,8 @@
     assert(threw, 'push valida que state sea objeto');
 
     // Test: serialize retorna null
+    // push con serialize→null es no-op síncrono: no escribe al store.
+    // Verificamos comparando el estado antes y después inmediatamente.
     const store8 = createStatePulsar({});
     const voyajer8 = createVoyajer(store8, {
       mode: 'hash',
@@ -220,11 +274,13 @@
 
     const routeBefore = store8.getState().route || null;
     voyajer8.push({ path: '/anything' });
-    await delay(100);
     const routeAfter = store8.getState().route || null;
     assert(routeBefore === routeAfter, 'serialize null: no navega ni actualiza el store');
 
     // Test: destroy limpia listeners
+    // destroy hace push un no-op y no dispara hashchange desde Voyajer.
+    // Un cambio directo del hash desde fuera tampoco debería reactivar
+    // al store (los listeners están removidos).
     const store9 = createStatePulsar({});
     const voyajer9 = createVoyajer(store9, {
       mode: 'hash',
@@ -234,7 +290,7 @@
 
     voyajer9.destroy();
     voyajer9.push({ path: '/after-destroy' });
-    await delay(100);
+    // Sin await: push es no-op síncrono después de destroy.
     assert(window.location.hash !== '#/after-destroy', 'destroy: limpia listeners y no navega');
 
     // Test: getCurrent
@@ -250,6 +306,27 @@
     assert(current.path === '/custom', 'getCurrent: lee el estado del store');
 
     // ============================================
+    // LIMPIEZA
+    // ============================================
+    // Restaurar hash a raíz para no contaminar sesiones sucesivas.
+    // Usamos un store dummy con Voyajer para poder esperar el hashchange
+    // limpiamente en lugar de asignar y salir.
+    const cleanupStore = createStatePulsar({});
+    const cleanupVoyajer = createVoyajer(cleanupStore, {
+      mode: 'hash',
+      parse: (url) => ({ path: url.pathname }),
+      serialize: (state) => state.path,
+      writeOnInit: false,
+    });
+    cleanupVoyajer.push({ path: '/' });
+    try {
+      await waitForPath(cleanupStore, '/', 500);
+    } catch (e) {
+      // No es error del test si la limpieza falla; se anota pero no cuenta.
+      log(`⚠️ Limpieza del hash: ${e.message}`, 'info');
+    }
+
+    // ============================================
     // RESUMEN FINAL
     // ============================================
     const total = passed + failed;
@@ -263,9 +340,6 @@
     } else {
       document.body.style.background = '#3a1e1e';
     }
-
-    // Limpiar URL
-    window.location.hash = '#/';
   </script>
 </body>
 </html>

@@ -1,11 +1,22 @@
 /**
- * GraphletJS - Modelo semántico (Contrato v0.2.0, código v0.2.1)
+ * GraphletJS - Modelo semántico (Contrato v0.3.0, código v0.3.0)
  * Implementación pura, sin reactividad, sin dependencias.
  *
+ * Cambios respecto a v0.2.1 (breaking):
+ * - G-0: `link` tiene ahora semántica de set idempotente. Llamar
+ *   `link(source, relation, target)` con un triple que ya existe
+ *   es un no-op, no se agrega duplicado. Consecuentemente, `unlink`
+ *   deja de tener ambigüedad de "primera ocurrencia" — al no haber
+ *   duplicados posibles, la operación es inequívoca.
+ * - Se documenta explícitamente la política de errores en `query`:
+ *   los errores lanzados por el predicate se propagan al llamador;
+ *   Graphlet no los captura.
+ *
  * Cambios respecto a v0.2.0:
- * - Fix en `query`: los arrays dentro de `links` ahora se clonan antes de
+ * - Fix en `query`: los arrays dentro de `links` se clonan antes de
  *   pasarse al predicate, alineando el comportamiento con `get()` y
- *   evitando que un predicate mal escrito pueda corromper el estado interno.
+ *   evitando que un predicate mal escrito pueda corromper el estado
+ *   interno.
  *
  * Estructura interna:
  *   Map<string, { properties: object, links: Record<string, string[]> }>
@@ -63,7 +74,7 @@ export function createGraphlet() {
   // API PÚBLICA
   // ============================================
 
-  // ---------- Lectura (CP1) ----------
+  // ---------- Lectura ----------
   function get(id) {
     const record = _entities.get(id);
     if (!record) return null;
@@ -79,7 +90,7 @@ export function createGraphlet() {
     return Array.from(_entities.keys());
   }
 
-  // ---------- Escritura Base (CP2) ----------
+  // ---------- Escritura Base ----------
   function put(id, properties = {}) {
     if (typeof id !== 'string' || id.trim() === '') {
       throw new Error('[Graphlet] put: El ID debe ser un string no vacío');
@@ -114,7 +125,7 @@ export function createGraphlet() {
     }
   }
 
-  // ---------- Escritura Estricta / Eliminación (CP3) ----------
+  // ---------- Escritura Estricta / Eliminación ----------
   function update(id, patch) {
     if (typeof id !== 'string' || id.trim() === '') {
       throw new Error('[Graphlet] update: El ID debe ser un string no vacío');
@@ -149,7 +160,18 @@ export function createGraphlet() {
     _entities.delete(id);
   }
 
-  // ---------- Relaciones (CP4) ----------
+  // ---------- Relaciones ----------
+  /**
+   * Agrega una relación dirigida entre dos entidades, con semántica
+   * de set (G-0, v0.3.0):
+   *   - Si el triple (sourceId, relation, targetId) NO existe: se agrega.
+   *   - Si el triple YA existe: no-op silencioso, el array permanece
+   *     idéntico. Set idempotente.
+   *
+   * Para modelar múltiples relaciones distintas entre los mismos dos
+   * nodos, represente cada relación como una entidad propia con su
+   * identificador; no duplique llamadas a link.
+   */
   function link(sourceId, relation, targetId) {
     if (typeof sourceId !== 'string' || sourceId.trim() === '') {
       throw new Error('[Graphlet] link: sourceId debe ser un string no vacío');
@@ -162,14 +184,25 @@ export function createGraphlet() {
     }
 
     const sourceRecord = _getRecord(sourceId);
-    const targetRecord = _getRecord(targetId); // verificamos que existe
+    _getRecord(targetId); // verificamos que target existe (lanza si no)
 
     if (!sourceRecord.links[relation]) {
       sourceRecord.links[relation] = [];
     }
+
+    // G-0: semántica de set — si el target ya está, no-op
+    if (sourceRecord.links[relation].includes(targetId)) {
+      return;
+    }
+
     sourceRecord.links[relation].push(targetId);
   }
 
+  /**
+   * Elimina una relación dirigida. Al no haber duplicados posibles
+   * (G-0), la operación es inequívoca: quita el (único) target si
+   * está, o no-op si no está.
+   */
   function unlink(sourceId, relation, targetId) {
     if (typeof sourceId !== 'string' || sourceId.trim() === '') {
       throw new Error('[Graphlet] unlink: sourceId debe ser un string no vacío');
@@ -212,7 +245,20 @@ export function createGraphlet() {
     }
   }
 
-  // ---------- Consultas (CP5) ----------
+  // ---------- Consultas ----------
+  /**
+   * Itera sobre todas las entidades y retorna los IDs para los que el
+   * predicate retorna true.
+   *
+   * Política de errores (documentada en el Contract v0.3.0 §4):
+   *   Si el predicate lanza, el error se propaga al llamador.
+   *   Graphlet no captura, no loguea, no continúa con las entidades
+   *   restantes. La iteración se detiene en el punto del throw.
+   *
+   * Las propiedades y los arrays de links se clonan antes de pasarse
+   * al predicate, de modo que un predicate mal escrito no puede
+   * corromper el estado interno del grafo.
+   */
   function query(predicate) {
     if (typeof predicate !== 'function') {
       throw new TypeError('[Graphlet] query: predicate debe ser una función');
@@ -220,10 +266,6 @@ export function createGraphlet() {
 
     const results = [];
     for (const [id, record] of _entities) {
-      // Construimos el objeto que se pasa al predicado: (id, properties, links)
-      // Se clonan tanto las propiedades como los arrays de cada relación,
-      // igual que hace get(), para que un predicate mal escrito no pueda
-      // mutar el estado interno.
       const props = { ...record.properties };
       const links = _cloneLinks(record.links);
       if (predicate(id, props, links)) {

@@ -1,6 +1,6 @@
 /**
  * ChunkletJS - Orquestador de comportamientos sobre el stack Nexus
- * Versión objetivo: 0.3.0 (contrato)
+ * Versión: 0.4.0 (implementación del contrato v0.4.0)
  *
  * Dependencias explícitas:
  *   - PulsarJS   → estado reactivo
@@ -16,6 +16,21 @@
  *   - Configuración diferida: `configure()` permite añadir Voyajer después del setup.
  *   - Los ctx acceden al stack mediante getters, por lo que una configuración
  *     posterior afecta también a comportamientos ya montados.
+ *
+ * Cambios respecto a v0.3.0 (breaking):
+ *   - C-2: `enable` y `disable` son ahora simétricos. Ambas operaciones
+ *     producen una entrada explícita en el mapa de habilitación cuando no
+ *     existía una previa (consultando el DOM para conocer los behaviors
+ *     declarados). El comportamiento anterior "enable sin entrada = no-op
+ *     silencioso" queda reemplazado. Ver ChunkletJS_Contract_Specification
+ *     §7.3.
+ *   - C-1: Unificación de `_getEnabledMap` y `_getEnabledState` en un solo
+ *     helper `_readEnabledMap` con criterio único (`_isPlainObject`).
+ *   - `disable` sobre una entidad sin elementos con esa data-entity en el
+ *     DOM ahora también crea una entrada explícita (vacía o con la lista
+ *     residual), completando la simetría con `enable`. Antes salía temprano
+ *     si `_getDeclaredBehaviorsForEntity` retornaba vacío, generando una
+ *     inconsistencia con el nuevo modelo simétrico.
  */
 
 import { createStatePulsar } from './pulsar.js';
@@ -428,17 +443,29 @@ function _getEntityId(element) {
   return id && id.trim() !== '' ? id.trim() : null;
 }
 
-function _getEnabledMap() {
+/**
+ * Refactor C-1: helper unificado para leer el mapa de habilitación.
+ *
+ * Reemplaza a los antiguos `_getEnabledMap` (retornaba null si el valor
+ * no era objeto) y `_getEnabledState` (retornaba {} y no chequeaba
+ * enabledPath). Ambos criterios se consolidan aquí bajo un solo
+ * predicado (`_isPlainObject`), y cada consumidor decide cómo tratar
+ * el `null`:
+ *   - `mount` / `_handleEnabledStateChange`: tratan `null` como "sin
+ *     restricción, montar todos los declarados".
+ *   - `enable` / `disable`: tratan `null` como equivalente a `{}` y
+ *     escriben una nueva entrada.
+ *
+ * Retorna:
+ *   - el objeto del mapa si es un objeto plano válido,
+ *   - `null` en cualquier otro caso (path no configurado, valor
+ *     ausente, valor con tipo incorrecto).
+ */
+function _readEnabledMap() {
   if (!_config || !_config.enabledPath) return null;
   const state = _stack.pulsar.getState();
   const value = _getByPath(state, _config.enabledPath);
-  return value && typeof value === 'object' ? value : null;
-}
-
-function _getEnabledState() {
-  const state = _stack.pulsar.getState();
-  const value = _getByPath(state, _config.enabledPath);
-  return _isPlainObject(value) ? value : {};
+  return _isPlainObject(value) ? value : null;
 }
 
 function _setEnabledState(newMap) {
@@ -591,7 +618,7 @@ export function mount(element) {
   }
   if (candidates.length === 0) return;
 
-  const enabledMap = _getEnabledMap();
+  const enabledMap = _readEnabledMap();
 
   for (const el of candidates) {
     let enabledBehaviors = null;
@@ -667,7 +694,7 @@ function _handleEnabledStateChange(enabledMap) {
     return;
   }
 
-  const effectiveMap = enabledMap && _isPlainObject(enabledMap) ? enabledMap : null;
+  const effectiveMap = _isPlainObject(enabledMap) ? enabledMap : null;
   const mountedElements = Array.from(_mounts.keys());
 
   for (const element of mountedElements) {
@@ -750,6 +777,14 @@ export function disconnect() {
 // HELPERS DE ENABLE/DISABLE
 // ============================================
 
+/**
+ * Consulta el DOM para conocer los behaviors declarados en `data-chunk`
+ * de todos los elementos con `data-entity` igual a `entity`.
+ *
+ * Depende del `document` global (constraint documentado en el Contract
+ * §11). Retorna un array deduplicado; si no hay elementos con esa
+ * `data-entity`, retorna array vacío — el llamador decide qué hacer.
+ */
 function _getDeclaredBehaviorsForEntity(entity) {
   if (!_config) return [];
   const names = new Set();
@@ -771,6 +806,23 @@ function _getDeclaredBehaviorsForEntity(entity) {
 // API PÚBLICA: enable / disable
 // ============================================
 
+/**
+ * Habilita un behavior para una entidad, con semántica simétrica a
+ * `disable` (ver ChunkletJS_Contract_Specification §7.3).
+ *
+ * Comportamiento (refactor C-2):
+ *   1. Lee el mapa actual (o `{}` si no existe).
+ *   2. Si no hay entrada para `entity`, consulta el DOM para obtener
+ *      los behaviors declarados (la lista base). Si `name` no está
+ *      declarado, se agrega igualmente al conjunto — el mapa refleja
+ *      intent del consumidor, no realidad del DOM.
+ *   3. Computa la unión de la lista base con `{name}`.
+ *   4. Escribe la nueva entrada en el mapa. Si la operación no cambió
+ *      nada (ya estaba habilitado con esa misma lista), se emite el
+ *      setState igual, para consistencia — el consumidor puede usar
+ *      `skipEqualUpdates` de Pulsar si desea evitar la notificación
+ *      redundante.
+ */
 export function enable(entity, name) {
   _assertSetupCalled();
   if (!_config.enabledPath) {
@@ -783,22 +835,40 @@ export function enable(entity, name) {
     throw new TypeError('[Chunklet] enable: name debe ser un string no vacío.');
   }
 
-  const map = _getEnabledState();
+  const map = _readEnabledMap() || {};
+  const hasEntry = Object.prototype.hasOwnProperty.call(map, entity);
 
-  if (!Object.prototype.hasOwnProperty.call(map, entity)) {
-    // Sin entrada: todos activos, no hay nada que habilitar explícitamente.
-    return;
+  let baseList;
+  if (hasEntry) {
+    const entry = map[entity];
+    baseList = Array.isArray(entry) ? entry : [];
+  } else {
+    // Sin entrada previa: consultamos el DOM para materializar el estado.
+    baseList = _getDeclaredBehaviorsForEntity(entity);
   }
 
-  const entry = map[entity];
-  if (!Array.isArray(entry) || entry.includes(name)) {
-    return;
-  }
+  // Unión: agregar `name` si no está.
+  const nextEntry = baseList.includes(name)
+    ? [...baseList]
+    : [...baseList, name];
 
-  const nextMap = { ...map, [entity]: [...entry, name] };
+  const nextMap = { ...map, [entity]: nextEntry };
   _setEnabledState(nextMap);
 }
 
+/**
+ * Deshabilita un behavior para una entidad, con semántica simétrica a
+ * `enable` (ver ChunkletJS_Contract_Specification §7.3).
+ *
+ * Comportamiento (refactor C-2):
+ *   1. Lee el mapa actual (o `{}` si no existe).
+ *   2. Si no hay entrada para `entity`, consulta el DOM para obtener
+ *      los behaviors declarados (la lista base).
+ *   3. Computa la diferencia de la lista base menos `{name}`.
+ *   4. Escribe la nueva entrada en el mapa, incluso si la lista
+ *      resultante es vacía o si la operación no cambia el efecto
+ *      observable. La escritura materializa el intent del consumidor.
+ */
 export function disable(entity, name) {
   _assertSetupCalled();
   if (!_config.enabledPath) {
@@ -811,26 +881,21 @@ export function disable(entity, name) {
     throw new TypeError('[Chunklet] disable: name debe ser un string no vacío.');
   }
 
-  const map = _getEnabledState();
+  const map = _readEnabledMap() || {};
+  const hasEntry = Object.prototype.hasOwnProperty.call(map, entity);
 
-  if (!Object.prototype.hasOwnProperty.call(map, entity)) {
-    // Sin entrada: todos activos. Necesitamos saber los declarados en el DOM.
-    const declared = _getDeclaredBehaviorsForEntity(entity);
-    if (declared.length === 0 || !declared.includes(name)) {
-      return;
-    }
-    const nextEntry = declared.filter(n => n !== name);
-    const nextMap = { ...map, [entity]: nextEntry };
-    _setEnabledState(nextMap);
-    return;
+  let baseList;
+  if (hasEntry) {
+    const entry = map[entity];
+    baseList = Array.isArray(entry) ? entry : [];
+  } else {
+    // Sin entrada previa: consultamos el DOM para materializar el estado.
+    baseList = _getDeclaredBehaviorsForEntity(entity);
   }
 
-  const entry = map[entity];
-  if (!Array.isArray(entry) || !entry.includes(name)) {
-    return;
-  }
+  // Diferencia: quitar `name`.
+  const nextEntry = baseList.filter(n => n !== name);
 
-  const nextEntry = entry.filter(n => n !== name);
   const nextMap = { ...map, [entity]: nextEntry };
   _setEnabledState(nextMap);
 }
