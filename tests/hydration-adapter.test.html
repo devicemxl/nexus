@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Hydration Adapter - Tests de Contrato v0.1.0</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .test { padding: 4px 0; border-bottom: 1px solid #333; }
+    .section { margin-top: 20px; padding: 6px 0; color: #dcdcaa; font-weight: bold; border-bottom: 2px solid #333; }
+    .summary { margin-top: 20px; padding: 10px; background: #252526; border: 1px solid #444; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h1>🧪 Hydration Adapter Contract Tests v0.1.0</h1>
+  <div id="output"></div>
+
+  <script type="module">
+    import { createGraphlet } from '../src/graphlet.js';
+    import { createHydrationAdapter } from '../src/adapters/hydration-adapter.js';
+
+    const output = document.getElementById('output');
+    let passed = 0;
+    let failed = 0;
+
+    function section(title) {
+      const div = document.createElement('div');
+      div.className = 'section';
+      div.textContent = title;
+      output.appendChild(div);
+    }
+
+    function assert(condition, message) {
+      const div = document.createElement('div');
+      div.className = 'test';
+      if (condition) {
+        div.innerHTML = `✅ <span class="pass">${message}</span>`;
+        passed++;
+      } else {
+        div.innerHTML = `❌ <span class="fail">${message}</span>`;
+        failed++;
+      }
+      output.appendChild(div);
+      console.assert(condition, message);
+    }
+
+    // Helper: capturar advertencias de console.warn para verificar 'skip'
+    // sin ensuciar la salida real de la consola.
+    function withWarnCapture(fn) {
+      const captured = [];
+      const original = console.warn;
+      console.warn = (...args) => { captured.push(args.join(' ')); };
+      try {
+        fn();
+      } finally {
+        console.warn = original;
+      }
+      return captured;
+    }
+
+    // ============================================================
+    // TEST 1: Hidratación básica de entidades y links
+    // ============================================================
+    section('TEST 1: Hidratación básica poblando entidades y links');
+
+    {
+      const g = createGraphlet();
+      const snapshot = {
+        entities: {
+          'user:1': {
+            properties: { name: 'Alice', age: 30 },
+            links: { belongsTo: ['team:7'] }
+          },
+          'team:7': {
+            properties: { name: 'Engineering' },
+            links: {}
+          }
+        }
+      };
+      createHydrationAdapter({ graphlet: g }, { snapshot });
+
+      const u1 = g.get('user:1');
+      const t7 = g.get('team:7');
+      assert(u1 !== null, 'user:1 existe tras hidratación');
+      assert(u1.properties.name === 'Alice', 'user:1 tiene name correcto');
+      assert(u1.properties.age === 30, 'user:1 tiene age correcto');
+      assert(u1.links.belongsTo && u1.links.belongsTo.includes('team:7'),
+        'user:1 tiene link belongsTo → team:7');
+      assert(t7 !== null && t7.properties.name === 'Engineering',
+        'team:7 existe con properties correctas');
+    }
+
+    // ============================================================
+    // TEST 2: Ejecución síncrona (adapter listo tras el constructor)
+    // ============================================================
+    section('TEST 2: La hidratación es síncrona; datos disponibles al retornar');
+
+    {
+      const g = createGraphlet();
+      const snapshot = { entities: { 'x:1': { properties: { v: 1 } } } };
+
+      // Antes de instanciar: vacío.
+      assert(g.allIds().length === 0, 'Graphlet vacío antes del adapter');
+
+      const adapter = createHydrationAdapter({ graphlet: g }, { snapshot });
+
+      // Inmediatamente después: poblado. Sin await, sin microtask.
+      assert(g.get('x:1') !== null,
+        'x:1 disponible inmediatamente tras la instanciación del adapter');
+      assert(typeof adapter.destroy === 'function',
+        'Adapter retorna un objeto con destroy()');
+    }
+
+    // ============================================================
+    // TEST 3: Two-pass ordering (links a entidades del mismo snapshot)
+    // ============================================================
+    section('TEST 3: Two-pass permite que un link referencie una entidad definida más tarde en el snapshot');
+
+    {
+      const g = createGraphlet();
+      // NOTA: 'source' aparece ANTES que 'target' en el objeto, pero
+      // 'source.links' referencia a 'target'. Si no fuera two-pass,
+      // graphlet.link('source', 'x', 'target') fallaría porque
+      // 'target' aún no existiría al procesar 'source'.
+      const snapshot = {
+        entities: {
+          source: {
+            properties: { role: 'origen' },
+            links: { rel: ['target'] }
+          },
+          target: {
+            properties: { role: 'destino' }
+          }
+        }
+      };
+
+      let threw = false;
+      try {
+        createHydrationAdapter({ graphlet: g }, { snapshot });
+      } catch (e) {
+        threw = true;
+      }
+      assert(!threw, 'Two-pass permite forward reference sin lanzar');
+      assert(g.get('source').links.rel.includes('target'),
+        'El link source --rel--> target quedó establecido');
+    }
+
+    // ============================================================
+    // TEST 4: mode: 'merge' (default) preserva properties preexistentes
+    // ============================================================
+    section("TEST 4: mode='merge' (default) hace upsert — properties preexistentes se preservan");
+
+    {
+      const g = createGraphlet();
+      g.put('user:1', { name: 'Alice', role: 'admin' });
+
+      const snapshot = {
+        entities: {
+          'user:1': { properties: { age: 30 } }
+        }
+      };
+      createHydrationAdapter({ graphlet: g }, { snapshot });
+
+      const u = g.get('user:1');
+      assert(u.properties.name === 'Alice', "merge preserva 'name' preexistente");
+      assert(u.properties.role === 'admin', "merge preserva 'role' preexistente");
+      assert(u.properties.age === 30, "merge añade 'age' del snapshot");
+    }
+
+    // ============================================================
+    // TEST 5: mode: 'replace' reemplaza properties completamente
+    // ============================================================
+    section("TEST 5: mode='replace' hace put — properties preexistentes se descartan");
+
+    {
+      const g = createGraphlet();
+      g.put('user:1', { name: 'Alice', role: 'admin' });
+
+      const snapshot = {
+        entities: {
+          'user:1': { properties: { age: 30 } }
+        }
+      };
+      createHydrationAdapter({ graphlet: g }, { snapshot, mode: 'replace' });
+
+      const u = g.get('user:1');
+      assert(u.properties.age === 30, "replace escribe 'age'");
+      assert(u.properties.name === undefined, "replace descarta 'name'");
+      assert(u.properties.role === undefined, "replace descarta 'role'");
+    }
+
+    // ============================================================
+    // TEST 6: Dedup defensiva de links duplicados en el snapshot
+    // ============================================================
+    section('TEST 6: Targets duplicados en un array de links se deduplican antes de llamar link');
+
+    {
+      const g = createGraphlet();
+      const snapshot = {
+        entities: {
+          a: {
+            properties: {},
+            links: { rel: ['b', 'b', 'b', 'c', 'b'] }  // 'b' aparece 4 veces
+          },
+          b: { properties: {} },
+          c: { properties: {} }
+        }
+      };
+      createHydrationAdapter({ graphlet: g }, { snapshot });
+
+      const links = g.get('a').links.rel;
+      assert(links.length === 2, `dedup: array final tiene 2 targets (recibido: ${links.length})`);
+      assert(links.includes('b') && links.includes('c'),
+        'dedup: b y c presentes, sin duplicados');
+      // Orden: primera aparición. 'b' viene primero en el snapshot que 'c'.
+      assert(links[0] === 'b' && links[1] === 'c',
+        'dedup: preserva orden de primera aparición');
+    }
+
+    // ============================================================
+    // TEST 7: onMissingTarget: 'throw' (default) propaga el error
+    // ============================================================
+    section("TEST 7: onMissingTarget='throw' (default) propaga error de Graphlet");
+
+    {
+      const g = createGraphlet();
+      const snapshot = {
+        entities: {
+          a: { properties: {}, links: { rel: ['ghost'] } }  // 'ghost' no existe
+        }
+      };
+
+      let threw = false;
+      let errorMsg = '';
+      try {
+        createHydrationAdapter({ graphlet: g }, { snapshot });
+      } catch (e) {
+        threw = true;
+        errorMsg = e.message;
+      }
+      assert(threw, "throw: hidratación lanza cuando el target no existe");
+      assert(/ghost/.test(errorMsg) || /no existe/.test(errorMsg),
+        `throw: error menciona el problema (recibido: "${errorMsg}")`);
+      // Estado parcial: 'a' sí fue creada en pass 1 antes de que pass 2 fallara.
+      assert(g.get('a') !== null,
+        'throw: entidad creada en pass 1 permanece (estado parcial documentado)');
+    }
+
+    // ============================================================
+    // TEST 8: onMissingTarget: 'skip' loguea y continúa
+    // ============================================================
+    section("TEST 8: onMissingTarget='skip' loguea warning y continúa con los demás links");
+
+    {
+      const g = createGraphlet();
+      const snapshot = {
+        entities: {
+          a: {
+            properties: {},
+            links: { rel: ['ghost', 'b'] }  // 'ghost' falta, 'b' existe
+          },
+          b: { properties: {} }
+        }
+      };
+
+      let threw = false;
+      const warnings = withWarnCapture(() => {
+        try {
+          createHydrationAdapter(
+            { graphlet: g },
+            { snapshot, onMissingTarget: 'skip' }
+          );
+        } catch (e) {
+          threw = true;
+        }
+      });
+
+      assert(!threw, 'skip: no lanza');
+      assert(warnings.length === 1, `skip: emite 1 warning (recibido: ${warnings.length})`);
+      assert(/ghost/.test(warnings[0] || ''),
+        'skip: warning menciona el target ausente');
+      const links = g.get('a').links.rel || [];
+      assert(links.includes('b') && !links.includes('ghost'),
+        'skip: continúa con los links restantes; b sí quedó enlazado');
+    }
+
+    // ============================================================
+    // TEST 9: parse transforma shape externa a canónica
+    // ============================================================
+    section('TEST 9: parse permite hidratar desde una shape no canónica');
+
+    {
+      const g = createGraphlet();
+      // Shape "externa": un array de {id, props, edges}
+      const external = [
+        { id: 'n:1', props: { label: 'Uno' }, edges: [{ rel: 'next', to: 'n:2' }] },
+        { id: 'n:2', props: { label: 'Dos' }, edges: [] }
+      ];
+      const parse = (arr) => {
+        const entities = {};
+        for (const item of arr) {
+          const links = {};
+          for (const edge of item.edges) {
+            (links[edge.rel] = links[edge.rel] || []).push(edge.to);
+          }
+          entities[item.id] = { properties: item.props, links };
+        }
+        return { entities };
+      };
+
+      createHydrationAdapter({ graphlet: g }, { snapshot: external, parse });
+
+      assert(g.get('n:1').properties.label === 'Uno', 'parse: n:1 hidratada');
+      assert(g.get('n:2').properties.label === 'Dos', 'parse: n:2 hidratada');
+      assert(g.get('n:1').links.next.includes('n:2'), 'parse: link n:1→n:2 establecido');
+    }
+
+    // ============================================================
+    // TEST 10: destroy() es no-op idempotente
+    // ============================================================
+    section('TEST 10: destroy() es no-op idempotente (no hay recursos vivos)');
+
+    {
+      const g = createGraphlet();
+      const adapter = createHydrationAdapter(
+        { graphlet: g },
+        { snapshot: { entities: {} } }
+      );
+
+      let firstThrew = false;
+      let secondThrew = false;
+      try { adapter.destroy(); } catch (e) { firstThrew = true; }
+      try { adapter.destroy(); } catch (e) { secondThrew = true; }
+
+      assert(!firstThrew, 'primer destroy() no lanza');
+      assert(!secondThrew, 'segundo destroy() no lanza (idempotente)');
+    }
+
+    // ============================================================
+    // TEST 11: Validación de context y options
+    // ============================================================
+    section('TEST 11: Validación de context y options');
+
+    {
+      // 11.1: context sin graphlet
+      let t = false;
+      try { createHydrationAdapter({}, { snapshot: { entities: {} } }); }
+      catch (e) { t = true; }
+      assert(t, '11.1: context sin graphlet lanza TypeError');
+
+      // 11.2: falta snapshot
+      t = false;
+      try { createHydrationAdapter({ graphlet: createGraphlet() }, {}); }
+      catch (e) { t = true; }
+      assert(t, '11.2: falta options.snapshot lanza TypeError');
+
+      // 11.3: mode inválido
+      t = false;
+      try {
+        createHydrationAdapter(
+          { graphlet: createGraphlet() },
+          { snapshot: { entities: {} }, mode: 'invalid' }
+        );
+      } catch (e) { t = true; }
+      assert(t, "11.3: mode fuera de {merge, replace} lanza TypeError");
+
+      // 11.4: onMissingTarget inválido
+      t = false;
+      try {
+        createHydrationAdapter(
+          { graphlet: createGraphlet() },
+          { snapshot: { entities: {} }, onMissingTarget: 'invalid' }
+        );
+      } catch (e) { t = true; }
+      assert(t, "11.4: onMissingTarget fuera de {throw, skip} lanza TypeError");
+
+      // 11.5: snapshot parseado sin 'entities'
+      t = false;
+      try {
+        createHydrationAdapter(
+          { graphlet: createGraphlet() },
+          { snapshot: { foo: 'bar' } }
+        );
+      } catch (e) { t = true; }
+      assert(t, "11.5: snapshot sin 'entities' lanza TypeError");
+
+      // 11.6: entrada individual malformada
+      t = false;
+      let errMsg = '';
+      try {
+        createHydrationAdapter(
+          { graphlet: createGraphlet() },
+          { snapshot: { entities: { 'x:1': 'not-an-object' } } }
+        );
+      } catch (e) { t = true; errMsg = e.message; }
+      assert(t, '11.6: entrada individual no-objeto lanza TypeError');
+      assert(/x:1/.test(errMsg),
+        `11.6: mensaje identifica la entidad problemática (recibido: "${errMsg}")`);
+
+      // 11.7: entrada.links no es objeto plano
+      t = false;
+      try {
+        createHydrationAdapter(
+          { graphlet: createGraphlet() },
+          { snapshot: { entities: { 'x:1': { properties: {}, links: 'nope' } } } }
+        );
+      } catch (e) { t = true; }
+      assert(t, '11.7: entrada.links no-objeto lanza TypeError');
+    }
+
+    // ============================================================
+    // TEST 12: Snapshot vacío es válido y no falla
+    // ============================================================
+    section('TEST 12: Snapshot con entities: {} es válido y hidrata a un grafo vacío');
+
+    {
+      const g = createGraphlet();
+      let threw = false;
+      try {
+        createHydrationAdapter({ graphlet: g }, { snapshot: { entities: {} } });
+      } catch (e) { threw = true; }
+      assert(!threw, 'snapshot vacío no lanza');
+      assert(g.allIds().length === 0, 'graphlet permanece vacío');
+    }
+
+    // ============================================================
+    // RESUMEN
+    // ============================================================
+    const total = passed + failed;
+    const summary = document.createElement('div');
+    summary.className = 'summary';
+    summary.innerHTML =
+      `📊 <strong>Resultados:</strong> ${passed}/${total} pasaron. ` +
+      (failed === 0
+        ? '<span class="pass">✅ Todo verde.</span>'
+        : `<span class="fail">⚠️ ${failed} fallo(s).</span>`);
+    output.appendChild(summary);
+  </script>
+</body>
+</html>
