@@ -4,11 +4,13 @@
 **Implementation status:** initial (snapshot-based, see §7)
 **Scope:** Projects Graphlet entity mutations into a Pulsar state slice so that reactive consumers (Chunklet behaviors, subscribers) can observe entity changes without polling Graphlet.
 
+---
 
 ## 1. Purpose
 
 Graphlet is deliberately non-reactive (Graphlet Definition, "Lo que Graphlet no es"). To make entity data available to Chunklet behaviors that render reactively, an external observer must project Graphlet mutations into Pulsar. This adapter is that observer, and it is the reason Chunklet can render entity-bound UI without introducing a new subscription primitive.
 
+---
 
 ## 2. Factory Signature
 
@@ -24,6 +26,7 @@ function createGraphletPulsarBridge(
 ): { destroy(): void };
 ```
 
+---
 
 ## 3. Behavior (Correct, Reactive Version)
 
@@ -50,6 +53,7 @@ The correct version of this adapter operates entity-by-entity:
    - Do not touch Pulsar state. The projected entries remain; the application decides whether to clear them.
    - Idempotent: second `destroy` is no-op.
 
+---
 
 ## 4. Composition Notes
 
@@ -59,6 +63,7 @@ The correct version of this adapter operates entity-by-entity:
 
 - **Write conflicts:** If application code writes directly to `pulsar.state[path][id]`, the next Graphlet mutation on that entity will overwrite. The bridge is authoritative for its path. Applications should not write under this path directly.
 
+---
 
 ## 5. Behavioral Guarantees
 
@@ -71,6 +76,7 @@ The correct version of this adapter operates entity-by-entity:
 | **Idempotent destroy** | Second call to `destroy` is safe no-op. |
 | **No global handlers** | Bridge does not touch `window` or install `beforeunload`. |
 
+---
 
 ## 6. What This Adapter Does NOT Do
 
@@ -80,22 +86,42 @@ The correct version of this adapter operates entity-by-entity:
 - **Does not emit typed change events.** Consumers subscribe to Pulsar; the reactive channel is Pulsar, not the bridge.
 - **Does not validate consistency.** If the application also writes to the projection path, the bridge does not detect or prevent divergence.
 
+---
 
 ## 7. Note on Initial Implementation (Snapshot-Based)
 
-The **initial implementation** produced in Phase 0 Punto 5 is **not** the reactive version described in §3. It is a simpler snapshot-based projection that satisfies the same external contract but with different internal behavior:
+The **initial implementation** produced in Phase 0 Punto 5 is **not** the reactive version described in §3. It is a simpler snapshot-based projection with two significant differences from the reactive version:
 
-- On any Graphlet mutation, the initial implementation **re-projects all Graphlet entities** into `pulsar.state[path]`, replacing the entire projection.
-- This is O(N) per mutation instead of O(1), which is acceptable for early applications with small entity sets (dozens to low hundreds) but does not scale to thousands.
-- The initial implementation still respects set semantics (no re-projection on `link` no-ops).
-- The initial implementation still fulfills the observable behavior described in §3 (the state Chunklet sees is identical); only the cost profile differs.
+### 7.1 Cost profile
 
-The correct reactive version (§3) will be implemented when:
-- A real application demonstrates that the snapshot cost is a bottleneck, or
-- Graphlet gains an opt-in change notification API that makes per-entity reactivity natural without wrapper archaeology.
+On any Graphlet mutation, the initial implementation **re-projects all Graphlet entities** into `pulsar.state[path]`, replacing the entire projection. This is O(N) per mutation instead of O(1), where N is the total number of entities. Acceptable for early applications with small entity sets (dozens to low hundreds); does not scale to thousands.
 
-Both are anticipated but neither is a Phase 0 deliverable.
+### 7.2 Reactive noise (more consequential than cost)
 
+The snapshot version produces new object references for every entity on every mutation, even for entities whose semantic content did not change. Consequence: consumers that subscribe with `pulsar.subscribeSelector('entities.X', ...)` using the default `Object.is` equality receive notifications on **every** graph mutation, not only when entity X changes.
+
+For a UI with N widgets each subscribed to a distinct entity slice, one Graphlet mutation triggers all N widget callbacks. Most of them do useful work only in the callback that corresponds to the actually mutated entity; the rest re-render or re-compute against unchanged data. This scales quadratically with the product of widgets and mutation frequency and becomes noticeable well before the O(N) cost of re-projection itself becomes a concern.
+
+This is the primary limitation the reactive version resolves. The reactive version writes only the slice of the affected entity into Pulsar, preserving object references for unaffected entities, so `Object.is` correctly detects that unrelated slices did not change.
+
+### 7.3 What the snapshot version still guarantees
+
+- Respects set semantics (no re-projection on Graphlet no-ops such as duplicate `link`).
+- Projected shape matches `graphlet.get()` exactly (§3).
+- Fulfills the observable behavior described in §3 in terms of correctness of state visible to consumers; only the reactive noise and cost profile differ.
+
+### 7.4 Path to the reactive version
+
+The reactive version will be implemented when the accumulated fricción of reactive noise across multiple widgets makes it necessary. Concretely, this is expected to occur in Phase 1 as the widget factory constructs widgets that subscribe under `entities.*`. The current Phase 0 harness includes TEST 13, which documents the current limitation and serves as an aspirational test: when the reactive version lands, its asserts will invert, and passing the inverted version will be empirical evidence of the fix.
+
+Three implementation paths for the reactive version are identified (documented in `PHASE_0_DEFERRED.md`):
+- **Camino 1:** Inverse index in the bridge (adapter-side, no Graphlet changes).
+- **Camino 2:** Full-scan in `delete` (adapter-side, no Graphlet changes; recommended default).
+- **Camino 3:** Opt-in observability API in Graphlet (requires Graphlet contract review).
+
+Camino 2 is the recommended default for the first reactive implementation: it does not touch Graphlet, keeps the adapter self-contained, and accepts an O(N) cost only on `delete` (rare in target use cases like the diagram editor). Alternative caminos remain available if evidence suggests otherwise.
+
+---
 
 ## 8. Versioning
 
@@ -103,5 +129,6 @@ Both are anticipated but neither is a Phase 0 deliverable.
 - **Minor:** New options that do not break existing consumers.
 - **Major:** Changes to the factory signature, changes to the projected shape, or changes to which methods are wrapped.
 
+---
 
 *End of Mini-Spec.*
