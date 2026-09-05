@@ -63,6 +63,10 @@ The reactive version writes only the slice of the affected entity into Pulsar, p
 
 **Why deferred.** The snapshot version fulfills the external correctness contract (state visible to consumers is identical). The reactive noise becomes a concern only when multiple widgets are subscribed under `entities.*`. Phase 0 does not build the widget factory; deferring to Phase 1 respects evidence-first design.
 
+**Empirical evidence (from `widget-bridge.html`, Phase 0 Punto 6).** With 8 entities in the projection and a single listener subscribed to one specific entity (`entities.user:watched`), **73% of the notifications received by that listener did not correspond to changes in the observed entity**. Concretely: 86 notifications observed, only 23 reflected a real change (JSON-serialized comparison). The measurement was made under manual interaction (individual button clicks); under sustained load (e.g., drag operations at 60Hz) the accumulated cost of ignored notifications would multiply.
+
+The theoretical asymptote is `(N-1)/N`: for N=8, expected ratio is ~87% ignored (observed 73% is close; the discrepancy comes from the interaction pattern including some `watched`-modifying clicks). For N=100, expected ratio approaches 99%. This quantifies what "does not scale" means for the snapshot version and informs when the reactive version must be prioritized.
+
 **Resolution path.** Three implementation paths identified in the mini-spec §7.4:
 - **Camino 1:** Inverse index in the bridge. Adapter maintains `Map<targetId, Set<sourceId>>` updated on every link/unlink. Consulted on delete for cascade.
 - **Camino 2 (recommended):** Full-scan in delete. All mutation methods except delete are O(1) (they know their affected entity by argument); delete performs one O(N) scan to discover incoming links. Aceptable because deletes are rare in target use cases.
@@ -93,7 +97,40 @@ Alternatives considered and rejected:
 
 ---
 
-## Not Debt (Recorded for Clarity)
+---
+
+### PERSISTENCE-INDEXEDDB — Persistence Adapter: IndexedDB backend
+
+**What it resolves.** The current Persistence Adapter (v0.1.0) writes only to `localStorage`. This works for the target application scale (browser-side diagram editor with tens to low hundreds of entities, snapshots of a few dozen KB) but does not scale in three dimensions:
+
+- **Capacity:** localStorage caps at ~5MB per origin. Larger snapshots (hundreds of entities with rich properties, or embedded binary-ish content) exceed the limit and trigger `QuotaExceededError`.
+- **Blocking:** localStorage writes are synchronous. Large JSON serializations block the main thread; for a snapshot of several MB this is perceptible.
+- **Structure:** IndexedDB supports structured cloning natively, avoiding the JSON serialization overhead altogether for large objects, and permits indexed queries against persisted data.
+
+**Why deferred (from persistence-adapter.spec.md §7).** Two reasons:
+
+1. **Async surface.** IndexedDB is inherently asynchronous. Adding it would either force the whole adapter async (breaking the current synchronous `flush()` guarantee that composes cleanly with `beforeunload` patterns at the application level), or introduce a mode-selector that changes the return type of `flush()`. Either is a v0.2.0 decision, not a v0.1.0 add-on.
+2. **Not needed yet.** No evidence that the current localStorage-only version is the bottleneck. Article I: real evidence should precede the additional complexity.
+
+**Resolution path.** Two implementation options identified in the mini-spec:
+- **Option A:** Separate factory `createIndexedDBPersistenceAdapter` with an async surface, sharing the observation logic (method wrapping, set-semantics detection, debouncing) with the current adapter through internal helpers.
+- **Option B:** Extend the current adapter's `storage` option to accept an adapter that translates an IndexedDB-flavored async interface into the Web Storage API synchronous surface. Simpler public surface but hides async failure modes behind sync method signatures.
+
+Decision between A and B to be made when evidence demands it. Option A is currently favored because it makes the async nature visible to the consumer.
+
+**Trigger condition for prioritization.** Any of: (a) a real application produces snapshots >2MB with observable UI stutter on save, (b) a real application requires storing structures that JSON serialization mangles (e.g., large Maps, Sets, ArrayBuffers), (c) a real application requires querying persisted data without a full load.
+
+---
+
+### 12-CROSSTAB-SYNC — External Event Adapter: cross-tab reactive sync
+
+**What it resolves.** The Persistence widget demonstrated empirically that localStorage already provides passive cross-tab persistence (a change persisted in one tab is visible to another tab on next load or reload). What it does **not** provide is reactive synchronization: two tabs open simultaneously do not see each other's changes until one of them reloads.
+
+The External Event Adapter (Capa 12, being implemented in Phase 0 Punto 5) resolves this via `BroadcastChannel`, translating local mutations into events broadcast to peer tabs, and translating incoming events into local mutations with anti-echo protection to prevent feedback loops.
+
+**Status.** This is not deferred debt — it is active work in Phase 0 Punto 5, listed here for cross-reference. Once Capa 12 lands with its widget, this line is removed from this document.
+
+
 
 The following observations were closed during Phase 0 and are recorded here only to prevent them from being re-listed as deferred:
 
@@ -112,14 +149,16 @@ The following observations were closed during Phase 0 and are recorded here only
 | V-T3 | Voyajer | base with regex metacharacters | Playwright (Escena 3.3) |
 | C-T7 | Chunklet | enable/disable with `enabledPath` | Dedicated harness OR Playwright |
 | C-2 sym | Chunklet | toggle predictability | Dedicated harness OR Playwright |
-| BRIDGE-REACTIVE | Bridge adapter | reactive per-entity projection | Phase 1 (Camino 2 recommended) |
+| BRIDGE-REACTIVE | Bridge adapter | reactive per-entity projection (73% noise quantified with N=8) | Phase 1 (Camino 2 recommended) |
 | WIDGET-COMPOSITION | Chunklet ctx | helper for entity + related | Iterative during Punto 6 and Phase 1 |
+| PERSISTENCE-INDEXEDDB | Persistence adapter | IndexedDB backend for large snapshots | v0.2.0 when evidence demands it |
+| 12-CROSSTAB-SYNC | External Event adapter | (active work, not deferred) | Phase 0 Punto 5, Capa 12 |
 
-**Total items deferred:** 6.
+**Total items deferred:** 7 (BRIDGE-REACTIVE, WIDGET-COMPOSITION, PERSISTENCE-INDEXEDDB plus the four testing-infrastructure items). 12-CROSSTAB-SYNC is listed for cross-reference but is not deferred debt.
 
 **Breakdown by nature:**
 - **Testing infrastructure (4):** V-T2, V-T3, C-T7, C-2 sym. All resolvable via dedicated harness reorganization or Playwright.
-- **Implementation quality (1):** BRIDGE-REACTIVE. Snapshot version satisfies external correctness; reactive version resolves scaling of reactive noise.
+- **Implementation quality (2):** BRIDGE-REACTIVE (evidence quantified: 73% reactive noise with N=8, empirically confirms need before Phase 1), PERSISTENCE-INDEXEDDB (evidence pending; localStorage sufficient for current target scale).
 - **Emerging capability (1):** WIDGET-COMPOSITION. Discovered while validating the bridge; form to be discovered by widget construction, not by advance specification.
 
 **All identified in-scope observations from Phase 0 have been either closed or deferred with explicit resolution paths.** No item is in "unresolved" or "unknown" status.
