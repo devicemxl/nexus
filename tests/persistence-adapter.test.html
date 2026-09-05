@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Persistence Adapter - Tests de Contrato v0.1.0</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .test { padding: 4px 0; border-bottom: 1px solid #333; }
+    .section { margin-top: 20px; padding: 6px 0; color: #dcdcaa; font-weight: bold; border-bottom: 2px solid #333; }
+    .summary { margin-top: 20px; padding: 10px; background: #252526; border: 1px solid #444; font-size: 14px; }
+    .timing { color: #888; font-size: 12px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h1>🧪 Persistence Adapter Contract Tests v0.1.0</h1>
+  <div id="output"></div>
+
+  <script type="module">
+    import { createGraphlet } from '../src/graphlet.js';
+    import { createHydrationAdapter } from '../src/adapters/hydration-adapter.js';
+    import { createPersistenceAdapter } from '../src/adapters/persistence-adapter.js';
+
+    const output = document.getElementById('output');
+    let passed = 0;
+    let failed = 0;
+    const t0 = performance.now();
+
+    function section(title) {
+      const div = document.createElement('div');
+      div.className = 'section';
+      div.textContent = title;
+      output.appendChild(div);
+    }
+
+    function assert(condition, message) {
+      const div = document.createElement('div');
+      div.className = 'test';
+      if (condition) {
+        div.innerHTML = `✅ <span class="pass">${message}</span>`;
+        passed++;
+      } else {
+        div.innerHTML = `❌ <span class="fail">${message}</span>`;
+        failed++;
+      }
+      output.appendChild(div);
+      console.assert(condition, message);
+    }
+
+    // ============================================================
+    // MOCK STORAGE
+    // ============================================================
+    // Mock in-memory que satisface la Web Storage API mínima que el
+    // adapter usa: getItem/setItem/removeItem. Además cuenta cada
+    // llamada a setItem para verificar cuántas escrituras ocurrieron.
+    // Puede inyectarse un fallo controlado en setItem para probar
+    // el manejo de errores (QuotaExceededError, SecurityError).
+    // ============================================================
+    function createMockStorage() {
+      const data = new Map();
+      const state = {
+        writeCount: 0,
+        lastWrittenKey: null,
+        lastWrittenValue: null,
+        failOnce: null,  // Si se setea a un Error, la próxima setItem lanza y se limpia
+      };
+      return {
+        getItem(key) {
+          return data.has(key) ? data.get(key) : null;
+        },
+        setItem(key, value) {
+          if (state.failOnce) {
+            const err = state.failOnce;
+            state.failOnce = null;
+            throw err;
+          }
+          data.set(key, value);
+          state.writeCount++;
+          state.lastWrittenKey = key;
+          state.lastWrittenValue = value;
+        },
+        removeItem(key) {
+          data.delete(key);
+        },
+        // Introspección para los tests
+        _state: state,
+        _reset() {
+          data.clear();
+          state.writeCount = 0;
+          state.lastWrittenKey = null;
+          state.lastWrittenValue = null;
+          state.failOnce = null;
+        },
+      };
+    }
+
+    // Helper de timing: espera N ms basado en setTimeout, no en delays
+    // arbitrarios. Es lo mínimo necesario para probar debounced.
+    function wait(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // ============================================================
+    // TEST 1: Eager mode escribe síncrono tras cada mutación
+    // ============================================================
+    section('TEST 1: Modo eager escribe síncronamente tras cada mutación');
+
+    {
+      const g = createGraphlet();
+      const storage = createMockStorage();
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        { key: 'test1', mode: 'eager', storage }
+      );
+
+      assert(storage._state.writeCount === 0,
+        'Sin writeOnInit: no hay escritura al instanciar');
+
+      g.put('x:1', { name: 'One' });
+      assert(storage._state.writeCount === 1,
+        'Eager: put dispara escritura inmediata (síncrona)');
+
+      g.put('x:2', { name: 'Two' });
+      g.put('x:3', { name: 'Three' });
+      assert(storage._state.writeCount === 3,
+        'Eager: cada mutación produce una escritura (3 puts = 3 writes)');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 2: Debounced mode coalesce mutaciones rápidas en una escritura
+    // ============================================================
+    section('TEST 2: Modo debounced coalesce mutaciones rápidas');
+
+    {
+      const g = createGraphlet();
+      const storage = createMockStorage();
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        { key: 'test2', mode: 'debounced', debounceMs: 50, storage }
+      );
+
+      g.put('x:1', { name: 'One' });
+      g.put('x:2', { name: 'Two' });
+      g.put('x:3', { name: 'Three' });
+
+      assert(storage._state.writeCount === 0,
+        'Debounced: 3 mutaciones rápidas → aún no escribió');
+
+      await wait(80);  // > 50ms debounce
+      assert(storage._state.writeCount === 1,
+        'Debounced: tras el silencio, UNA sola escritura para las 3 mutaciones');
+
+      const snap = JSON.parse(storage._state.lastWrittenValue);
+      assert(Object.keys(snap.entities).length === 3,
+        'Debounced: la escritura final contiene las 3 entidades');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 3: Debounced resetea el timer con cada mutación (trailing)
+    // ============================================================
+    section('TEST 3: Debounced trailing — cada mutación resetea el timer');
+
+    {
+      const g = createGraphlet();
+      const storage = createMockStorage();
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        { key: 'test3', mode: 'debounced', debounceMs: 50, storage }
+      );
+
+      g.put('x:1', { name: 'One' });
+      await wait(30);                       // No ha pasado el debounce entero
+      g.put('x:2', { name: 'Two' });        // Reset del timer
+      await wait(30);                       // Total 60ms, pero solo 30 desde reset
+      assert(storage._state.writeCount === 0,
+        'Trailing: timer se reseteó — aún no escribe pasados 60ms');
+
+      await wait(40);  // Ahora sí, silencio > 50ms desde la última mutación
+      assert(storage._state.writeCount === 1,
+        'Trailing: escribe una vez tras el silencio real');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 4: writeOnInit escribe al instanciar
+    // ============================================================
+    section('TEST 4: writeOnInit=true escribe el estado inicial de Graphlet');
+
+    {
+      const g = createGraphlet();
+      g.put('preexistente:1', { name: 'Preexistente' });
+
+      const storage = createMockStorage();
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        { key: 'test4', mode: 'eager', storage, writeOnInit: true }
+      );
+
+      assert(storage._state.writeCount === 1,
+        'writeOnInit: 1 escritura ocurrió al instanciar');
+      const snap = JSON.parse(storage._state.lastWrittenValue);
+      assert(snap.entities['preexistente:1'] !== undefined,
+        'writeOnInit: el snapshot contiene la entidad preexistente');
+      assert(snap.entities['preexistente:1'].properties.name === 'Preexistente',
+        'writeOnInit: properties correctas');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 5: writeOnInit=false (default) NO escribe al instanciar
+    // ============================================================
+    section('TEST 5: writeOnInit por defecto es false');
+
+    {
+      const g = createGraphlet();
+      g.put('x:1', {});
+      const storage = createMockStorage();
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        { key: 'test5', mode: 'eager', storage }
+      );
+      assert(storage._state.writeCount === 0,
+        'Default writeOnInit=false: sin escritura al instanciar');
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 6: flush() fuerza escritura inmediata y cancela debounce
+    // ============================================================
+    section('TEST 6: flush() escribe ya y cancela timer pendiente');
+
+    {
+      const g = createGraphlet();
+      const storage = createMockStorage();
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        { key: 'test6', mode: 'debounced', debounceMs: 1000, storage }
+      );
+
+      g.put('x:1', {});
+      assert(storage._state.writeCount === 0, 'Antes de flush: sin escritura');
+
+      adapter.flush();
+      assert(storage._state.writeCount === 1,
+        'flush() escribe inmediatamente');
+
+      // Esperar bastante más que el debounce original para confirmar
+      // que el timer fue cancelado y no dispara una segunda escritura.
+      await wait(50);
+      assert(storage._state.writeCount === 1,
+        'flush() canceló el timer: no hay segunda escritura');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 7: flush() es idempotente (llamar sin pendiente sigue escribiendo)
+    // ============================================================
+    section('TEST 7: flush() es seguro llamar sin pendiente');
+
+    {
+      const g = createGraphlet();
+      const storage = createMockStorage();
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        { key: 'test7', mode: 'debounced', debounceMs: 50, storage }
+      );
+
+      g.put('x:1', {});
+      await wait(80);
+      const writesAfterMutation = storage._state.writeCount;
+      assert(writesAfterMutation === 1, 'Escritura tras debounce');
+
+      // flush() sin pendiente: escribe otra vez (idempotente en resultado)
+      let threw = false;
+      try { adapter.flush(); } catch (e) { threw = true; }
+      assert(!threw, 'flush() sin pendiente no lanza');
+      assert(storage._state.writeCount === writesAfterMutation + 1,
+        'flush() sin pendiente escribe una vez más (idempotente en resultado)');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 8: destroy() NO hace flush automático
+    // ============================================================
+    section('TEST 8: destroy() no hace flush implícito');
+
+    {
+      const g = createGraphlet();
+      const storage = createMockStorage();
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        { key: 'test8', mode: 'debounced', debounceMs: 1000, storage }
+      );
+
+      g.put('x:1', {});
+      assert(storage._state.writeCount === 0, 'Antes de destroy: sin escritura');
+
+      adapter.destroy();
+      await wait(50);  // Confirmar que el timer no dispara post-destroy
+      assert(storage._state.writeCount === 0,
+        'destroy() no disparó flush ni el timer post-destroy');
+    }
+
+    // ============================================================
+    // TEST 9: destroy() cancela timer pendiente
+    // ============================================================
+    section('TEST 9: destroy() cancela el timer debounced pendiente');
+
+    {
+      const g = createGraphlet();
+      const storage = createMockStorage();
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        { key: 'test9', mode: 'debounced', debounceMs: 50, storage }
+      );
+
+      g.put('x:1', {});
+      adapter.destroy();
+      await wait(80);  // > debounce
+      assert(storage._state.writeCount === 0,
+        'destroy() canceló el timer: no hubo escritura tras el debounce');
+    }
+
+    // ============================================================
+    // TEST 10: destroy() restaura los métodos originales de Graphlet
+    // ============================================================
+    section('TEST 10: destroy() restaura los métodos originales');
+
+    {
+      const g = createGraphlet();
+      const originalPut = g.put;
+
+      const storage = createMockStorage();
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        { key: 'test10', mode: 'eager', storage }
+      );
+
+      assert(g.put !== originalPut, 'Post-instanciación: put está wrappeado');
+
+      adapter.destroy();
+      assert(g.put === originalPut, 'Post-destroy: put restaurado al original');
+
+      // Confirmación de comportamiento: mutaciones post-destroy NO persisten
+      const writesBeforePostMutation = storage._state.writeCount;
+      g.put('post-destroy:1', {});
+      assert(storage._state.writeCount === writesBeforePostMutation,
+        'Post-destroy: mutaciones no producen escrituras');
+    }
+
+    // ============================================================
+    // TEST 11: destroy() e idempotencia
+    // ============================================================
+    section('TEST 11: destroy() es idempotente');
+
+    {
+      const g = createGraphlet();
+      const storage = createMockStorage();
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        { key: 'test11', mode: 'eager', storage }
+      );
+
+      let firstThrew = false;
+      let secondThrew = false;
+      try { adapter.destroy(); } catch (e) { firstThrew = true; }
+      try { adapter.destroy(); } catch (e) { secondThrew = true; }
+      assert(!firstThrew, 'Primer destroy() no lanza');
+      assert(!secondThrew, 'Segundo destroy() no lanza');
+    }
+
+    // ============================================================
+    // TEST 12: Set semantics — link no-op NO produce escritura
+    // ============================================================
+    section('TEST 12: Set semantics (G-0): link duplicado no produce escritura');
+
+    {
+      const g = createGraphlet();
+      g.put('a', {});
+      g.put('b', {});
+
+      const storage = createMockStorage();
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        { key: 'test12', mode: 'eager', storage }
+      );
+
+      g.link('a', 'rel', 'b');
+      assert(storage._state.writeCount === 1,
+        'Primer link real: 1 escritura');
+
+      g.link('a', 'rel', 'b');  // No-op (G-0)
+      assert(storage._state.writeCount === 1,
+        'Segundo link idéntico (no-op de Graphlet): NO produce nueva escritura');
+
+      g.link('a', 'rel', 'b');  // No-op
+      g.link('a', 'rel', 'b');  // No-op
+      assert(storage._state.writeCount === 1,
+        'N links duplicados adicionales: sigue en 1 escritura');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 13: Set semantics — unlink no-op NO produce escritura
+    // ============================================================
+    section('TEST 13: Set semantics: unlink sobre triple inexistente no produce escritura');
+
+    {
+      const g = createGraphlet();
+      g.put('a', {});
+      g.put('b', {});
+      g.link('a', 'rel', 'b');
+
+      const storage = createMockStorage();
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        { key: 'test13', mode: 'eager', storage }
+      );
+
+      // Unlink sobre target inexistente en la relación: no-op
+      g.unlink('a', 'rel', 'nonexistent');
+      assert(storage._state.writeCount === 0,
+        'unlink sobre target ausente: sin escritura');
+
+      // Unlink real
+      g.unlink('a', 'rel', 'b');
+      assert(storage._state.writeCount === 1,
+        'unlink real: 1 escritura');
+
+      // Unlink otra vez, el target ya no está: no-op
+      g.unlink('a', 'rel', 'b');
+      assert(storage._state.writeCount === 1,
+        'unlink repetido tras remoción: sigue en 1 escritura');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 14: Snapshot escrito es compatible con Hydration
+    // ============================================================
+    section('TEST 14: Round-trip Persistence → Hydration reproduce el grafo');
+
+    {
+      // Fase 1: sembrar y persistir
+      const g1 = createGraphlet();
+      const storage = createMockStorage();
+      const p = createPersistenceAdapter(
+        { graphlet: g1 },
+        { key: 'roundtrip', mode: 'eager', storage }
+      );
+
+      g1.put('user:alice', { name: 'Alice', role: 'admin' });
+      g1.put('team:eng', { name: 'Engineering' });
+      g1.link('user:alice', 'belongsTo', 'team:eng');
+
+      const snapshotWritten = storage._state.lastWrittenValue;
+      p.destroy();
+
+      // Fase 2: nueva Graphlet vacía, hidratar desde el snapshot
+      const g2 = createGraphlet();
+      assert(g2.allIds().length === 0, 'g2 empieza vacía');
+
+      const parsed = JSON.parse(snapshotWritten);
+      createHydrationAdapter({ graphlet: g2 }, { snapshot: parsed });
+
+      assert(g2.allIds().length === 2,
+        'g2 tras hydration: 2 entidades');
+      const alice2 = g2.get('user:alice');
+      assert(alice2.properties.name === 'Alice',
+        'g2: properties de alice preservadas');
+      assert(alice2.properties.role === 'admin',
+        'g2: role de alice preservado');
+      assert(alice2.links.belongsTo && alice2.links.belongsTo.includes('team:eng'),
+        'g2: link alice → team:eng preservado');
+    }
+
+    // ============================================================
+    // TEST 15: onError en fallo de write
+    // ============================================================
+    section('TEST 15: onError se invoca en fallo de write, sin propagar');
+
+    {
+      const g = createGraphlet();
+      const storage = createMockStorage();
+      const errors = [];
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        {
+          key: 'test15',
+          mode: 'eager',
+          storage,
+          onError: (err, phase) => errors.push({ err, phase }),
+        }
+      );
+
+      // Programar fallo en la próxima setItem
+      storage._state.failOnce = new Error('Simulated QuotaExceeded');
+
+      let threw = false;
+      try {
+        g.put('x:1', {});  // Dispara write que fallará
+      } catch (e) {
+        threw = true;
+      }
+      assert(!threw, 'Fallo en write NO se propaga fuera del wrapper de mutación');
+      assert(errors.length === 1, 'onError invocado exactamente una vez');
+      assert(errors[0].phase === 'write', "onError recibió phase='write'");
+      assert(errors[0].err.message === 'Simulated QuotaExceeded',
+        'onError recibió el error original');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 16: onError en fallo de serialize (properties circulares)
+    // ============================================================
+    section('TEST 16: onError se invoca en fallo de serialize (referencia circular)');
+
+    {
+      const g = createGraphlet();
+      const storage = createMockStorage();
+      const errors = [];
+      const adapter = createPersistenceAdapter(
+        { graphlet: g },
+        {
+          key: 'test16',
+          mode: 'eager',
+          storage,
+          onError: (err, phase) => errors.push({ err, phase }),
+        }
+      );
+
+      // Construir un objeto circular y meterlo como property.
+      // Graphlet no valida circularidad (solo pide plain object top-level),
+      // pero JSON.stringify sí lo rechaza.
+      const circular = { a: 1 };
+      circular.self = circular;
+
+      let threw = false;
+      try {
+        g.put('x:1', { data: circular });
+      } catch (e) {
+        threw = true;
+      }
+      assert(!threw, 'Fallo en serialize NO se propaga fuera del wrapper');
+      assert(errors.length === 1, 'onError invocado una vez');
+      assert(errors[0].phase === 'serialize', "onError recibió phase='serialize'");
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 17: Validación de opciones
+    // ============================================================
+    section('TEST 17: Validación de context y options');
+
+    {
+      const dummyStorage = createMockStorage();
+
+      // 17.1: context sin graphlet
+      let t = false;
+      try { createPersistenceAdapter({}, { key: 'k', storage: dummyStorage }); }
+      catch (e) { t = true; }
+      assert(t, '17.1: context sin graphlet lanza TypeError');
+
+      // 17.2: falta key
+      t = false;
+      try {
+        createPersistenceAdapter(
+          { graphlet: createGraphlet() },
+          { storage: dummyStorage }
+        );
+      } catch (e) { t = true; }
+      assert(t, '17.2: falta options.key lanza TypeError');
+
+      // 17.3: key vacío
+      t = false;
+      try {
+        createPersistenceAdapter(
+          { graphlet: createGraphlet() },
+          { key: '   ', storage: dummyStorage }
+        );
+      } catch (e) { t = true; }
+      assert(t, '17.3: key vacío/whitespace lanza TypeError');
+
+      // 17.4: mode inválido
+      t = false;
+      try {
+        createPersistenceAdapter(
+          { graphlet: createGraphlet() },
+          { key: 'k', mode: 'nope', storage: dummyStorage }
+        );
+      } catch (e) { t = true; }
+      assert(t, '17.4: mode fuera de {eager, debounced} lanza TypeError');
+
+      // 17.5: debounceMs negativo
+      t = false;
+      try {
+        createPersistenceAdapter(
+          { graphlet: createGraphlet() },
+          { key: 'k', debounceMs: -1, storage: dummyStorage }
+        );
+      } catch (e) { t = true; }
+      assert(t, '17.5: debounceMs negativo lanza TypeError');
+
+      // 17.6: storage sin la interface esperada
+      t = false;
+      try {
+        createPersistenceAdapter(
+          { graphlet: createGraphlet() },
+          { key: 'k', storage: { foo: 'bar' } }
+        );
+      } catch (e) { t = true; }
+      assert(t, '17.6: storage sin getItem/setItem/removeItem lanza TypeError');
+    }
+
+    // ============================================================
+    // RESUMEN
+    // ============================================================
+    const total = passed + failed;
+    const elapsed = performance.now() - t0;
+    const summary = document.createElement('div');
+    summary.className = 'summary';
+    summary.innerHTML =
+      `📊 <strong>Resultados:</strong> ${passed}/${total} pasaron. ` +
+      (failed === 0
+        ? '<span class="pass">✅ Todo verde.</span>'
+        : `<span class="fail">⚠️ ${failed} fallo(s).</span>`) +
+      `<div class="timing">⏱ ${elapsed.toFixed(1)}ms</div>`;
+    output.appendChild(summary);
+  </script>
+</body>
+</html>
