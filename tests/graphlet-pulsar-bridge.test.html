@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Graphlet↔Pulsar Bridge - Tests de Contrato v0.1.0</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .test { padding: 4px 0; border-bottom: 1px solid #333; }
+    .section { margin-top: 20px; padding: 6px 0; color: #dcdcaa; font-weight: bold; border-bottom: 2px solid #333; }
+  </style>
+</head>
+<body>
+  <h1>🧪 Graphlet↔Pulsar Bridge Contract Tests v0.1.0</h1>
+  <div id="output"></div>
+
+  <script type="module">
+    import { createStatePulsar } from '../src/pulsar.js';
+    import { createGraphlet } from '../src/graphlet.js';
+    import { createGraphletPulsarBridge } from '../src/adapters/graphlet-pulsar-bridge.js';
+
+    const output = document.getElementById('output');
+    let passed = 0;
+    let failed = 0;
+
+    function section(title) {
+      const div = document.createElement('div');
+      div.className = 'section';
+      div.textContent = title;
+      output.appendChild(div);
+    }
+
+    function assert(condition, message) {
+      const div = document.createElement('div');
+      div.className = 'test';
+      if (condition) {
+        div.innerHTML = `✅ <span class="pass">${message}</span>`;
+        passed++;
+      } else {
+        div.innerHTML = `❌ <span class="fail">${message}</span>`;
+        failed++;
+      }
+      output.appendChild(div);
+      console.assert(condition, message);
+    }
+
+    // Helper: cuenta notificaciones de Pulsar para detectar re-proyección.
+    function makeNotifyCounter(pulsar) {
+      const state = { count: 0 };
+      const unsub = pulsar.subscribe(() => { state.count++; });
+      state.reset = () => { state.count = 0; };
+      state.unsub = unsub;
+      return state;
+    }
+
+    // ============================================================
+    // TEST 1: Inicialización eager (default)
+    // ============================================================
+    section('TEST 1: Inicialización eager proyecta entidades preexistentes');
+
+    const g1 = createGraphlet();
+    g1.put('u:1', { name: 'Alice' });
+    g1.put('u:2', { name: 'Bob' });
+
+    const p1 = createStatePulsar({});
+    const b1 = createGraphletPulsarBridge({ graphlet: g1, pulsar: p1 });
+
+    const proj1 = p1.getState().entities;
+    assert(proj1 !== undefined, 'Proyección existe en state.entities tras instanciación');
+    assert(proj1['u:1'] && proj1['u:1'].properties.name === 'Alice',
+      'Entidad u:1 fue proyectada con properties correctas');
+    assert(proj1['u:2'] && proj1['u:2'].properties.name === 'Bob',
+      'Entidad u:2 fue proyectada con properties correctas');
+
+    b1.destroy();
+
+    // ============================================================
+    // TEST 2: skipInitialSync omite proyección inicial
+    // ============================================================
+    section('TEST 2: skipInitialSync=true no proyecta al instanciar');
+
+    const g2 = createGraphlet();
+    g2.put('x:1', { v: 1 });
+
+    const p2 = createStatePulsar({});
+    const b2 = createGraphletPulsarBridge(
+      { graphlet: g2, pulsar: p2 },
+      { skipInitialSync: true }
+    );
+
+    assert(p2.getState().entities === undefined,
+      'skipInitialSync: state.entities queda undefined tras instanciación');
+
+    // Pero una mutación posterior sí proyecta.
+    g2.put('x:2', { v: 2 });
+    const proj2 = p2.getState().entities;
+    assert(proj2 !== undefined,
+      'skipInitialSync: primera mutación posterior sí proyecta');
+    assert(proj2['x:1'] && proj2['x:2'],
+      'skipInitialSync: la proyección incluye TODAS las entidades (snapshot completo)');
+
+    b2.destroy();
+
+    // ============================================================
+    // TEST 3: put/upsert/update disparan re-proyección
+    // ============================================================
+    section('TEST 3: put, upsert, update disparan re-proyección');
+
+    const g3 = createGraphlet();
+    const p3 = createStatePulsar({});
+    const b3 = createGraphletPulsarBridge({ graphlet: g3, pulsar: p3 });
+
+    const counter3 = makeNotifyCounter(p3);
+    // La proyección inicial ya ocurrió; el contador arranca desde ahora.
+    counter3.reset();
+
+    g3.put('e:1', { a: 1 });
+    assert(counter3.count === 1, 'put dispara re-proyección');
+    assert(p3.getState().entities['e:1'].properties.a === 1, 'put refleja properties');
+
+    g3.upsert('e:1', { b: 2 });
+    assert(counter3.count === 2, 'upsert dispara re-proyección');
+    assert(p3.getState().entities['e:1'].properties.a === 1 &&
+           p3.getState().entities['e:1'].properties.b === 2,
+      'upsert mergea properties correctamente');
+
+    g3.update('e:1', { a: 99 });
+    assert(counter3.count === 3, 'update dispara re-proyección');
+    assert(p3.getState().entities['e:1'].properties.a === 99, 'update refleja el cambio');
+
+    counter3.unsub();
+    b3.destroy();
+
+    // ============================================================
+    // TEST 4: link dispara re-proyección; link duplicado NO
+    // ============================================================
+    section('TEST 4: link dispara re-proyección; duplicado es no-op (set semantics)');
+
+    const g4 = createGraphlet();
+    g4.put('a', {});
+    g4.put('b', {});
+
+    const p4 = createStatePulsar({});
+    const b4 = createGraphletPulsarBridge({ graphlet: g4, pulsar: p4 });
+
+    const counter4 = makeNotifyCounter(p4);
+    counter4.reset();
+
+    g4.link('a', 'knows', 'b');
+    assert(counter4.count === 1, 'link real dispara re-proyección');
+    assert(p4.getState().entities['a'].links.knows.includes('b'),
+      'link se refleja en la proyección');
+
+    // link duplicado: G-0 dice que es no-op en Graphlet. El bridge NO
+    // debe re-proyectar porque el snapshot no cambió.
+    g4.link('a', 'knows', 'b');
+    assert(counter4.count === 1, 'link duplicado NO dispara re-proyección (set semantics respetada)');
+
+    g4.link('a', 'knows', 'b'); // otro duplicado
+    assert(counter4.count === 1, 'múltiples link duplicados siguen sin re-proyectar');
+
+    // link nuevo sí dispara
+    g4.put('c', {});  // esto sí re-proyecta (put)
+    counter4.reset();
+    g4.link('a', 'knows', 'c');
+    assert(counter4.count === 1, 'link a target nuevo sí re-proyecta');
+
+    counter4.unsub();
+    b4.destroy();
+
+    // ============================================================
+    // TEST 5: unlink con set semantics
+    // ============================================================
+    section('TEST 5: unlink dispara re-proyección; unlink de ausente es no-op');
+
+    const g5 = createGraphlet();
+    g5.put('a', {});
+    g5.put('b', {});
+    g5.put('c', {});
+    g5.link('a', 'knows', 'b');
+
+    const p5 = createStatePulsar({});
+    const b5 = createGraphletPulsarBridge({ graphlet: g5, pulsar: p5 });
+
+    const counter5 = makeNotifyCounter(p5);
+    counter5.reset();
+
+    g5.unlink('a', 'knows', 'b');
+    assert(counter5.count === 1, 'unlink real dispara re-proyección');
+    const linksAfterUnlink = p5.getState().entities['a'].links;
+    assert(
+      linksAfterUnlink.knows === undefined || linksAfterUnlink.knows.length === 0,
+      'unlink refleja la remoción'
+    );
+
+    // unlink de target ausente: no-op en Graphlet, no-op en bridge.
+    g5.unlink('a', 'knows', 'b'); // ya no está
+    assert(counter5.count === 1, 'unlink de target ausente NO re-proyecta');
+
+    g5.unlink('a', 'noSuchRelation', 'anything');
+    assert(counter5.count === 1, 'unlink de relación inexistente NO re-proyecta');
+
+    counter5.unsub();
+    b5.destroy();
+
+    // ============================================================
+    // TEST 6: unlinkAll con set semantics
+    // ============================================================
+    section('TEST 6: unlinkAll dispara re-proyección; sobre relación ausente es no-op');
+
+    const g6 = createGraphlet();
+    g6.put('a', {});
+    g6.put('b', {});
+    g6.link('a', 'knows', 'b');
+
+    const p6 = createStatePulsar({});
+    const b6 = createGraphletPulsarBridge({ graphlet: g6, pulsar: p6 });
+
+    const counter6 = makeNotifyCounter(p6);
+    counter6.reset();
+
+    g6.unlinkAll('a', 'knows');
+    assert(counter6.count === 1, 'unlinkAll real dispara re-proyección');
+
+    // Segundo unlinkAll sobre la misma relación (ya vacía) es no-op.
+    g6.unlinkAll('a', 'knows');
+    assert(counter6.count === 1, 'unlinkAll sobre relación ya ausente NO re-proyecta');
+
+    counter6.unsub();
+    b6.destroy();
+
+    // ============================================================
+    // TEST 7: delete dispara re-proyección y refleja cascade
+    // ============================================================
+    section('TEST 7: delete refleja la cascada de incoming links');
+
+    const g7 = createGraphlet();
+    g7.put('a', {});
+    g7.put('b', {});
+    g7.put('c', {});
+    g7.link('a', 'friend', 'b');
+    g7.link('c', 'friend', 'b');
+
+    const p7 = createStatePulsar({});
+    const b7 = createGraphletPulsarBridge({ graphlet: g7, pulsar: p7 });
+
+    // Verificación pre-delete: a y c tienen link a b
+    assert(p7.getState().entities['a'].links.friend.includes('b'),
+      'Pre-delete: a → friend → b');
+    assert(p7.getState().entities['c'].links.friend.includes('b'),
+      'Pre-delete: c → friend → b');
+
+    const counter7 = makeNotifyCounter(p7);
+    counter7.reset();
+
+    g7.delete('b');
+    assert(counter7.count === 1, 'delete dispara re-proyección');
+
+    // La proyección de a y c debe haber perdido la referencia a b
+    assert(p7.getState().entities['b'] === undefined,
+      'delete: entidad b desapareció de la proyección');
+    assert(
+      p7.getState().entities['a'].links.friend === undefined ||
+      !p7.getState().entities['a'].links.friend.includes('b'),
+      'delete cascade: a ya no tiene link entrante a b en la proyección'
+    );
+    assert(
+      p7.getState().entities['c'].links.friend === undefined ||
+      !p7.getState().entities['c'].links.friend.includes('b'),
+      'delete cascade: c ya no tiene link entrante a b en la proyección'
+    );
+
+    counter7.unsub();
+    b7.destroy();
+
+    // ============================================================
+    // TEST 8: path punteado
+    // ============================================================
+    section('TEST 8: path punteado escribe en la ruta anidada correcta');
+
+    const g8 = createGraphlet();
+    g8.put('x:1', { v: 1 });
+
+    const p8 = createStatePulsar({ existing: 'keep-me', domain: { other: 'preserve' } });
+    const b8 = createGraphletPulsarBridge(
+      { graphlet: g8, pulsar: p8 },
+      { path: 'domain.entities' }
+    );
+
+    const state8 = p8.getState();
+    assert(state8.domain.entities !== undefined,
+      'path punteado: la proyección aparece bajo domain.entities');
+    assert(state8.domain.entities['x:1'].properties.v === 1,
+      'path punteado: la entidad se proyecta bajo la ruta');
+    assert(state8.domain.other === 'preserve',
+      'path punteado: OTRAS claves bajo domain se preservan');
+    assert(state8.existing === 'keep-me',
+      'path punteado: claves de nivel raíz se preservan');
+
+    b8.destroy();
+
+    // ============================================================
+    // TEST 9: destroy restaura métodos originales
+    // ============================================================
+    section('TEST 9: destroy restaura métodos originales; post-destroy no proyecta');
+
+    const g9 = createGraphlet();
+    const p9 = createStatePulsar({});
+    const b9 = createGraphletPulsarBridge({ graphlet: g9, pulsar: p9 });
+
+    // Captura de referencias a los métodos wrappeados
+    const wrappedPut = g9.put;
+    const wrappedLink = g9.link;
+
+    b9.destroy();
+
+    // Los métodos actuales deben ser distintos a los wrappeados
+    assert(g9.put !== wrappedPut, 'destroy: put fue restaurado (referencia distinta al wrapper)');
+    assert(g9.link !== wrappedLink, 'destroy: link fue restaurado');
+
+    // Post-destroy: mutar Graphlet NO debe tocar Pulsar
+    const counter9 = makeNotifyCounter(p9);
+    counter9.reset();
+
+    g9.put('post:1', { name: 'Post' });
+    assert(counter9.count === 0, 'destroy: put post-destroy NO re-proyecta');
+    // El estado sigue siendo el previo a destroy
+    assert(p9.getState().entities['post:1'] === undefined,
+      'destroy: la nueva entidad NO aparece en la proyección');
+
+    // Pero Graphlet sí guardó la entidad (el original funciona normal)
+    assert(g9.get('post:1').properties.name === 'Post',
+      'destroy: Graphlet sigue funcionando normalmente después');
+
+    counter9.unsub();
+
+    // ============================================================
+    // TEST 10: destroy idempotente
+    // ============================================================
+    section('TEST 10: destroy es idempotente');
+
+    const g10 = createGraphlet();
+    const p10 = createStatePulsar({});
+    const b10 = createGraphletPulsarBridge({ graphlet: g10, pulsar: p10 });
+
+    let threwOnFirst = false;
+    let threwOnSecond = false;
+    try {
+      b10.destroy();
+    } catch (e) {
+      threwOnFirst = true;
+    }
+    try {
+      b10.destroy();
+    } catch (e) {
+      threwOnSecond = true;
+    }
+
+    assert(!threwOnFirst, 'destroy: primera llamada no lanza');
+    assert(!threwOnSecond, 'destroy: segunda llamada no lanza (idempotente)');
+
+    // ============================================================
+    // TEST 11: validación de context
+    // ============================================================
+    section('TEST 11: validación de context');
+
+    // context ausente
+    let threwNoContext = false;
+    try {
+      createGraphletPulsarBridge();
+    } catch (e) {
+      threwNoContext = e instanceof TypeError;
+    }
+    assert(threwNoContext, 'context ausente lanza TypeError');
+
+    // graphlet ausente
+    let threwNoGraphlet = false;
+    try {
+      createGraphletPulsarBridge({ pulsar: createStatePulsar({}) });
+    } catch (e) {
+      threwNoGraphlet = e instanceof TypeError && e.message.includes('graphlet');
+    }
+    assert(threwNoGraphlet, 'context sin graphlet lanza TypeError');
+
+    // pulsar ausente
+    let threwNoPulsar = false;
+    try {
+      createGraphletPulsarBridge({ graphlet: createGraphlet() });
+    } catch (e) {
+      threwNoPulsar = e instanceof TypeError && e.message.includes('pulsar');
+    }
+    assert(threwNoPulsar, 'context sin pulsar lanza TypeError');
+
+    // graphlet inválido (no tiene la API correcta)
+    let threwBadGraphlet = false;
+    try {
+      createGraphletPulsarBridge({
+        graphlet: { fake: true },
+        pulsar: createStatePulsar({})
+      });
+    } catch (e) {
+      threwBadGraphlet = e instanceof TypeError;
+    }
+    assert(threwBadGraphlet, 'graphlet sin API válida lanza TypeError');
+
+    // pulsar inválido
+    let threwBadPulsar = false;
+    try {
+      createGraphletPulsarBridge({
+        graphlet: createGraphlet(),
+        pulsar: { fake: true }
+      });
+    } catch (e) {
+      threwBadPulsar = e instanceof TypeError;
+    }
+    assert(threwBadPulsar, 'pulsar sin API válida lanza TypeError');
+
+    // ============================================================
+    // TEST 12: shape de proyección igual a graphlet.get()
+    // ============================================================
+    section('TEST 12: shape de proyección es idéntico al de graphlet.get()');
+
+    const g12 = createGraphlet();
+    g12.put('e:1', { name: 'Test', age: 42 });
+    g12.put('e:2', {});
+    g12.link('e:1', 'knows', 'e:2');
+
+    const p12 = createStatePulsar({});
+    const b12 = createGraphletPulsarBridge({ graphlet: g12, pulsar: p12 });
+
+    const fromGraphlet = g12.get('e:1');
+    const fromProjection = p12.getState().entities['e:1'];
+
+    assert(fromProjection.id === fromGraphlet.id,
+      'shape: id coincide');
+    assert(
+      JSON.stringify(fromProjection.properties) === JSON.stringify(fromGraphlet.properties),
+      'shape: properties coinciden estructuralmente'
+    );
+    assert(
+      JSON.stringify(fromProjection.links) === JSON.stringify(fromGraphlet.links),
+      'shape: links coinciden estructuralmente'
+    );
+
+    b12.destroy();
+
+    // ============================================================
+    // TEST 13: subscribeSelector consumer pattern
+    // ============================================================
+    section('TEST 13: consumer pattern con subscribeSelector a una entidad');
+
+    // Este test valida el escenario de uso principal: un consumidor
+    // (Chunklet behavior en producción) se suscribe a una entidad
+    // específica y recibe notificaciones solo cuando esa entidad cambia.
+    const g13 = createGraphlet();
+    g13.put('watched', { v: 0 });
+    g13.put('ignored', { v: 0 });
+
+    const p13 = createStatePulsar({});
+    const b13 = createGraphletPulsarBridge({ graphlet: g13, pulsar: p13 });
+
+    let watchedNotifyCount = 0;
+    const unsubWatched = p13.subscribeSelector(
+      'entities.watched',
+      () => { watchedNotifyCount++; }
+    );
+
+    // Mutar 'ignored': dispara re-proyección global (snapshot version)
+    // pero el subscribeSelector con equality Object.is detecta que
+    // el valor de entities.watched no cambió y NO invoca al listener.
+    g13.update('ignored', { v: 1 });
+    assert(watchedNotifyCount === 0,
+      'consumer: cambios en otras entidades no notifican al subscriber de una específica');
+
+    // Mutar 'watched': ahora sí notifica
+    g13.update('watched', { v: 1 });
+    assert(watchedNotifyCount === 1,
+      'consumer: cambios en la entidad observada sí notifican');
+
+    unsubWatched();
+    b13.destroy();
+
+    // ============================================================
+    // RESUMEN FINAL
+    // ============================================================
+    const total = passed + failed;
+    const summary = document.createElement('div');
+    summary.style.marginTop = '30px';
+    summary.style.fontSize = '1.1em';
+    summary.style.fontWeight = 'bold';
+    summary.style.padding = '10px';
+    summary.style.borderTop = '2px solid #555';
+    summary.innerHTML = `📊 Resultados: ${passed}/${total} pasaron. ${failed === 0 ? '🎉 ¡Todos los tests del contrato pasaron!' : `⚠️ ${failed} fallo(s). Revisa arriba.`}`;
+    output.appendChild(summary);
+
+    if (failed === 0) {
+      document.body.style.background = '#1e3a2a';
+    } else {
+      document.body.style.background = '#3a1e1e';
+    }
+  </script>
+</body>
+</html>
