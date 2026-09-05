@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Widget: Hydration Adapter - Validación empírica</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 { color: #dcdcaa; font-size: 20px; margin-bottom: 4px; }
+    .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+    .panel {
+      background: #252526;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .panel-title {
+      color: #dcdcaa;
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #444;
+      padding-bottom: 6px;
+    }
+    button {
+      background: #0e639c;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      margin: 2px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    button:hover { background: #1177bb; }
+    pre {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      padding: 10px;
+      border-radius: 3px;
+      color: #ce9178;
+      font-size: 12px;
+      overflow-x: auto;
+      margin: 0;
+    }
+    .team {
+      background: #2d2d30;
+      border-left: 3px solid #4ec9b0;
+      padding: 8px 12px;
+      margin: 8px 0;
+      border-radius: 3px;
+    }
+    .team-name {
+      color: #dcdcaa;
+      font-weight: bold;
+      font-size: 14px;
+    }
+    .team-meta {
+      color: #888;
+      font-size: 11px;
+      margin-top: 2px;
+      font-family: monospace;
+    }
+    .members {
+      margin-top: 8px;
+      padding-left: 16px;
+    }
+    .member {
+      padding: 4px 8px;
+      margin: 3px 0;
+      background: #333;
+      border-radius: 3px;
+      font-size: 12px;
+      font-family: monospace;
+    }
+    .member .name { color: #9cdcfe; }
+    .member .role { color: #ce9178; margin-left: 8px; font-size: 11px; }
+    .marker {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-family: monospace;
+      margin-left: 8px;
+    }
+    .marker.ok { background: #1a3a1a; color: #4ec9b0; }
+    .marker.bad { background: #3a1a1a; color: #f48771; }
+    .verdict {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 3px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .verdict.ok { background: #1a3a1a; color: #4ec9b0; border-left: 3px solid #4ec9b0; }
+    .verdict.bad { background: #3a1a1a; color: #f48771; border-left: 3px solid #f44747; }
+    .timing {
+      color: #888;
+      font-size: 12px;
+      margin-top: 6px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>💧 Widget: Hydration Adapter</h1>
+  <div class="subtitle">
+    Validación empírica del adapter v0.1.0. Snapshot embebido en el HTML,
+    hidratación síncrona al arranque, renderizado inmediato con estado poblado.
+  </div>
+
+  <!-- Snapshot embebido como script tag no ejecutable.
+       El adapter lo lee al arranque y puebla Graphlet ANTES del primer render. -->
+  <script type="application/json" id="hydration-snapshot">
+{
+  "entities": {
+    "team:eng": {
+      "properties": { "name": "Engineering", "created": "2024-01-15" },
+      "links": { "members": ["user:alice", "user:bob", "user:carol"] }
+    },
+    "team:design": {
+      "properties": { "name": "Design", "created": "2024-03-22" },
+      "links": { "members": ["user:dana"] }
+    },
+    "user:alice": {
+      "properties": { "name": "Alice", "role": "backend" }
+    },
+    "user:bob": {
+      "properties": { "name": "Bob", "role": "frontend" }
+    },
+    "user:carol": {
+      "properties": { "name": "Carol", "role": "devops" }
+    },
+    "user:dana": {
+      "properties": { "name": "Dana", "role": "ux" }
+    }
+  }
+}
+  </script>
+
+  <div class="panel">
+    <div class="panel-title">
+      Estado tras hidratación (renderizado inmediato al DOMContentLoaded)
+    </div>
+    <div id="teams-container"></div>
+    <div class="timing" id="timing"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Verdict empírico</div>
+    <div class="verdict" id="verdict"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Snapshot fuente (inline en el HTML)</div>
+    <pre id="snapshot-display"></pre>
+  </div>
+
+  <script type="module">
+    import { createGraphlet } from '../src/graphlet.js';
+    import { createHydrationAdapter } from '../src/adapters/hydration-adapter.js';
+
+    // ============================================================
+    // Marca de tiempo antes de tocar nada, para medir sincronía
+    // ============================================================
+    const t0 = performance.now();
+
+    // ============================================================
+    // Setup: Graphlet vacío, snapshot desde <script type="application/json">
+    // ============================================================
+    const graphlet = createGraphlet();
+
+    // Verificación explícita: antes del adapter, Graphlet está vacío.
+    const idsBeforeHydration = graphlet.allIds();
+
+    // Leer el snapshot del DOM
+    const snapshotEl = document.getElementById('hydration-snapshot');
+    const snapshotText = snapshotEl.textContent;
+    const snapshot = JSON.parse(snapshotText);
+
+    // Instanciar el adapter — hidratación SÍNCRONA aquí
+    const t1 = performance.now();
+    createHydrationAdapter({ graphlet }, { snapshot });
+    const t2 = performance.now();
+
+    // Verificación explícita: inmediatamente después, Graphlet está poblado.
+    const idsAfterHydration = graphlet.allIds();
+
+    // ============================================================
+    // Renderizado (vanilla, sin Chunklet)
+    // ============================================================
+    // Consulta Graphlet directamente. El estado ya está listo desde
+    // ANTES de esta línea, por sincronía del adapter.
+    // ============================================================
+
+    function render() {
+      const teamsContainer = document.getElementById('teams-container');
+      const teamIds = graphlet.query((id) => id.startsWith('team:'));
+
+      if (teamIds.length === 0) {
+        teamsContainer.innerHTML = '<div style="color: #888;">— sin teams —</div>';
+        return;
+      }
+
+      teamsContainer.innerHTML = teamIds.map(teamId => {
+        const team = graphlet.get(teamId);
+        const memberIds = team.links.members || [];
+        // Consulta secundaria contra Graphlet — patrón "normalized state":
+        // el adapter no expandió los miembros, los guardó como IDs.
+        // El widget los resuelve al renderizar.
+        const membersHtml = memberIds.map(uid => {
+          const user = graphlet.get(uid);
+          if (!user) return `<div class="member">⚠️ ${uid} no encontrado</div>`;
+          return `
+            <div class="member">
+              <span class="name">${escapeHtml(user.properties.name)}</span>
+              <span class="role">${escapeHtml(user.properties.role)}</span>
+            </div>
+          `;
+        }).join('');
+
+        return `
+          <div class="team">
+            <div class="team-name">${escapeHtml(team.properties.name)}</div>
+            <div class="team-meta">${teamId} · created ${team.properties.created}</div>
+            <div class="members">${membersHtml || '<div style="color:#888;font-size:12px;">— sin miembros —</div>'}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    render();
+    const t3 = performance.now();
+
+    // ============================================================
+    // Timing y verdict
+    // ============================================================
+    document.getElementById('timing').innerHTML = `
+      ⏱ Setup (createGraphlet): ${(t1 - t0).toFixed(2)}ms &nbsp;·&nbsp;
+      Hydration: ${(t2 - t1).toFixed(2)}ms &nbsp;·&nbsp;
+      Render: ${(t3 - t2).toFixed(2)}ms &nbsp;·&nbsp;
+      <strong>Total: ${(t3 - t0).toFixed(2)}ms</strong>
+    `;
+
+    // Snapshot display
+    document.getElementById('snapshot-display').textContent = snapshotText.trim();
+
+    // Verdict empírico
+    const verdictEl = document.getElementById('verdict');
+    const idsBefore = idsBeforeHydration.length;
+    const idsAfter = idsAfterHydration.length;
+    const expectedCount = Object.keys(snapshot.entities).length;
+    const teamsRendered = document.querySelectorAll('.team').length;
+    const membersRendered = document.querySelectorAll('.member').length;
+    const expectedTeams = Object.keys(snapshot.entities).filter(id => id.startsWith('team:')).length;
+    const expectedMembers = Object.values(snapshot.entities)
+      .filter(e => e.links && e.links.members)
+      .reduce((n, e) => n + e.links.members.length, 0);
+
+    const allOk =
+      idsBefore === 0 &&
+      idsAfter === expectedCount &&
+      teamsRendered === expectedTeams &&
+      membersRendered === expectedMembers;
+
+    if (allOk) {
+      verdictEl.className = 'verdict ok';
+      verdictEl.innerHTML = `
+        ✅ <strong>Hidratación empíricamente validada</strong><br>
+        · Graphlet vacío antes del adapter (0 IDs)
+          <span class="marker ok">antes: ${idsBefore}</span><br>
+        · Graphlet poblado inmediatamente después (${expectedCount} entidades del snapshot)
+          <span class="marker ok">después: ${idsAfter}</span><br>
+        · Todos los teams renderizados
+          <span class="marker ok">${teamsRendered}/${expectedTeams}</span><br>
+        · Todos los miembros resueltos vía consulta secundaria a Graphlet
+          <span class="marker ok">${membersRendered}/${expectedMembers}</span><br>
+        · Patrón "normalized state" funciona: el adapter guarda links como IDs,
+          el widget los resuelve al renderizar (no hay duplicación de datos).
+      `;
+    } else {
+      verdictEl.className = 'verdict bad';
+      verdictEl.innerHTML = `
+        ❌ <strong>Discrepancias detectadas</strong><br>
+        · IDs antes: ${idsBefore} (esperado 0) <span class="marker ${idsBefore === 0 ? 'ok' : 'bad'}">${idsBefore === 0 ? '✓' : '✗'}</span><br>
+        · IDs después: ${idsAfter} (esperado ${expectedCount}) <span class="marker ${idsAfter === expectedCount ? 'ok' : 'bad'}">${idsAfter === expectedCount ? '✓' : '✗'}</span><br>
+        · Teams renderizados: ${teamsRendered} (esperado ${expectedTeams}) <span class="marker ${teamsRendered === expectedTeams ? 'ok' : 'bad'}">${teamsRendered === expectedTeams ? '✓' : '✗'}</span><br>
+        · Miembros renderizados: ${membersRendered} (esperado ${expectedMembers}) <span class="marker ${membersRendered === expectedMembers ? 'ok' : 'bad'}">${membersRendered === expectedMembers ? '✓' : '✗'}</span>
+      `;
+    }
+
+    // Exponer al window para exploración manual
+    window.__widget = { graphlet, snapshot };
+    console.log('Widget listo. Objetos expuestos en window.__widget');
+    console.log('Prueba manual desde consola:');
+    console.log('  __widget.graphlet.allIds()');
+    console.log('  __widget.graphlet.get("team:eng")');
+    console.log('  __widget.graphlet.get("user:alice")');
+  </script>
+</body>
+</html>
