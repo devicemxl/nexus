@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Widget: Sync cross-tab con BroadcastChannel - Validación empírica</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 { color: #dcdcaa; font-size: 20px; margin-bottom: 4px; }
+    .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+    .instructions {
+      background: #2a2416;
+      border-left: 3px solid #dcdcaa;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      line-height: 1.5;
+      border-radius: 3px;
+    }
+    .instructions strong { color: #dcdcaa; }
+    .instructions code {
+      background: #1a1a1a;
+      padding: 1px 6px;
+      border-radius: 2px;
+      color: #ce9178;
+      font-size: 12px;
+    }
+    .panel {
+      background: #252526;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .panel-title {
+      color: #dcdcaa;
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #444;
+      padding-bottom: 6px;
+    }
+    button {
+      background: #0e639c;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      margin: 2px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    button:hover { background: #1177bb; }
+    button.danger { background: #a1260d; }
+    button.danger:hover { background: #c72c14; }
+    .origin-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      background: #333;
+      border-radius: 3px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #9cdcfe;
+      margin-left: 8px;
+    }
+    ul.entity-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      min-height: 40px;
+    }
+    ul.entity-list li {
+      padding: 8px 12px;
+      margin: 4px 0;
+      background: #2d2d30;
+      border-left: 3px solid #4ec9b0;
+      font-family: monospace;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    ul.entity-list li.recent-local {
+      border-left-color: #dcdcaa;
+      animation: pulse-local 0.6s ease;
+    }
+    ul.entity-list li.recent-remote {
+      border-left-color: #ce9178;
+      animation: pulse-remote 0.6s ease;
+    }
+    @keyframes pulse-local {
+      0% { background: #4a4520; }
+      100% { background: #2d2d30; }
+    }
+    @keyframes pulse-remote {
+      0% { background: #4a2f1a; }
+      100% { background: #2d2d30; }
+    }
+    ul.entity-list li .id { color: #9cdcfe; }
+    ul.entity-list li .name { color: #d4d4d4; }
+    ul.entity-list li .val { color: #ce9178; font-size: 11px; margin-left: 6px; }
+    .empty-state { color: #666; font-style: italic; padding: 8px; }
+
+    .activity-log {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 3px;
+      padding: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .activity-log .entry {
+      padding: 3px 6px;
+      margin: 2px 0;
+      border-left: 2px solid transparent;
+    }
+    .activity-log .entry.local {
+      border-left-color: #dcdcaa;
+      color: #dcdcaa;
+    }
+    .activity-log .entry.remote {
+      border-left-color: #ce9178;
+      color: #ce9178;
+    }
+    .activity-log .entry .ts {
+      color: #666;
+      margin-right: 8px;
+    }
+    .activity-log .entry .op {
+      color: #4ec9b0;
+      font-weight: bold;
+    }
+
+    .counter-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-family: monospace;
+      font-size: 13px;
+    }
+    .counter-value { color: #4ec9b0; font-weight: bold; }
+    .counter-value.local { color: #dcdcaa; }
+    .counter-value.remote { color: #ce9178; }
+    .counter-note {
+      color: #888;
+      font-size: 12px;
+      margin-top: 6px;
+      font-style: italic;
+    }
+
+    .warning-box {
+      background: #3a2416;
+      border-left: 3px solid #ce9178;
+      padding: 10px 14px;
+      margin-top: 10px;
+      font-size: 12px;
+      border-radius: 3px;
+    }
+    .warning-box strong { color: #ce9178; }
+  </style>
+</head>
+<body>
+  <h1>📡 Widget: Sync cross-tab con BroadcastChannel</h1>
+  <div class="subtitle">
+    Validación empírica del External Event Adapter v0.1.0. Requiere <strong>dos ventanas</strong> del navegador.
+  </div>
+
+  <div class="instructions">
+    <strong>Cómo probar:</strong>
+    <ol style="margin: 6px 0 0 20px; padding: 0;">
+      <li>Abre esta misma URL en <strong>otra ventana</strong> (Ctrl/Cmd+N y pega la URL, o click derecho → Duplicar pestaña).</li>
+      <li>Verifica que los <span class="origin-badge">origin</span> de cada ventana son distintos.</li>
+      <li>Añade una entidad en la Ventana A. Debe aparecer en la Ventana B <strong>en tiempo real</strong>.</li>
+      <li>Modifica o borra desde cualquiera de las dos. Se sincroniza inmediatamente.</li>
+      <li>Nota los bordes de color: <span style="color:#dcdcaa">amarillo</span> = cambio local, <span style="color:#ce9178">naranja</span> = cambio remoto.</li>
+    </ol>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">
+      Este tab
+      <span class="origin-badge" id="my-origin">…</span>
+    </div>
+    <button id="btn-add">➕ Añadir entidad</button>
+    <button id="btn-modify">✏️ Modificar aleatoria</button>
+    <button id="btn-delete" class="danger">🗑 Borrar aleatoria</button>
+    <button id="btn-clear" class="danger">🧹 Borrar todo</button>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Estado local del Graphlet (esta ventana)</div>
+    <ul class="entity-list" id="entity-list"></ul>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Actividad reciente (últimos 20 eventos)</div>
+    <div class="activity-log" id="activity-log">
+      <div style="color:#666;font-style:italic;padding:4px;">— sin actividad aún —</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Evidencia empírica</div>
+    <div class="counter-row">
+      <span>Mutaciones locales emitidas al canal:</span>
+      <span class="counter-value local" id="count-out">0</span>
+    </div>
+    <div class="counter-row">
+      <span>Mutaciones remotas recibidas y aplicadas:</span>
+      <span class="counter-value remote" id="count-in">0</span>
+    </div>
+    <div class="counter-note">
+      Anti-eco verificable: si los dos contadores en la Ventana A muestran (out=N, in=0) mientras
+      solo tú clicas aquí, y la Ventana B muestra (out=0, in=N), el anti-eco funciona correctamente.
+      Ninguna mutación local se te reenvió como remota.
+    </div>
+    <div class="warning-box">
+      <strong>Limitaciones documentadas de v0.1.0.</strong> Este widget renderiza desde Graphlet directamente y
+      escucha el canal para triggerear re-render. En una app con Bridge (Graphlet→Pulsar), las mutaciones
+      remotas <strong>no re-proyectan a Pulsar</strong> automáticamente. Con Persistence, las mutaciones
+      remotas <strong>no persisten</strong> en el tab receptor. Ambas limitaciones son deuda técnica
+      registrada en <code>PHASE_0_DEFERRED.md</code> (12-BRIDGE-INTEGRATION, 12-PERSISTENCE-INTEGRATION).
+    </div>
+  </div>
+
+  <script type="module">
+    import { createGraphlet } from '../src/graphlet.js';
+    import { createExternalEventAdapter } from '../src/adapters/external-event-adapter.js';
+
+    const CHANNEL_NAME = 'widget-sync-demo';
+
+    // ============================================================
+    // Setup
+    // ============================================================
+    const graphlet = createGraphlet();
+    const adapter = createExternalEventAdapter(
+      { graphlet },
+      { channelName: CHANNEL_NAME }
+    );
+
+    // Mostrar el origin de este tab (abreviado para legibilidad)
+    document.getElementById('my-origin').textContent = adapter.origin.slice(0, 8) + '…';
+
+    // ============================================================
+    // Segundo canal SOLO para triggerear re-render en el tab receptor
+    // ============================================================
+    // Este es el workaround documentado en la mini-spec §4.2 y en el warning
+    // del panel. El adapter aplica mutaciones remotas al Graphlet vía los
+    // originales, pero no notifica a nadie. Para que la UI se actualice al
+    // recibir eventos remotos, escuchamos el mismo canal desde fuera del
+    // adapter y llamamos render(). Coalescencia sencilla: un solo render
+    // por micro-batch de eventos.
+    // ============================================================
+    const listenerChannel = new BroadcastChannel(CHANNEL_NAME);
+    let renderPending = false;
+    listenerChannel.addEventListener('message', (event) => {
+      // Solo procesamos eventos del adapter (mismo tipo). Otros mensajes se ignoran.
+      if (!event.data || event.data.type !== 'graphlet-mutation') return;
+
+      // Anti-eco a nivel del listener también: si es nuestro propio evento,
+      // no contamos como "remoto" y no re-renderizamos (nuestro handler local
+      // ya renderizó tras la mutación).
+      if (event.data.origin === adapter.origin) return;
+
+      // Contar como remota
+      remoteCount++;
+      logActivity('remote', event.data);
+      updateCounters();
+
+      // Coalesce re-renders
+      if (!renderPending) {
+        renderPending = true;
+        queueMicrotask(() => {
+          renderPending = false;
+          render();
+        });
+      }
+    });
+
+    // ============================================================
+    // Estado del widget
+    // ============================================================
+    let nextId = 1;
+    let localCount = 0;
+    let remoteCount = 0;
+    const activityBuffer = [];  // últimos 20 eventos
+    let lastMutatedId = null;
+    let lastMutationOrigin = null;  // 'local' | 'remote'
+
+    // ============================================================
+    // Renderizado
+    // ============================================================
+    const listEl = document.getElementById('entity-list');
+
+    function render() {
+      const ids = graphlet.allIds();
+      if (ids.length === 0) {
+        listEl.innerHTML = '<li class="empty-state">— sin entidades —</li>';
+        return;
+      }
+      listEl.innerHTML = ids.map(id => {
+        const entity = graphlet.get(id);
+        const highlightClass = (id === lastMutatedId)
+          ? (lastMutationOrigin === 'local' ? 'recent-local' : 'recent-remote')
+          : '';
+        return `
+          <li class="${highlightClass}">
+            <div>
+              <span class="id">${id}</span>
+              &nbsp;·&nbsp;
+              <span class="name">${escapeHtml(entity.properties.label || '(sin label)')}</span>
+              <span class="val">v=${entity.properties.value ?? '—'}</span>
+            </div>
+          </li>
+        `;
+      }).join('');
+      // Limpiar el highlight tras un momento
+      if (lastMutatedId) {
+        setTimeout(() => { lastMutatedId = null; }, 700);
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    // ============================================================
+    // Activity log
+    // ============================================================
+    function logActivity(kind, event) {
+      const now = new Date();
+      const ts = `${String(now.getSeconds()).padStart(2, '0')}.${String(now.getMilliseconds()).padStart(3, '0')}`;
+      const argsPreview = event.args.map(a =>
+        typeof a === 'object' ? JSON.stringify(a).slice(0, 40) : String(a)
+      ).join(', ');
+      activityBuffer.push({
+        ts,
+        kind,
+        op: event.op,
+        args: argsPreview,
+        origin: event.origin.slice(0, 8),
+      });
+      if (activityBuffer.length > 20) activityBuffer.shift();
+      renderActivityLog();
+    }
+
+    function renderActivityLog() {
+      const el = document.getElementById('activity-log');
+      if (activityBuffer.length === 0) {
+        el.innerHTML = '<div style="color:#666;font-style:italic;padding:4px;">— sin actividad aún —</div>';
+        return;
+      }
+      // Más reciente arriba
+      el.innerHTML = activityBuffer.slice().reverse().map(e => `
+        <div class="entry ${e.kind}">
+          <span class="ts">${e.ts}</span>
+          <span class="op">${e.op}</span>(${escapeHtml(e.args)})
+          &nbsp;<span style="opacity:0.6">from ${e.origin}…</span>
+        </div>
+      `).join('');
+    }
+
+    function updateCounters() {
+      document.getElementById('count-out').textContent = String(localCount);
+      document.getElementById('count-in').textContent = String(remoteCount);
+    }
+
+    // ============================================================
+    // Handlers locales (envolvemos las mutaciones para instrumentación)
+    // ============================================================
+    function trackLocal(op, args) {
+      localCount++;
+      lastMutatedId = args[0];
+      lastMutationOrigin = 'local';
+      logActivity('local', { op, args, origin: adapter.origin });
+      updateCounters();
+      render();
+    }
+
+    document.getElementById('btn-add').addEventListener('click', () => {
+      const id = `entity:${adapter.origin.slice(0, 4)}-${nextId++}`;
+      const props = {
+        label: `Item ${nextId - 1}`,
+        value: Math.floor(Math.random() * 100),
+      };
+      graphlet.put(id, props);
+      trackLocal('put', [id, props]);
+    });
+
+    document.getElementById('btn-modify').addEventListener('click', () => {
+      const ids = graphlet.allIds();
+      if (ids.length === 0) {
+        alert('No hay entidades. Añade alguna primero.');
+        return;
+      }
+      const target = ids[Math.floor(Math.random() * ids.length)];
+      const newValue = Math.floor(Math.random() * 100);
+      graphlet.update(target, { value: newValue });
+      trackLocal('update', [target, { value: newValue }]);
+    });
+
+    document.getElementById('btn-delete').addEventListener('click', () => {
+      const ids = graphlet.allIds();
+      if (ids.length === 0) {
+        alert('No hay entidades. Añade alguna primero.');
+        return;
+      }
+      const target = ids[Math.floor(Math.random() * ids.length)];
+      graphlet.delete(target);
+      trackLocal('delete', [target]);
+    });
+
+    document.getElementById('btn-clear').addEventListener('click', () => {
+      const ids = graphlet.allIds();
+      for (const id of ids) {
+        graphlet.delete(id);
+        trackLocal('delete', [id]);
+      }
+    });
+
+    // ============================================================
+    // Render inicial
+    // ============================================================
+    render();
+    updateCounters();
+
+    // Exponer al window para exploración
+    window.__widget = { graphlet, adapter, origin: adapter.origin };
+    console.log('Widget listo. Origin de este tab:', adapter.origin);
+    console.log('Objetos expuestos en window.__widget');
+    console.log('Prueba: __widget.graphlet.put("manual:1", { label: "Manual" })');
+  </script>
+</body>
+</html>

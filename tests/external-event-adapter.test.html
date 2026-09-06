@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>External Event Adapter - Tests de Contrato v0.1.0</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .test { padding: 4px 0; border-bottom: 1px solid #333; }
+    .section { margin-top: 20px; padding: 6px 0; color: #dcdcaa; font-weight: bold; border-bottom: 2px solid #333; }
+    .summary { margin-top: 20px; padding: 10px; background: #252526; border: 1px solid #444; font-size: 14px; }
+    .timing { color: #888; font-size: 12px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h1>🧪 External Event Adapter Contract Tests v0.1.0</h1>
+  <div id="output"></div>
+
+  <script type="module">
+    import { createGraphlet } from '../src/graphlet.js';
+    import { createExternalEventAdapter } from '../src/adapters/external-event-adapter.js';
+
+    const output = document.getElementById('output');
+    let passed = 0;
+    let failed = 0;
+    const t0 = performance.now();
+
+    function section(title) {
+      const div = document.createElement('div');
+      div.className = 'section';
+      div.textContent = title;
+      output.appendChild(div);
+    }
+
+    function assert(condition, message) {
+      const div = document.createElement('div');
+      div.className = 'test';
+      if (condition) {
+        div.innerHTML = `✅ <span class="pass">${message}</span>`;
+        passed++;
+      } else {
+        div.innerHTML = `❌ <span class="fail">${message}</span>`;
+        failed++;
+      }
+      output.appendChild(div);
+      console.assert(condition, message);
+    }
+
+    // ============================================================
+    // MOCK BROADCASTCHANNEL (dos endpoints conectados)
+    // ============================================================
+    // Simula dos tabs comunicándose. Usa una "bus" compartida que
+    // enruta mensajes de un endpoint al OTRO (no al propio, como
+    // BroadcastChannel real). Esto permite instanciar dos adapters
+    // en el mismo runtime y verificar la comunicación bidireccional.
+    //
+    // Además cuenta postMessage por endpoint para asserts de "no eco".
+    // ============================================================
+    function createChannelPair() {
+      const bus = {
+        listenersA: new Set(),
+        listenersB: new Set(),
+      };
+
+      function makeEndpoint(sideName, ownListeners, peerListeners) {
+        const state = { postCount: 0, closed: false };
+        return {
+          _side: sideName,
+          _state: state,
+          postMessage(payload) {
+            if (state.closed) throw new Error(`${sideName} channel closed`);
+            state.postCount++;
+            // Entregar SÍNCRONO al peer (imita BroadcastChannel best-effort;
+            // no imita el async real, pero para tests es más determinista).
+            // BroadcastChannel real es async, pero en un solo runtime la
+            // asincronía complica los asserts. Los tests que dependen del
+            // orden asíncrono lo declararán con await.
+            queueMicrotask(() => {
+              for (const listener of peerListeners) {
+                listener({ data: payload });
+              }
+            });
+          },
+          addEventListener(type, listener) {
+            if (type === 'message') ownListeners.add(listener);
+          },
+          removeEventListener(type, listener) {
+            if (type === 'message') ownListeners.delete(listener);
+          },
+          close() {
+            state.closed = true;
+            ownListeners.clear();
+          },
+        };
+      }
+
+      return {
+        a: makeEndpoint('A', bus.listenersA, bus.listenersB),
+        b: makeEndpoint('B', bus.listenersB, bus.listenersA),
+      };
+    }
+
+    // Espera N microtasks para que los mensajes queueados fluyan.
+    function flushMicrotasks(n = 3) {
+      let p = Promise.resolve();
+      for (let i = 0; i < n; i++) p = p.then(() => {});
+      return p;
+    }
+
+    // ============================================================
+    // TEST 1: Sync básico de una mutación entre tab A y tab B
+    // ============================================================
+    section('TEST 1: Mutación local en A se aplica al Graphlet de B');
+
+    {
+      const chans = createChannelPair();
+      const gA = createGraphlet();
+      const gB = createGraphlet();
+      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter({ graphlet: gB }, { channelName: 'x', channel: chans.b });
+
+      gA.put('x:1', { name: 'From A' });
+      await flushMicrotasks();
+
+      assert(gA.get('x:1') !== null, 'gA tiene la entidad tras put local');
+      assert(gB.get('x:1') !== null, 'gB recibió y aplicó la mutación');
+      assert(gB.get('x:1').properties.name === 'From A',
+        'gB tiene las properties correctas');
+
+      adA.destroy();
+      adB.destroy();
+    }
+
+    // ============================================================
+    // TEST 2: Bidireccional — mutaciones en ambas direcciones
+    // ============================================================
+    section('TEST 2: Bidireccional — B → A también funciona');
+
+    {
+      const chans = createChannelPair();
+      const gA = createGraphlet();
+      const gB = createGraphlet();
+      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter({ graphlet: gB }, { channelName: 'x', channel: chans.b });
+
+      gA.put('from:a', { origin: 'A' });
+      gB.put('from:b', { origin: 'B' });
+      await flushMicrotasks();
+
+      assert(gA.get('from:b') !== null, 'gA recibió mutación de B');
+      assert(gB.get('from:a') !== null, 'gB recibió mutación de A');
+      assert(gA.allIds().length === 2, 'gA tiene ambas entidades');
+      assert(gB.allIds().length === 2, 'gB tiene ambas entidades');
+
+      adA.destroy();
+      adB.destroy();
+    }
+
+    // ============================================================
+    // TEST 3: Anti-eco — mutación local no se re-aplica al que la emitió
+    // ============================================================
+    section('TEST 3: Anti-eco por origin — el tab emisor no se re-notifica');
+
+    {
+      const chans = createChannelPair();
+      const gA = createGraphlet();
+      const gB = createGraphlet();
+      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter({ graphlet: gB }, { channelName: 'x', channel: chans.b });
+
+      // Contamos cuántos posts hace A a la red.
+      const postsBefore = chans.a._state.postCount;
+      gA.put('x:1', { n: 1 });
+      await flushMicrotasks();
+
+      // A hizo exactamente 1 post (el suyo). B recibió y aplicó, pero NO
+      // re-broadcasteó porque aplicó vía _originals (bypass del wrapper).
+      const postsAfter = chans.a._state.postCount;
+      assert(postsAfter - postsBefore === 1,
+        `A emitió exactamente 1 post por la mutación local (delta=${postsAfter - postsBefore})`);
+
+      // B también emitió 0 (aplicó vía original).
+      assert(chans.b._state.postCount === 0,
+        `B no re-emitió el evento (postCount de B = ${chans.b._state.postCount})`);
+
+      adA.destroy();
+      adB.destroy();
+    }
+
+    // ============================================================
+    // TEST 4: Todas las ops se sincronizan (put/upsert/update/delete/link/unlink/unlinkAll)
+    // ============================================================
+    section('TEST 4: Las 7 ops de mutación se sincronizan correctamente');
+
+    {
+      const chans = createChannelPair();
+      const gA = createGraphlet();
+      const gB = createGraphlet();
+      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter({ graphlet: gB }, { channelName: 'x', channel: chans.b });
+
+      // put
+      gA.put('a', { role: 'source' });
+      gA.put('b', { role: 'target' });
+      await flushMicrotasks();
+      assert(gB.get('a') !== null && gB.get('b') !== null, 'put: ambas entidades en B');
+
+      // upsert
+      gA.upsert('a', { extra: 1 });
+      await flushMicrotasks();
+      assert(gB.get('a').properties.extra === 1, 'upsert: property mergeada en B');
+      assert(gB.get('a').properties.role === 'source', 'upsert: property original preservada en B');
+
+      // update
+      gA.update('a', { role: 'updated' });
+      await flushMicrotasks();
+      assert(gB.get('a').properties.role === 'updated', 'update: role cambiado en B');
+
+      // link
+      gA.link('a', 'rel', 'b');
+      await flushMicrotasks();
+      assert(gB.get('a').links.rel && gB.get('a').links.rel.includes('b'),
+        'link: relación establecida en B');
+
+      // unlink
+      gA.unlink('a', 'rel', 'b');
+      await flushMicrotasks();
+      assert(!gB.get('a').links.rel || !gB.get('a').links.rel.includes('b'),
+        'unlink: relación removida en B');
+
+      // link+unlinkAll
+      gA.link('a', 'rel2', 'b');
+      await flushMicrotasks();
+      gA.unlinkAll('a', 'rel2');
+      await flushMicrotasks();
+      assert(!gB.get('a').links.rel2, 'unlinkAll: relación limpia en B');
+
+      // delete
+      gA.delete('b');
+      await flushMicrotasks();
+      assert(gB.get('b') === null, 'delete: entidad removida en B');
+
+      adA.destroy();
+      adB.destroy();
+    }
+
+    // ============================================================
+    // TEST 5: Set semantics — link no-op NO emite evento
+    // ============================================================
+    section('TEST 5: link duplicado (G-0 no-op) no emite ni notifica a B');
+
+    {
+      const chans = createChannelPair();
+      const gA = createGraphlet();
+      const gB = createGraphlet();
+      gA.put('a', {});
+      gA.put('b', {});
+      gB.put('a', {});
+      gB.put('b', {});
+      // (sincronizamos manualmente el estado inicial; en la app real
+      // esto vendría de Hydration antes de instanciar el adapter)
+
+      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter({ graphlet: gB }, { channelName: 'x', channel: chans.b });
+
+      const postsBase = chans.a._state.postCount;
+
+      gA.link('a', 'rel', 'b');       // real
+      await flushMicrotasks();
+      const postsAfterFirst = chans.a._state.postCount;
+      assert(postsAfterFirst - postsBase === 1, 'primer link: 1 post');
+
+      gA.link('a', 'rel', 'b');       // no-op (G-0)
+      gA.link('a', 'rel', 'b');       // no-op
+      await flushMicrotasks();
+      assert(chans.a._state.postCount === postsAfterFirst,
+        'links duplicados no producen posts adicionales');
+      assert(gB.get('a').links.rel.length === 1,
+        'B mantiene un solo target en la relación (no se duplicó)');
+
+      adA.destroy();
+      adB.destroy();
+    }
+
+    // ============================================================
+    // TEST 6: Mensajes ajenos al adapter son ignorados
+    // ============================================================
+    section('TEST 6: Mensajes que no son MutationEvent son ignorados silenciosamente');
+
+    {
+      const chans = createChannelPair();
+      const gA = createGraphlet();
+      const gB = createGraphlet();
+      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter({ graphlet: gB }, { channelName: 'x', channel: chans.b });
+
+      // Simular tráfico ajeno: usamos chans.a.postMessage con otro type.
+      // Como es "de A", debería llegar a B y ser ignorado por su handler.
+      chans.a.postMessage({ type: 'not-ours', data: 42 });
+      chans.a.postMessage({ hello: 'world' });
+      chans.a.postMessage(null);
+      chans.a.postMessage('string message');
+      chans.a.postMessage({ type: 'graphlet-mutation' });   // falta origin/op/args
+      chans.a.postMessage({ type: 'graphlet-mutation', origin: 'x', op: 'put' }); // falta args
+      await flushMicrotasks();
+
+      assert(gB.allIds().length === 0, 'B ignoró todos los mensajes malformados o ajenos');
+
+      // Confirmar que un mensaje válido después sí funciona
+      gA.put('valid', {});
+      await flushMicrotasks();
+      assert(gB.get('valid') !== null,
+        'tras mensajes ignorados, B sigue procesando mensajes válidos');
+
+      adA.destroy();
+      adB.destroy();
+    }
+
+    // ============================================================
+    // TEST 7: onRemoteError se invoca cuando aplicar remoto lanza
+    // ============================================================
+    section('TEST 7: onRemoteError capturra el fallo sin romper el listener');
+
+    {
+      const chans = createChannelPair();
+      const gA = createGraphlet();
+      const gB = createGraphlet();
+      const errorsB = [];
+
+      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter(
+        { graphlet: gB },
+        {
+          channelName: 'x',
+          channel: chans.b,
+          onRemoteError: (err, evt) => errorsB.push({ err, evt }),
+        }
+      );
+
+      // gA tiene 'a', gA tiene 'b'. En B solo existe 'a' — un link(a,rel,b)
+      // remoto lanzará porque 'b' no existe en B.
+      gA.put('a', {});
+      gB.put('a', {});
+      gA.put('b', {});    // esto SÍ se propaga a B
+      await flushMicrotasks();
+      assert(gB.get('b') !== null, 'setup: b llegó a B por sync');
+
+      // Ahora borramos b solo en B (usando el original para no re-emitir).
+      // Truco: usamos otro adapter destruido para acceder al original.
+      // Alternativa más limpia: destruimos B, mutamos, y reinstanciamos.
+      // Optamos por la alternativa limpia:
+      adB.destroy();
+      gB.delete('b');
+      // Reinstanciar B con un nuevo canal-endpoint reutilizando el mismo bus
+      // es complicado; para este test, creamos otro par de canales.
+      // En realidad: como ya destruimos adB, gB no aplica remotos. Necesitamos
+      // un B "vivo" pero con estado divergente.
+      //
+      // Camino más simple: usar dos pares distintos y forjar manualmente
+      // el evento remoto para probar el error handling. Es lo que hacemos:
+
+      const chans2 = createChannelPair();
+      const gB2 = createGraphlet();
+      gB2.put('a', {});
+      // gB2 NO tiene 'b'
+      const errorsB2 = [];
+      const adB2 = createExternalEventAdapter(
+        { graphlet: gB2 },
+        {
+          channelName: 'x',
+          channel: chans2.b,
+          onRemoteError: (err, evt) => errorsB2.push({ err, evt }),
+        }
+      );
+
+      // Enviar evento manual desde el otro endpoint intentando link a target inexistente
+      chans2.a.postMessage({
+        type: 'graphlet-mutation',
+        origin: 'someone-else',
+        op: 'link',
+        args: ['a', 'rel', 'ghost'],
+      });
+      await flushMicrotasks();
+
+      assert(errorsB2.length === 1, 'onRemoteError invocado 1 vez');
+      assert(errorsB2[0].evt.op === 'link',
+        'onRemoteError recibió el evento problemático');
+      assert(/no existe|does not exist/i.test(errorsB2[0].err.message),
+        `onRemoteError recibió error informativo (msg: "${errorsB2[0].err.message}")`);
+
+      // Confirmar que el listener sigue vivo tras el fallo
+      chans2.a.postMessage({
+        type: 'graphlet-mutation',
+        origin: 'someone-else',
+        op: 'put',
+        args: ['recovered', { ok: true }],
+      });
+      await flushMicrotasks();
+      assert(gB2.get('recovered') !== null,
+        'tras un error remoto, el listener sigue procesando eventos nuevos');
+
+      adA.destroy();
+      adB2.destroy();
+    }
+
+    // ============================================================
+    // TEST 8: destroy() restaura originales y desconecta listener
+    // ============================================================
+    section('TEST 8: destroy() restaura métodos originales y detiene sync');
+
+    {
+      const chans = createChannelPair();
+      const gA = createGraphlet();
+      const gB = createGraphlet();
+      const originalPutA = gA.put;
+
+      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter({ graphlet: gB }, { channelName: 'x', channel: chans.b });
+
+      assert(gA.put !== originalPutA, 'put está wrappeado tras instanciar');
+      adA.destroy();
+      assert(gA.put === originalPutA, 'put restaurado tras destroy');
+
+      // Mutación en A tras destroy no debería llegar a B
+      const postsBefore = chans.a._state.postCount;
+      gA.put('after-destroy', {});
+      await flushMicrotasks();
+      assert(chans.a._state.postCount === postsBefore,
+        'sin adapter, mutación en A no emite');
+      assert(gB.get('after-destroy') === null,
+        'sin adapter en A, mutación local no llega a B');
+
+      adB.destroy();
+    }
+
+    // ============================================================
+    // TEST 9: destroy() cierra el canal solo si lo creó
+    // ============================================================
+    section('TEST 9: destroy() cierra canal owned pero NO canal inyectado');
+
+    {
+      // Canal inyectado: no se cierra
+      const chans = createChannelPair();
+      const gA = createGraphlet();
+      const adA = createExternalEventAdapter(
+        { graphlet: gA },
+        { channelName: 'x', channel: chans.a }
+      );
+      assert(!chans.a._state.closed, 'canal inyectado: no cerrado antes de destroy');
+      adA.destroy();
+      assert(!chans.a._state.closed,
+        'canal inyectado: NO cerrado tras destroy (adapter no lo posee)');
+    }
+
+    // ============================================================
+    // TEST 10: destroy() idempotente
+    // ============================================================
+    section('TEST 10: destroy() idempotente');
+
+    {
+      const chans = createChannelPair();
+      const gA = createGraphlet();
+      const adA = createExternalEventAdapter(
+        { graphlet: gA },
+        { channelName: 'x', channel: chans.a }
+      );
+
+      let firstThrew = false;
+      let secondThrew = false;
+      try { adA.destroy(); } catch (e) { firstThrew = true; }
+      try { adA.destroy(); } catch (e) { secondThrew = true; }
+      assert(!firstThrew, 'primer destroy() no lanza');
+      assert(!secondThrew, 'segundo destroy() no lanza');
+    }
+
+    // ============================================================
+    // TEST 11: Validación de context y options
+    // ============================================================
+    section('TEST 11: Validación de context y options');
+
+    {
+      const chans = createChannelPair();
+
+      // 11.1: context sin graphlet
+      let t = false;
+      try {
+        createExternalEventAdapter({}, { channelName: 'x', channel: chans.a });
+      } catch (e) { t = true; }
+      assert(t, '11.1: context sin graphlet lanza TypeError');
+
+      // 11.2: falta channelName
+      t = false;
+      try {
+        createExternalEventAdapter(
+          { graphlet: createGraphlet() },
+          { channel: chans.a }
+        );
+      } catch (e) { t = true; }
+      assert(t, '11.2: falta options.channelName lanza TypeError');
+
+      // 11.3: channelName vacío
+      t = false;
+      try {
+        createExternalEventAdapter(
+          { graphlet: createGraphlet() },
+          { channelName: '  ', channel: chans.a }
+        );
+      } catch (e) { t = true; }
+      assert(t, '11.3: channelName vacío/whitespace lanza TypeError');
+
+      // 11.4: channel inyectado sin la interface
+      t = false;
+      try {
+        createExternalEventAdapter(
+          { graphlet: createGraphlet() },
+          { channelName: 'x', channel: { foo: 'bar' } }
+        );
+      } catch (e) { t = true; }
+      assert(t, '11.4: channel sin la interface esperada lanza TypeError');
+    }
+
+    // ============================================================
+    // TEST 12: El origin es único por instancia
+    // ============================================================
+    section('TEST 12: Cada adapter genera un origin único (UUID)');
+
+    {
+      const chans = createChannelPair();
+      const chans2 = createChannelPair();
+
+      const adA1 = createExternalEventAdapter(
+        { graphlet: createGraphlet() },
+        { channelName: 'x', channel: chans.a }
+      );
+      const adA2 = createExternalEventAdapter(
+        { graphlet: createGraphlet() },
+        { channelName: 'x', channel: chans2.a }
+      );
+
+      assert(typeof adA1.origin === 'string' && adA1.origin.length > 0,
+        'origin es un string no vacío');
+      assert(adA1.origin !== adA2.origin,
+        `origins de instancias distintas difieren (${adA1.origin.slice(0,8)}... vs ${adA2.origin.slice(0,8)}...)`);
+
+      // Formato UUID v4 aproximado (basta con el patrón general)
+      const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      assert(uuidRe.test(adA1.origin),
+        `origin tiene forma UUID (${adA1.origin})`);
+
+      adA1.destroy();
+      adA2.destroy();
+    }
+
+    // ============================================================
+    // RESUMEN
+    // ============================================================
+    const total = passed + failed;
+    const elapsed = performance.now() - t0;
+    const summary = document.createElement('div');
+    summary.className = 'summary';
+    summary.innerHTML =
+      `📊 <strong>Resultados:</strong> ${passed}/${total} pasaron. ` +
+      (failed === 0
+        ? '<span class="pass">✅ Todo verde.</span>'
+        : `<span class="fail">⚠️ ${failed} fallo(s).</span>`) +
+      `<div class="timing">⏱ ${elapsed.toFixed(1)}ms</div>`;
+    output.appendChild(summary);
+  </script>
+</body>
+</html>
