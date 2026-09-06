@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Logging Adapter - Tests de Contrato v0.1.0</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f44747; }
+    .test { padding: 4px 0; border-bottom: 1px solid #333; }
+    .section { margin-top: 20px; padding: 6px 0; color: #dcdcaa; font-weight: bold; border-bottom: 2px solid #333; }
+    .summary { margin-top: 20px; padding: 10px; background: #252526; border: 1px solid #444; font-size: 14px; }
+    .timing { color: #888; font-size: 12px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h1>🧪 Logging Adapter Contract Tests v0.1.0</h1>
+  <div id="output"></div>
+
+  <script type="module">
+    import { createGraphlet } from '../src/graphlet.js';
+    import { createStatePulsar } from '../src/pulsar.js';
+    import { createLoggingAdapter } from '../src/adapters/logging-adapter.js';
+
+    const output = document.getElementById('output');
+    let passed = 0;
+    let failed = 0;
+    const t0 = performance.now();
+
+    function section(title) {
+      const div = document.createElement('div');
+      div.className = 'section';
+      div.textContent = title;
+      output.appendChild(div);
+    }
+
+    function assert(condition, message) {
+      const div = document.createElement('div');
+      div.className = 'test';
+      if (condition) {
+        div.innerHTML = `✅ <span class="pass">${message}</span>`;
+        passed++;
+      } else {
+        div.innerHTML = `❌ <span class="fail">${message}</span>`;
+        failed++;
+      }
+      output.appendChild(div);
+      console.assert(condition, message);
+    }
+
+    // Helper: sink capturador para verificar contenido exacto de eventos
+    function makeCapturingSink() {
+      const events = [];
+      const sink = (event) => events.push(event);
+      return { sink, events };
+    }
+
+    // ============================================================
+    // TEST 1: Solo Graphlet — mutaciones producen eventos
+    // ============================================================
+    section('TEST 1: Observando solo Graphlet');
+
+    {
+      const g = createGraphlet();
+      const { sink, events } = makeCapturingSink();
+      const adapter = createLoggingAdapter({ graphlet: g }, { sink });
+
+      g.put('user:1', { name: 'Alice' });
+      g.upsert('user:1', { age: 30 });
+      g.update('user:1', { name: 'Alicia' });
+      g.delete('user:1');
+
+      assert(events.length === 4, `4 mutaciones → 4 eventos (recibidos: ${events.length})`);
+      assert(events[0].source === 'graphlet' && events[0].op === 'put',
+        'primer evento: source=graphlet, op=put');
+      assert(events[0].args[0] === 'user:1',
+        'evento put lleva args correctos');
+      assert(events[1].op === 'upsert', 'segundo evento: op=upsert');
+      assert(events[2].op === 'update', 'tercer evento: op=update');
+      assert(events[3].op === 'delete', 'cuarto evento: op=delete');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 2: Solo Pulsar — setState produce eventos
+    // ============================================================
+    section('TEST 2: Observando solo Pulsar');
+
+    {
+      const p = createStatePulsar({});
+      const { sink, events } = makeCapturingSink();
+      const adapter = createLoggingAdapter({ pulsar: p }, { sink });
+
+      p.setState({ foo: 1 });
+      p.setState({ bar: 'hello' });
+
+      assert(events.length === 2, `2 setStates → 2 eventos (recibidos: ${events.length})`);
+      assert(events[0].source === 'pulsar' && events[0].op === 'setState',
+        'source=pulsar, op=setState');
+      assert(events[0].args[0].foo === 1,
+        'evento lleva el partial completo en args[0]');
+      assert(events[1].args[0].bar === 'hello',
+        'segundo evento con su propio partial');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 3: Ambos observados — eventos entrelazados
+    // ============================================================
+    section('TEST 3: Observando ambos, eventos entrelazados');
+
+    {
+      const g = createGraphlet();
+      const p = createStatePulsar({});
+      const { sink, events } = makeCapturingSink();
+      const adapter = createLoggingAdapter({ graphlet: g, pulsar: p }, { sink });
+
+      g.put('x:1', {});
+      p.setState({ a: 1 });
+      g.put('x:2', {});
+      p.setState({ b: 2 });
+
+      assert(events.length === 4, '4 eventos totales');
+      assert(events[0].source === 'graphlet', 'orden preservado: primero graphlet');
+      assert(events[1].source === 'pulsar', 'segundo: pulsar');
+      assert(events[2].source === 'graphlet', 'tercero: graphlet');
+      assert(events[3].source === 'pulsar', 'cuarto: pulsar');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 4: Structure del evento — ts, source, op, args
+    // ============================================================
+    section('TEST 4: Los eventos tienen la estructura del contrato');
+
+    {
+      const g = createGraphlet();
+      const { sink, events } = makeCapturingSink();
+      const adapter = createLoggingAdapter({ graphlet: g }, { sink });
+
+      g.put('x:1', { name: 'test' });
+
+      const ev = events[0];
+      assert(typeof ev.ts === 'number', 'ts es number (performance.now)');
+      assert(ev.ts > 0, 'ts es positivo');
+      assert(ev.source === 'graphlet', 'source es "graphlet"');
+      assert(ev.op === 'put', 'op es "put"');
+      assert(Array.isArray(ev.args), 'args es array');
+      assert(ev.args.length === 2, 'args tiene 2 elementos');
+      assert(ev.args[0] === 'x:1' && ev.args[1].name === 'test',
+        'args tiene los valores correctos');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 5: ts es monotónico creciente entre eventos consecutivos
+    // ============================================================
+    section('TEST 5: ts es monotónico creciente');
+
+    {
+      const g = createGraphlet();
+      const { sink, events } = makeCapturingSink();
+      const adapter = createLoggingAdapter({ graphlet: g }, { sink });
+
+      for (let i = 0; i < 5; i++) g.put(`x:${i}`, {});
+
+      let monotonic = true;
+      for (let i = 1; i < events.length; i++) {
+        if (events[i].ts < events[i-1].ts) { monotonic = false; break; }
+      }
+      assert(monotonic, 'ts crece (o al menos no decrece) entre eventos sucesivos');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 6: filter descarta eventos
+    // ============================================================
+    section('TEST 6: filter descarta eventos correctamente');
+
+    {
+      const g = createGraphlet();
+      const { sink, events } = makeCapturingSink();
+      const adapter = createLoggingAdapter(
+        { graphlet: g },
+        {
+          sink,
+          filter: (event) => event.op !== 'delete',  // ignora deletes
+        }
+      );
+
+      g.put('x:1', {});
+      g.put('x:2', {});
+      g.delete('x:1');
+      g.delete('x:2');
+      g.put('x:3', {});
+
+      assert(events.length === 3, `3 puts pasan, 2 deletes filtrados (recibidos: ${events.length})`);
+      assert(events.every(e => e.op === 'put'), 'todos los eventos pasados son puts');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 7: filter que lanza es tratado como rechazo silencioso
+    // ============================================================
+    section('TEST 7: filter que lanza no propaga, evento descartado');
+
+    {
+      const g = createGraphlet();
+      const { sink, events } = makeCapturingSink();
+
+      // Capturar console.warn para verificar que se avisó
+      const warns = [];
+      const originalWarn = console.warn;
+      console.warn = (...args) => warns.push(args.join(' '));
+
+      const adapter = createLoggingAdapter(
+        { graphlet: g },
+        {
+          sink,
+          filter: () => { throw new Error('filter fail'); },
+        }
+      );
+
+      let mutationThrew = false;
+      try {
+        g.put('x:1', {});
+      } catch (e) { mutationThrew = true; }
+
+      console.warn = originalWarn;
+
+      assert(!mutationThrew, 'la mutación NO propaga error del filter');
+      assert(events.length === 0, 'evento descartado por defecto ante filter fallido');
+      assert(warns.length === 1, 'se emitió 1 warning');
+      assert(/filter/i.test(warns[0]), 'warning menciona "filter"');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 8: sink que lanza no rompe la mutación
+    // ============================================================
+    section('TEST 8: sink que lanza no propaga, mutación sigue funcionando');
+
+    {
+      const g = createGraphlet();
+      const warns = [];
+      const originalWarn = console.warn;
+      console.warn = (...args) => warns.push(args.join(' '));
+
+      const adapter = createLoggingAdapter(
+        { graphlet: g },
+        { sink: () => { throw new Error('sink fail'); } }
+      );
+
+      let mutationThrew = false;
+      try {
+        g.put('x:1', { name: 'still works' });
+      } catch (e) { mutationThrew = true; }
+
+      console.warn = originalWarn;
+
+      assert(!mutationThrew, 'mutación no propaga error del sink');
+      assert(g.get('x:1') !== null, 'la entidad SÍ fue creada (mutación completada)');
+      assert(g.get('x:1').properties.name === 'still works',
+        'la property también fue aplicada');
+      assert(warns.length === 1, 'se emitió 1 warning');
+      assert(/sink/i.test(warns[0]), 'warning menciona "sink"');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 9: Error en método original propaga sin emitir evento
+    // ============================================================
+    section('TEST 9: si el original lanza, el evento NO se emite');
+
+    {
+      const g = createGraphlet();
+      const { sink, events } = makeCapturingSink();
+      const adapter = createLoggingAdapter({ graphlet: g }, { sink });
+
+      // g.update sobre entidad inexistente lanza (Graphlet fail-fast)
+      let threw = false;
+      try {
+        g.update('nonexistent', { name: 'foo' });
+      } catch (e) { threw = true; }
+
+      assert(threw, 'update sobre entidad inexistente lanzó (como Graphlet manda)');
+      assert(events.length === 0,
+        'NO se emitió evento para la operación fallida');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 10: Set semantics — link no-op NO emite
+    // ============================================================
+    section('TEST 10: Set semantics: link idempotente no emite');
+
+    {
+      const g = createGraphlet();
+      g.put('a', {});
+      g.put('b', {});
+
+      const { sink, events } = makeCapturingSink();
+      const adapter = createLoggingAdapter({ graphlet: g }, { sink });
+
+      g.link('a', 'rel', 'b');              // real
+      g.link('a', 'rel', 'b');              // no-op
+      g.link('a', 'rel', 'b');              // no-op
+
+      const linkEvents = events.filter(e => e.op === 'link');
+      assert(linkEvents.length === 1, `solo 1 evento link (recibidos: ${linkEvents.length})`);
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 11: Set semantics — unlink de triple ausente NO emite
+    // ============================================================
+    section('TEST 11: Set semantics: unlink de triple ausente no emite');
+
+    {
+      const g = createGraphlet();
+      g.put('a', {});
+      g.put('b', {});
+      g.link('a', 'rel', 'b');
+
+      const { sink, events } = makeCapturingSink();
+      const adapter = createLoggingAdapter({ graphlet: g }, { sink });
+
+      g.unlink('a', 'rel', 'ghost');        // no-op (target no está)
+      const unlinkEventsAfterNoop = events.filter(e => e.op === 'unlink');
+      assert(unlinkEventsAfterNoop.length === 0,
+        'unlink de target ausente no emitió');
+
+      g.unlink('a', 'rel', 'b');            // real
+      const unlinkEventsAfterReal = events.filter(e => e.op === 'unlink');
+      assert(unlinkEventsAfterReal.length === 1,
+        'unlink real emitió 1 evento');
+
+      g.unlink('a', 'rel', 'b');            // no-op (ya removido)
+      const unlinkEventsAfterSecond = events.filter(e => e.op === 'unlink');
+      assert(unlinkEventsAfterSecond.length === 1,
+        'segundo unlink (ya no está) no emitió más eventos');
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // TEST 12: destroy() restaura originales de Graphlet
+    // ============================================================
+    section('TEST 12: destroy() restaura métodos originales de Graphlet');
+
+    {
+      const g = createGraphlet();
+      const originalPut = g.put;
+
+      const { sink, events } = makeCapturingSink();
+      const adapter = createLoggingAdapter({ graphlet: g }, { sink });
+
+      assert(g.put !== originalPut, 'put está wrappeado tras instanciar');
+      adapter.destroy();
+      assert(g.put === originalPut, 'put restaurado tras destroy');
+
+      // Mutaciones post-destroy no producen eventos
+      const eventsBefore = events.length;
+      g.put('post-destroy', {});
+      assert(events.length === eventsBefore,
+        'mutaciones post-destroy no generan eventos');
+    }
+
+    // ============================================================
+    // TEST 13: destroy() restaura setState de Pulsar
+    // ============================================================
+    section('TEST 13: destroy() restaura setState de Pulsar');
+
+    {
+      const p = createStatePulsar({});
+      const originalSetState = p.setState;
+
+      const { sink, events } = makeCapturingSink();
+      const adapter = createLoggingAdapter({ pulsar: p }, { sink });
+
+      assert(p.setState !== originalSetState, 'setState está wrappeado tras instanciar');
+      adapter.destroy();
+      assert(p.setState === originalSetState, 'setState restaurado tras destroy');
+
+      const eventsBefore = events.length;
+      p.setState({ post: 1 });
+      assert(events.length === eventsBefore,
+        'setState post-destroy no genera evento');
+    }
+
+    // ============================================================
+    // TEST 14: destroy() idempotente
+    // ============================================================
+    section('TEST 14: destroy() idempotente');
+
+    {
+      const g = createGraphlet();
+      const adapter = createLoggingAdapter({ graphlet: g });
+
+      let first = false, second = false;
+      try { adapter.destroy(); } catch { first = true; }
+      try { adapter.destroy(); } catch { second = true; }
+
+      assert(!first, 'primer destroy no lanza');
+      assert(!second, 'segundo destroy no lanza');
+    }
+
+    // ============================================================
+    // TEST 15: Validación de context y options
+    // ============================================================
+    section('TEST 15: Validación de context y options');
+
+    {
+      // 15.1: context vacío (sin graphlet ni pulsar)
+      let t = false;
+      try { createLoggingAdapter({}); } catch { t = true; }
+      assert(t, '15.1: context sin graphlet ni pulsar lanza TypeError');
+
+      // 15.2: context null
+      t = false;
+      try { createLoggingAdapter(null, {}); } catch { t = true; }
+      assert(t, '15.2: context null lanza TypeError');
+
+      // 15.3: graphlet inválido
+      t = false;
+      try { createLoggingAdapter({ graphlet: 'not a graphlet' }); } catch { t = true; }
+      assert(t, '15.3: graphlet no-instancia lanza TypeError');
+
+      // 15.4: pulsar inválido
+      t = false;
+      try { createLoggingAdapter({ pulsar: {} }); } catch { t = true; }
+      assert(t, '15.4: pulsar no-instancia lanza TypeError');
+
+      // 15.5: sink no función
+      t = false;
+      try {
+        createLoggingAdapter({ graphlet: createGraphlet() }, { sink: 'nope' });
+      } catch { t = true; }
+      assert(t, '15.5: sink no-función lanza TypeError');
+
+      // 15.6: filter no función
+      t = false;
+      try {
+        createLoggingAdapter({ graphlet: createGraphlet() }, { filter: 42 });
+      } catch { t = true; }
+      assert(t, '15.6: filter no-función lanza TypeError');
+    }
+
+    // ============================================================
+    // TEST 16: Read-only — el adapter no cambia el resultado de mutaciones
+    // ============================================================
+    section('TEST 16: Read-only: mutaciones producen el mismo estado con o sin adapter');
+
+    {
+      // Sin adapter
+      const g1 = createGraphlet();
+      g1.put('user:1', { name: 'Alice' });
+      g1.put('user:2', { name: 'Bob' });
+      g1.link('user:1', 'knows', 'user:2');
+      const state1 = {
+        u1: g1.get('user:1'),
+        u2: g1.get('user:2'),
+        ids: g1.allIds(),
+      };
+
+      // Con adapter
+      const g2 = createGraphlet();
+      const adapter = createLoggingAdapter({ graphlet: g2 }, { sink: () => {} });
+      g2.put('user:1', { name: 'Alice' });
+      g2.put('user:2', { name: 'Bob' });
+      g2.link('user:1', 'knows', 'user:2');
+      const state2 = {
+        u1: g2.get('user:1'),
+        u2: g2.get('user:2'),
+        ids: g2.allIds(),
+      };
+      adapter.destroy();
+
+      assert(state1.u1.properties.name === state2.u1.properties.name,
+        'read-only: properties idénticas con y sin adapter');
+      assert(JSON.stringify(state1.u1.links) === JSON.stringify(state2.u1.links),
+        'read-only: links idénticos');
+      assert(state1.ids.length === state2.ids.length,
+        'read-only: mismo número de entidades');
+    }
+
+    // ============================================================
+    // TEST 17: Sink default no lanza (console.log siempre disponible)
+    // ============================================================
+    section('TEST 17: Sink default emite a console sin lanzar');
+
+    {
+      const g = createGraphlet();
+      const adapter = createLoggingAdapter({ graphlet: g });
+      // Sin sink custom, usa el default (console.log)
+
+      let mutationThrew = false;
+      try {
+        g.put('default-sink:1', { hello: 'world' });
+      } catch (e) { mutationThrew = true; }
+
+      assert(!mutationThrew, 'mutación con sink default no lanza');
+      // Verificación indirecta: el mensaje debería haber llegado a la consola,
+      // pero eso no lo aseveramos aquí (mirar DevTools para confirmar visualmente)
+
+      adapter.destroy();
+    }
+
+    // ============================================================
+    // RESUMEN
+    // ============================================================
+    const total = passed + failed;
+    const elapsed = performance.now() - t0;
+    const summary = document.createElement('div');
+    summary.className = 'summary';
+    summary.innerHTML =
+      `📊 <strong>Resultados:</strong> ${passed}/${total} pasaron. ` +
+      (failed === 0
+        ? '<span class="pass">✅ Todo verde.</span>'
+        : `<span class="fail">⚠️ ${failed} fallo(s).</span>`) +
+      `<div class="timing">⏱ ${elapsed.toFixed(1)}ms</div>`;
+    output.appendChild(summary);
+  </script>
+</body>
+</html>

@@ -122,13 +122,64 @@ Decision between A and B to be made when evidence demands it. Option A is curren
 
 ---
 
-### 12-CROSSTAB-SYNC — External Event Adapter: cross-tab reactive sync
+### 12-BRIDGE-INTEGRATION — External Event Adapter: remote mutations don't re-project via Bridge
 
-**What it resolves.** The Persistence widget demonstrated empirically that localStorage already provides passive cross-tab persistence (a change persisted in one tab is visible to another tab on next load or reload). What it does **not** provide is reactive synchronization: two tabs open simultaneously do not see each other's changes until one of them reloads.
+**What it resolves.** In v0.1.0 of the External Event Adapter, remote mutations arriving from a peer tab are applied to the local Graphlet via the **original** method (bypassing all wrappers). This is what makes anti-echo work by construction (see external-event-adapter.spec.md §3.3). But it has a consequence: if a Graphlet↔Pulsar Bridge is also mounted in the receiving tab, the Bridge wrapper is bypassed too. The result: Graphlet in the receiving tab reflects the remote mutation, **but Pulsar's `entities.*` projection does not**. Chunklet behaviors subscribed to `entities.*` in the receiving tab will not re-render until a local mutation triggers Bridge's wrapper.
 
-The External Event Adapter (Capa 12, being implemented in Phase 0 Punto 5) resolves this via `BroadcastChannel`, translating local mutations into events broadcast to peer tabs, and translating incoming events into local mutations with anti-echo protection to prevent feedback loops.
+**Empirical evidence.** The widget `widget-external-event.html` (Phase 0 Punto 6, Capa 12) sidesteps this by renderizing from Graphlet directly and listening to the BroadcastChannel with a second consumer to trigger re-renders. This works for the widget but is a workaround, not the intended composition pattern for real applications that use Bridge + External Event together.
 
-**Status.** This is not deferred debt — it is active work in Phase 0 Punto 5, listed here for cross-reference. Once Capa 12 lands with its widget, this line is removed from this document.
+**Why deferred.** Resolving it requires coordinated behavior across two adapters. Options include: (a) an "apply remote via wrapped" flag in the External Event Adapter that lets Bridge re-project without re-emitting; (b) a shared `isRemoteContext` signal that Bridge honors to skip re-broadcast; (c) restructuring wrappers into a single dispatcher chain instead of independent monkey-patches. All three are v0.2.0 territory that requires more evidence of the pattern's cost in a real application.
+
+**Resolution path.** Wait for Fase 1 or Fase 2 evidence. When an application couples External Event + Bridge and the manual re-render workaround becomes friction, pick between the three options based on which is least invasive at that point.
+
+---
+
+### 12-PERSISTENCE-INTEGRATION — External Event Adapter: remote mutations don't persist in receiver
+
+**What it resolves.** Same shape as 12-BRIDGE-INTEGRATION but for Persistence. Remote mutations applied via the original method bypass Persistence's wrapper too, so the receiving tab's `localStorage` is not updated by remote events. Practical consequence: if the emitting tab crashes before its own debounce fires, the mutation is lost to storage even though other tabs saw it live.
+
+**Empirical evidence.** Not directly demonstrated in Phase 0 (the External Event widget does not use Persistence), but derivable from the same construction. The Persistence widget alone demonstrates that localStorage is updated correctly for local mutations; combining both adapters would expose the asymmetry.
+
+**Why deferred.** Same reasons as 12-BRIDGE-INTEGRATION: requires coordinated behavior. Same resolution options apply.
+
+**Resolution path.** Same as 12-BRIDGE-INTEGRATION. Both items can be resolved together, since they share the same underlying architectural question: "how does an adapter that observes local mutations distinguish local from remote-applied, and choose to act or not act accordingly?"
+
+---
+
+---
+
+### ADAPTER-UTILS-DEDUP — Shared helper for the wrapper pattern across adapters
+
+**What it resolves.** Four of the five first-generation adapters (Bridge, Persistence, External Event, Logging) all wrap the seven mutation methods of Graphlet with the identical structural pattern: capture originals, install thin wrappers that call through and produce side effects, restore originals on destroy. Three of them additionally reimplement `_snapshotLinksOf` and `_sameShallowLinks` for set-semantics detection on `link`/`unlink`/`unlinkAll` (Logging also duplicates these). This is roughly 20-25 lines of near-identical code per adapter, totaling ~80 lines of pure duplication across the codebase.
+
+**Empirical evidence.** Verified by direct inspection of the four adapters produced in Phase 0 Punto 5. The pattern is not incidental — it is structural to what "an adapter that observes Graphlet mutations" is. Any fifth or sixth adapter following this pattern will duplicate again.
+
+**Why deferred.** Deduplication requires either (a) a new shared module (`src/adapter-utils.js` or similar) that adapters import, introducing a dependency chain adapters → utils, or (b) publishing the helpers as part of Graphlet itself under a stable "observability API" that inverts the current no-reactivity constraint of Graphlet. Both options are architectural decisions that benefit from a fifth or sixth adapter's evidence to inform the exact shape of the helper. Deduplicating with only four instances risks generalizing on incomplete evidence (Article I).
+
+**Resolution path.** When Fase 1 introduces additional adapters (or refactors existing ones for a v0.2.0), extract the pattern into a helper module. Recommended shape (subject to refinement by that evidence):
+
+```javascript
+// Proposed shape, not committed
+import { wrapGraphletMutations } from './adapter-utils.js';
+
+export function createSomeAdapter(context, options) {
+  const state = { /* adapter-specific */ };
+  const unwrap = wrapGraphletMutations(context.graphlet, {
+    onMutation: (op, args, wasNoOp) => {
+      if (wasNoOp) return;
+      // adapter-specific reaction here
+    },
+    detectSetSemanticNoOp: true,  // opt-in
+  });
+  return { destroy: () => unwrap() };
+}
+```
+
+The helper handles the seven-method wrap, the snapshot-based no-op detection, and the destroy-time restoration. The adapter is left with only its own logic.
+
+**Trigger condition for prioritization.** Any of: (a) a fifth adapter is designed and would duplicate the pattern again; (b) a bug is found in the duplicated logic and needs to be fixed in four places; (c) evidence-first justification for the exact API shape arrives.
+
+**Discovered:** Phase 0 Punto 5, formalized in retrospective (SESSION_DOC.md §Lo malo #1).
 
 
 
@@ -138,6 +189,7 @@ The following observations were closed during Phase 0 and are recorded here only
 - **V-T4** (hashchange reactivates Voyajer without manual sync) — Covered implicitly by CP3 since V-T0 removed all manual sync() calls.
 - **C-T1..C-T6, C-T8, C-T9** — Covered by TESTS 1-8, 12-13 of `chunklet.test.html`.
 - **All Pulsar and Graphlet observations** — Covered fully in their respective harnesses.
+- **12-CROSSTAB-SYNC** — Resolved by implementation of Capa 12 in Phase 0 Punto 5. Widget `widget-external-event.html` demonstrates working cross-tab bidirectional sync with anti-echo (evidence: 42/42 harness green, empirical widget test showed `out=N/in=0` on emitter, `out=0/in=N` on receiver as expected).
 
 ---
 
@@ -152,14 +204,18 @@ The following observations were closed during Phase 0 and are recorded here only
 | BRIDGE-REACTIVE | Bridge adapter | reactive per-entity projection (73% noise quantified with N=8) | Phase 1 (Camino 2 recommended) |
 | WIDGET-COMPOSITION | Chunklet ctx | helper for entity + related | Iterative during Punto 6 and Phase 1 |
 | PERSISTENCE-INDEXEDDB | Persistence adapter | IndexedDB backend for large snapshots | v0.2.0 when evidence demands it |
-| 12-CROSSTAB-SYNC | External Event adapter | (active work, not deferred) | Phase 0 Punto 5, Capa 12 |
+| 12-BRIDGE-INTEGRATION | External Event × Bridge | remote mutations don't re-project via Bridge in receiver | v0.2.0 coordinated fix |
+| 12-PERSISTENCE-INTEGRATION | External Event × Persistence | remote mutations don't persist in receiver | v0.2.0 coordinated fix |
+| ADAPTER-UTILS-DEDUP | All wrapper-pattern adapters | shared helper for 7-method wrap + set-semantics no-op detection | Fase 1 with 5th/6th adapter |
 
-**Total items deferred:** 7 (BRIDGE-REACTIVE, WIDGET-COMPOSITION, PERSISTENCE-INDEXEDDB plus the four testing-infrastructure items). 12-CROSSTAB-SYNC is listed for cross-reference but is not deferred debt.
+**Total items deferred:** 10.
 
 **Breakdown by nature:**
 - **Testing infrastructure (4):** V-T2, V-T3, C-T7, C-2 sym. All resolvable via dedicated harness reorganization or Playwright.
-- **Implementation quality (2):** BRIDGE-REACTIVE (evidence quantified: 73% reactive noise with N=8, empirically confirms need before Phase 1), PERSISTENCE-INDEXEDDB (evidence pending; localStorage sufficient for current target scale).
+- **Implementation quality (3):** BRIDGE-REACTIVE (evidence quantified: 73% reactive noise with N=8, empirically confirms need before Phase 1), PERSISTENCE-INDEXEDDB (evidence pending; localStorage sufficient for current target scale), and the pair 12-BRIDGE-INTEGRATION + 12-PERSISTENCE-INTEGRATION (same underlying question of local-vs-remote-applied distinction, resolved together).
 - **Emerging capability (1):** WIDGET-COMPOSITION. Discovered while validating the bridge; form to be discovered by widget construction, not by advance specification.
+- **Cross-adapter composition (2, counted above):** 12-BRIDGE-INTEGRATION and 12-PERSISTENCE-INTEGRATION share the same architectural question and are expected to be resolved as a pair.
+- **Code consolidation (1):** ADAPTER-UTILS-DEDUP. ~80 lines of duplication across four adapters. Waits for a fifth adapter's evidence to inform the exact helper shape.
 
 **All identified in-scope observations from Phase 0 have been either closed or deferred with explicit resolution paths.** No item is in "unresolved" or "unknown" status.
 

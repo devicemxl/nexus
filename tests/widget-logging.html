@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Widget: Log viewer con controles - Validación empírica</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    h1 { color: #dcdcaa; font-size: 20px; margin-bottom: 4px; }
+    .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+    .panel {
+      background: #252526;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .panel-title {
+      color: #dcdcaa;
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #444;
+      padding-bottom: 6px;
+    }
+    button {
+      background: #0e639c;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      margin: 2px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    button:hover { background: #1177bb; }
+    button.graphlet { background: #2a6f4a; }
+    button.graphlet:hover { background: #348d5c; }
+    button.pulsar { background: #7a5800; }
+    button.pulsar:hover { background: #8f6800; }
+    button.warn { background: #a1260d; }
+    button.warn:hover { background: #c72c14; }
+    button.toggle { background: #444; }
+    button.toggle:hover { background: #555; }
+    button.toggle.active { background: #ce9178; color: #000; }
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px;
+      margin: 6px 0;
+    }
+    .btn-label {
+      min-width: 130px;
+      font-size: 12px;
+      color: #888;
+      font-family: monospace;
+    }
+    .log-viewer {
+      background: #0f0f0f;
+      border: 1px solid #333;
+      border-radius: 3px;
+      padding: 10px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre;
+    }
+    .log-viewer .entry {
+      padding: 1px 4px;
+      border-left: 2px solid transparent;
+    }
+    .log-viewer .entry.graphlet {
+      border-left-color: #4ec9b0;
+      color: #4ec9b0;
+    }
+    .log-viewer .entry.pulsar {
+      border-left-color: #dcdcaa;
+      color: #dcdcaa;
+    }
+    .log-viewer .empty {
+      color: #666;
+      font-style: italic;
+    }
+    .counter-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .counter-card {
+      background: #2d2d30;
+      padding: 10px 12px;
+      border-radius: 3px;
+      border-left: 3px solid #444;
+    }
+    .counter-card.graphlet { border-left-color: #4ec9b0; }
+    .counter-card.pulsar { border-left-color: #dcdcaa; }
+    .counter-card.total { border-left-color: #9cdcfe; }
+    .counter-card .label { color: #888; font-size: 11px; }
+    .counter-card .value {
+      color: #d4d4d4;
+      font-size: 20px;
+      font-weight: bold;
+      font-family: monospace;
+    }
+    .filter-status {
+      margin-top: 8px;
+      padding: 8px;
+      background: #1a1a1a;
+      border-radius: 3px;
+      font-size: 12px;
+      color: #888;
+      font-family: monospace;
+    }
+    .filter-status.active { color: #ce9178; }
+    .notes {
+      background: #2a2416;
+      border-left: 3px solid #dcdcaa;
+      padding: 10px 14px;
+      font-size: 12px;
+      border-radius: 3px;
+      margin-top: 10px;
+    }
+    .notes strong { color: #dcdcaa; }
+    code {
+      background: #1a1a1a;
+      padding: 1px 5px;
+      border-radius: 2px;
+      color: #ce9178;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <h1>📋 Widget: Log viewer con controles</h1>
+  <div class="subtitle">
+    Validación empírica del Logging Adapter v0.1.0 observando Graphlet y Pulsar simultáneamente.
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Controles de mutación</div>
+
+    <div class="btn-row">
+      <span class="btn-label">Graphlet:</span>
+      <button class="graphlet" id="btn-put">put entidad</button>
+      <button class="graphlet" id="btn-update">update última</button>
+      <button class="graphlet" id="btn-delete">delete última</button>
+      <button class="graphlet" id="btn-link">link (real)</button>
+      <button class="graphlet" id="btn-link-dup">link (duplicado, G-0)</button>
+    </div>
+
+    <div class="btn-row">
+      <span class="btn-label">Pulsar:</span>
+      <button class="pulsar" id="btn-setstate">setState ui</button>
+      <button class="pulsar" id="btn-setstate-counter">setState counter++</button>
+    </div>
+
+    <div class="btn-row">
+      <span class="btn-label">Casos borde:</span>
+      <button class="warn" id="btn-fail-update">update inexistente (lanza)</button>
+    </div>
+
+    <div class="btn-row">
+      <span class="btn-label">Log:</span>
+      <button class="toggle" id="btn-filter-graphlet">Solo Graphlet</button>
+      <button class="toggle" id="btn-filter-pulsar">Solo Pulsar</button>
+      <button class="toggle" id="btn-clear">🧹 Clear log</button>
+    </div>
+
+    <div class="filter-status" id="filter-status">Filter: pasar todo</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Log en vivo (sink custom + default formatter)</div>
+    <div class="log-viewer" id="log-viewer">
+      <div class="empty">— sin eventos —</div>
+    </div>
+    <div class="counter-grid">
+      <div class="counter-card graphlet">
+        <div class="label">Eventos Graphlet</div>
+        <div class="value" id="count-graphlet">0</div>
+      </div>
+      <div class="counter-card pulsar">
+        <div class="label">Eventos Pulsar</div>
+        <div class="value" id="count-pulsar">0</div>
+      </div>
+      <div class="counter-card total">
+        <div class="label">Total (post-filter)</div>
+        <div class="value" id="count-total">0</div>
+      </div>
+    </div>
+    <div class="notes">
+      <strong>Qué observar:</strong>
+      <ul style="margin: 4px 0 0 20px; padding: 0;">
+        <li><strong>Set semantics:</strong> "link (duplicado)" NO produce evento la segunda vez (G-0).</li>
+        <li><strong>Fail-fast:</strong> "update inexistente" lanza en el llamador, pero NO deja evento en el log.</li>
+        <li><strong>Filter:</strong> activa "Solo Graphlet" o "Solo Pulsar" y mira que los eventos filtrados no aparecen.</li>
+        <li><strong>Sink custom:</strong> este log renderiza vía sink; la consola de DevTools está silenciada porque redirigimos el default.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createGraphlet } from '../src/graphlet.js';
+    import { createStatePulsar } from '../src/pulsar.js';
+    import { createLoggingAdapter } from '../src/adapters/logging-adapter.js';
+
+    // ============================================================
+    // Setup
+    // ============================================================
+    const graphlet = createGraphlet();
+    const pulsar = createStatePulsar({ ui: {}, counter: 0 });
+
+    // Sembrado inicial para tener con qué operar
+    graphlet.put('seed:1', { name: 'Seed 1', value: 0 });
+    graphlet.put('seed:2', { name: 'Seed 2', value: 0 });
+
+    // Estado del widget
+    let filterMode = 'all';  // 'all' | 'graphlet-only' | 'pulsar-only'
+    let counters = { graphlet: 0, pulsar: 0, total: 0 };
+    const logBuffer = [];  // últimos 100 eventos
+    const MAX_LOG_ENTRIES = 100;
+
+    // ============================================================
+    // Sink custom: renderiza al log-viewer + cuenta
+    // ============================================================
+    const sink = (event) => {
+      counters[event.source]++;
+      counters.total++;
+
+      // Formato similar al default del adapter pero controlado por nosotros
+      // (así podemos añadir la clase CSS para colorear por source)
+      const d = new Date();
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      const ss = String(d.getSeconds()).padStart(2, '0');
+      const ms = String(d.getMilliseconds()).padStart(3, '0');
+      const argsSummary = event.args.map(a => {
+        if (a === null || a === undefined) return String(a);
+        if (typeof a === 'string' || typeof a === 'number' || typeof a === 'boolean') {
+          return String(a);
+        }
+        try {
+          const s = JSON.stringify(a);
+          return s.length > 80 ? s.slice(0, 77) + '...' : s;
+        } catch { return String(a); }
+      }).join(', ');
+      const sourcePadded = event.source.padEnd(8);
+      const line = `[${hh}:${mm}:${ss}.${ms}] [${sourcePadded}] ${event.op}(${argsSummary})`;
+
+      logBuffer.push({ source: event.source, line });
+      if (logBuffer.length > MAX_LOG_ENTRIES) logBuffer.shift();
+
+      renderLog();
+      renderCounters();
+    };
+
+    // ============================================================
+    // Filter dinámico
+    // ============================================================
+    const filter = (event) => {
+      if (filterMode === 'all') return true;
+      if (filterMode === 'graphlet-only') return event.source === 'graphlet';
+      if (filterMode === 'pulsar-only') return event.source === 'pulsar';
+      return true;
+    };
+
+    // ============================================================
+    // Instanciar el adapter observando AMBAS primitivas
+    // ============================================================
+    const loggingAdapter = createLoggingAdapter(
+      { graphlet, pulsar },
+      { sink, filter }
+    );
+
+    // ============================================================
+    // Render helpers
+    // ============================================================
+    const logViewerEl = document.getElementById('log-viewer');
+    function renderLog() {
+      if (logBuffer.length === 0) {
+        logViewerEl.innerHTML = '<div class="empty">— sin eventos —</div>';
+        return;
+      }
+      // Más recientes abajo (como una consola real). Auto-scroll al final.
+      logViewerEl.innerHTML = logBuffer.map(e =>
+        `<div class="entry ${e.source}">${escapeHtml(e.line)}</div>`
+      ).join('');
+      logViewerEl.scrollTop = logViewerEl.scrollHeight;
+    }
+
+    function renderCounters() {
+      document.getElementById('count-graphlet').textContent = String(counters.graphlet);
+      document.getElementById('count-pulsar').textContent = String(counters.pulsar);
+      document.getElementById('count-total').textContent = String(counters.total);
+    }
+
+    function renderFilterStatus() {
+      const el = document.getElementById('filter-status');
+      const labels = {
+        'all': 'Filter: pasar todo',
+        'graphlet-only': 'Filter: solo Graphlet (Pulsar descartado)',
+        'pulsar-only': 'Filter: solo Pulsar (Graphlet descartado)',
+      };
+      el.textContent = labels[filterMode];
+      el.classList.toggle('active', filterMode !== 'all');
+
+      document.getElementById('btn-filter-graphlet').classList.toggle('active', filterMode === 'graphlet-only');
+      document.getElementById('btn-filter-pulsar').classList.toggle('active', filterMode === 'pulsar-only');
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    // ============================================================
+    // Handlers
+    // ============================================================
+    let nextId = 3;
+    let lastPutId = 'seed:2';
+
+    document.getElementById('btn-put').addEventListener('click', () => {
+      const id = `entity:${nextId++}`;
+      lastPutId = id;
+      graphlet.put(id, { name: `Item ${nextId - 1}`, value: Math.floor(Math.random() * 100) });
+    });
+
+    document.getElementById('btn-update').addEventListener('click', () => {
+      // Actualiza la última entidad conocida; si no existe, la crea (upsert)
+      // para no forzar el path de error aquí (hay un botón dedicado a eso).
+      if (graphlet.get(lastPutId)) {
+        graphlet.update(lastPutId, { value: Math.floor(Math.random() * 100) });
+      } else {
+        // Fallback: usa la primera seed
+        graphlet.update('seed:1', { value: Math.floor(Math.random() * 100) });
+      }
+    });
+
+    document.getElementById('btn-delete').addEventListener('click', () => {
+      if (graphlet.get(lastPutId) && !lastPutId.startsWith('seed:')) {
+        graphlet.delete(lastPutId);
+      } else {
+        // Coger un ID no-seed cualquiera
+        const nonSeed = graphlet.allIds().find(id => !id.startsWith('seed:'));
+        if (nonSeed) graphlet.delete(nonSeed);
+      }
+    });
+
+    document.getElementById('btn-link').addEventListener('click', () => {
+      // link real: entre las dos seeds (o hasta que quede saturado, entonces será no-op)
+      try {
+        graphlet.link('seed:1', 'connects', 'seed:2');
+      } catch (e) {
+        // Puede pasar si alguna seed fue borrada
+        console.warn('link falló:', e.message);
+      }
+    });
+
+    document.getElementById('btn-link-dup').addEventListener('click', () => {
+      // Este intenta el mismo link que el botón anterior. Si ya existe, G-0
+      // hace no-op y el adapter NO emite evento.
+      try {
+        graphlet.link('seed:1', 'connects', 'seed:2');
+      } catch (e) {
+        console.warn('link duplicado falló:', e.message);
+      }
+    });
+
+    document.getElementById('btn-setstate').addEventListener('click', () => {
+      pulsar.setState({
+        ui: { ...pulsar.getState().ui, lastClick: Date.now() }
+      });
+    });
+
+    document.getElementById('btn-setstate-counter').addEventListener('click', () => {
+      const current = pulsar.getState().counter || 0;
+      pulsar.setState({ counter: current + 1 });
+    });
+
+    document.getElementById('btn-fail-update').addEventListener('click', () => {
+      // Este DEBE lanzar (update sobre inexistente). El adapter NO debe
+      // emitir evento. El log no crece.
+      try {
+        graphlet.update('does-not-exist', { foo: 1 });
+      } catch (e) {
+        // Esperado: mostramos un log manual (no del adapter) para dejar
+        // evidencia visible al usuario de que la op falló pero el adapter
+        // se comportó correctamente.
+        const line = `[UI-NOTE] update lanzó como esperaba: "${e.message}" — sin evento del adapter`;
+        logBuffer.push({ source: 'graphlet', line });
+        if (logBuffer.length > MAX_LOG_ENTRIES) logBuffer.shift();
+        renderLog();
+        // NO tocamos los contadores porque el adapter no emitió.
+      }
+    });
+
+    document.getElementById('btn-filter-graphlet').addEventListener('click', () => {
+      filterMode = (filterMode === 'graphlet-only') ? 'all' : 'graphlet-only';
+      renderFilterStatus();
+    });
+
+    document.getElementById('btn-filter-pulsar').addEventListener('click', () => {
+      filterMode = (filterMode === 'pulsar-only') ? 'all' : 'pulsar-only';
+      renderFilterStatus();
+    });
+
+    document.getElementById('btn-clear').addEventListener('click', () => {
+      logBuffer.length = 0;
+      counters = { graphlet: 0, pulsar: 0, total: 0 };
+      renderLog();
+      renderCounters();
+    });
+
+    // ============================================================
+    // Render inicial
+    // ============================================================
+    renderLog();
+    renderCounters();
+    renderFilterStatus();
+
+    // Exponer al window para exploración manual
+    window.__widget = { graphlet, pulsar, loggingAdapter, logBuffer };
+    console.log('Widget listo. Objetos en window.__widget');
+    console.log('El sink del adapter escribe al log-viewer del UI, no a esta consola.');
+  </script>
+</body>
+</html>
