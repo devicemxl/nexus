@@ -4,9 +4,8 @@
 
 **Nature of the debt:** This is **not** debt of the code or of the contracts. All primitives (Pulsar, Graphlet, Voyajer, Chunklet) satisfy their contracts at the level verifiable in the current environment. The items below are properties of the contracts that the current test harnesses cannot exercise without either (a) infrastructure that Phase 0 explicitly did not build, or (b) test-suite reorganization that was out of scope.
 
-**When to resolve:** No later than the establishment of the Playwright-based CI environment (roadmap Escena 3.3). Items that only require harness reorganization may be resolved earlier if the opportunity arises.
+**When to resolve:** No later than the establishment of the Playwright-based CI environment (roadmap Fase 3a, Escena 3a.2). Items that only require harness reorganization may be resolved earlier if the opportunity arises.
 
----
 
 ## Deferred Items
 
@@ -18,7 +17,6 @@
 
 **Resolution path.** Playwright with a test server that serves arbitrary routes; per-test isolation guaranteed by the runner.
 
----
 
 ### V-T3 — VoyajerJS: base with special regex characters
 
@@ -28,7 +26,6 @@
 
 **Resolution path.** Same as V-T2. Test can be a direct copy of the intended TEST 10 in an earlier version of `voyajer.test.html`.
 
----
 
 ### C-T7 — ChunkletJS: enable/disable with configured `enabledPath`
 
@@ -43,7 +40,6 @@
 1. **Dedicated harness file** `chunklet-enable.test.html` with its own setup including `enabledPath`. Same browser-native environment, no new infrastructure. Cheapest option.
 2. **Playwright with module isolation.** Each test gets a fresh module context. More work but resolves the deferred item alongside V-T2 and V-T3.
 
----
 
 ### C-2 symmetry — ChunkletJS: toggle predictability
 
@@ -53,7 +49,6 @@
 
 **Resolution path.** Same as C-T7. Test can be a natural extension of the C-T7 tests in the dedicated harness.
 
----
 
 ### BRIDGE-REACTIVE — Graphlet↔Pulsar Bridge: reactive per-entity version
 
@@ -74,7 +69,6 @@ The theoretical asymptote is `(N-1)/N`: for N=8, expected ratio is ~87% ignored 
 
 TEST 13 in `graphlet-pulsar-bridge.test.html` documents the current snapshot limitation with asserts that expect reactive noise. When the reactive version lands, those asserts should invert; passing the inverted version is empirical evidence of the fix.
 
----
 
 ### WIDGET-COMPOSITION — Chunklet ctx: helper for "entity + related entities"
 
@@ -95,9 +89,6 @@ Alternatives considered and rejected:
 - Subsequent widgets: reuse if fits, extend or refactor if not.
 - After 3-4 real widgets have shaped the API, the helper's form stabilizes and can be documented as a first-class capability of Chunklet's `ctx`.
 
----
-
----
 
 ### PERSISTENCE-INDEXEDDB — Persistence Adapter: IndexedDB backend
 
@@ -120,7 +111,6 @@ Decision between A and B to be made when evidence demands it. Option A is curren
 
 **Trigger condition for prioritization.** Any of: (a) a real application produces snapshots >2MB with observable UI stutter on save, (b) a real application requires storing structures that JSON serialization mangles (e.g., large Maps, Sets, ArrayBuffers), (c) a real application requires querying persisted data without a full load.
 
----
 
 ### 12-BRIDGE-INTEGRATION — External Event Adapter: remote mutations don't re-project via Bridge
 
@@ -132,7 +122,6 @@ Decision between A and B to be made when evidence demands it. Option A is curren
 
 **Resolution path.** Wait for Fase 1 or Fase 2 evidence. When an application couples External Event + Bridge and the manual re-render workaround becomes friction, pick between the three options based on which is least invasive at that point.
 
----
 
 ### 12-PERSISTENCE-INTEGRATION — External Event Adapter: remote mutations don't persist in receiver
 
@@ -144,9 +133,7 @@ Decision between A and B to be made when evidence demands it. Option A is curren
 
 **Resolution path.** Same as 12-BRIDGE-INTEGRATION. Both items can be resolved together, since they share the same underlying architectural question: "how does an adapter that observes local mutations distinguish local from remote-applied, and choose to act or not act accordingly?"
 
----
 
----
 
 ### ADAPTER-UTILS-DEDUP — Shared helper for the wrapper pattern across adapters
 
@@ -191,14 +178,55 @@ The following observations were closed during Phase 0 and are recorded here only
 - **All Pulsar and Graphlet observations** — Covered fully in their respective harnesses.
 - **12-CROSSTAB-SYNC** — Resolved by implementation of Capa 12 in Phase 0 Punto 5. Widget `widget-external-event.html` demonstrates working cross-tab bidirectional sync with anti-echo (evidence: 42/42 harness green, empirical widget test showed `out=N/in=0` on emitter, `out=0/in=N` on receiver as expected).
 
+
+## Not Debt (Recorded for Clarity)
+
+The following observations were investigated but are **not** deferred debt.
+They are recorded here to prevent future readers from re-discovering the same
+question and re-litigating the conclusion. Each entry names the observation,
+the investigation performed, and the reason for closing without action.
+
+### PULSAR-SELECTOR-REGISTRY-SNAPSHOT — investigated during R-1, not observable
+
+**Observation.** In `Pulsar._notify`, the outer loop iterates
+`this._selectorListeners` live (no snapshot), while the inner loop over each
+selector's listener map does snapshot. The global-listener branch snapshots.
+On its face this looks like it contradicts §6 **Reentrancy safety**: a
+`subscribeSelector` call made during `_notify` could, in principle, be reached
+by the same pass and invoked before its "next `setState`" arrives.
+
+**Investigation.** Three reproductions were attempted while producing the R-1
+fix (see `PULSAR_R1_FIX.md`):
+- Subscribe a new selector inside a listener, then trigger a reentrant
+  `setState` in the same handler.
+- Trigger the reentrant `setState` first, then subscribe.
+- Subscribe from a global listener (which runs before the selector loop).
+
+None produced an in-pass invocation of the newly registered selector listener.
+The reason is structural: `subscribeSelector` fixes each listener's baseline
+`previousValue` against the state at the moment of subscription, and the
+equality check at the top of the notification loop acts as a natural guard —
+when the outer loop reaches the freshly added entry, the derived value has not
+moved and the listener is skipped.
+
+**Conclusion.** The asymmetry between the global-listener snapshot and the
+selector-listener live iteration is not observable through the public API. No
+change is warranted. Recorded so the next reader of `_notify` does not spend
+the same time re-verifying the same conclusion, and to signal that if a future
+refactor removes the baseline-fixing behavior of `subscribeSelector`, this
+observation ceases to be closed.
+
+**Discovered.** During R-1 fix work, post-Phase 0. Documented in
+`PULSAR_R1_FIX.md` §7.
+
 ---
 
 ## Summary
 
 | ID | Primitive / Layer | What | Resolution |
 |----|-------------------|------|------------|
-| V-T2 | Voyajer | history mode smoke | Playwright (Escena 3.3) |
-| V-T3 | Voyajer | base with regex metacharacters | Playwright (Escena 3.3) |
+| V-T2 | Voyajer | history mode smoke | Playwright (Escena 3a.2) |
+| V-T3 | Voyajer | base with regex metacharacters | Playwright (Escena 3a.2) |
 | C-T7 | Chunklet | enable/disable with `enabledPath` | Dedicated harness OR Playwright |
 | C-2 sym | Chunklet | toggle predictability | Dedicated harness OR Playwright |
 | BRIDGE-REACTIVE | Bridge adapter | reactive per-entity projection (73% noise quantified with N=8) | Phase 1 (Camino 2 recommended) |
@@ -219,6 +247,5 @@ The following observations were closed during Phase 0 and are recorded here only
 
 **All identified in-scope observations from Phase 0 have been either closed or deferred with explicit resolution paths.** No item is in "unresolved" or "unknown" status.
 
----
 
 *This document is complete as of the closing of Phase 0 Point 3. It should be updated (items removed as they are closed, new items added if any emerge) as the roadmap advances.*

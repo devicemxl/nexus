@@ -11,7 +11,6 @@
 
 **Non-breaking refactor (C-1):** Internal helpers for reading the enabled map are unified into a single `_readEnabledMap` with a single validation criterion (`_isPlainObject`). This is not observable through the public API but is noted for changelog completeness.
 
----
 
 ## 1. Core Principles
 
@@ -28,7 +27,6 @@
 
 The move from zero-dependency primitive to stack orchestrator is a deliberate architectural choice: reinventing state, identity, or navigation inside Chunklet would duplicate what the three base primitives already resolve. Chunklet's value is not in being independent from them but in providing a coherent, ergonomic surface for using them together to decorate the DOM.
 
----
 
 ## 2. Core Concepts
 
@@ -84,7 +82,6 @@ Chunklet **never generates identifiers**. If an element has no `data-entity`, it
 2. **Running**: The behaviors are active. Listeners, subscriptions, timers, and observers are operational.
 3. **Destroy**: The behaviors are terminated. All resources registered in each context are automatically released. Each factory's explicit cleanup function (if returned) is invoked, in reverse mount order.
 
----
 
 ## 3. Setup and Configuration Contract
 
@@ -122,7 +119,6 @@ Initializes the stack. Must be called exactly once before any `mount`, `define`,
 
 The resolved stack as `{ pulsar, graphlet, voyajer }`, so the application can hold references to the instances it did not create.
 
----
 
 ### 3.2 `Chunklet.configure(options)`
 
@@ -161,7 +157,6 @@ The current stack `{ pulsar, graphlet, voyajer }` with any provided replacements
 - Because `ctx.pulsar`, `ctx.graphlet`, `ctx.voyajer` are getters into the stack, a `configure()` call is visible to already-mounted behaviors on their next access. Behaviors that captured `ctx.graphlet` into a local variable before the `configure()` call will still see the old instance through that local reference — code that needs to be robust against `configure()` should always access through `ctx` at use time.
 - Behaviors that had subscriptions or listeners against the previous Voyajer's Pulsar path continue to function, since `pulsar` itself does not change; the URL side of the story simply becomes served by a different Voyajer.
 
----
 
 ### 3.3 Canonical Startup Sequence
 
@@ -197,7 +192,6 @@ Chunklet.mount(document.body);
 Chunklet.observe(document.body);
 ```
 
----
 
 ## 4. Global API
 
@@ -228,7 +222,6 @@ Registers a new Chunklet behavior. Must be called after `setup`.
 - Throws if `name` contains whitespace.
 - Throws if `factory` is not a function.
 
----
 
 ### `Chunklet.mount(element)`
 
@@ -253,7 +246,6 @@ Discovers and mounts all Chunklets within the given element's subtree.
 - Throws if `element` is not a valid DOM Element.
 - If a behavior name is not registered, logs a warning and skips it. Other behaviors on the same element still mount.
 
----
 
 ### `Chunklet.unmount(element)`
 
@@ -275,7 +267,6 @@ Destroys all Chunklets associated with the given element's subtree.
 
 `void`
 
----
 
 ### `Chunklet.observe(root)`
 
@@ -303,13 +294,11 @@ Enables automatic discovery of Chunklets using a `MutationObserver`.
 - Throws if called before `setup`.
 - Throws if `root` is not a valid DOM Node.
 
----
 
 ### `Chunklet.disconnect()`
 
 Stops all active `Chunklet.observe` observers. Already-mounted Chunklets are not destroyed by this call — only future automatic discovery ceases.
 
----
 
 ### `Chunklet.enable(entity, name)` and `Chunklet.disable(entity, name)`
 
@@ -342,7 +331,6 @@ The write is always performed, even when the resulting list is identical to the 
 - Throws if `enabledPath` is not configured.
 - Throws if `entity` or `name` is not a non-empty string.
 
----
 
 ## 5. Context API
 
@@ -422,7 +410,6 @@ Chunklet.define('node-card', (element, ctx) => {
 
 Note that the factory does not import Pulsar, Graphlet, or Voyajer. Everything arrives through `ctx`.
 
----
 
 ## 6. Discovery Rules
 
@@ -433,7 +420,6 @@ Note that the factory does not import Pulsar, Graphlet, or Voyajer. Everything a
 - If an element with `data-chunk` is added via `innerHTML` and `Chunklet.observe` is active, all its behaviors are automatically mounted (subject to the enable/disable filter if configured).
 - If an element with `data-chunk` is removed from the DOM while `Chunklet.observe` is active, all its behaviors are unmounted in reverse mount order.
 
----
 
 ## 7. Enable/Disable Mechanism (Optional)
 
@@ -477,7 +463,6 @@ The symmetry established in §7.3 exists because downstream consumers of `enable
 
 The keys in the map are entity identifiers read from `data-entity`. This ties the enable/disable state to the same identifiers used by Graphlet, making it stable across reloads (assuming the application hydrates Graphlet from persistent storage with the same identifiers). Under no circumstances does Chunklet generate synthetic identifiers.
 
----
 
 ## 8. Plug-in / Extension Contract
 
@@ -499,7 +484,6 @@ Chunklet.define('node-card', withLogging(nodeCardFactory));
 
 **Custom discovery.** Applications may bypass `Chunklet.mount` and call factories directly if they have custom DOM traversal logic. The factories then receive their context normally through the mount API, or the application constructs a context manually if it needs full control.
 
----
 
 ## 9. Error Handling and Resilience
 
@@ -509,7 +493,6 @@ Chunklet.define('node-card', withLogging(nodeCardFactory));
 - **Reentrancy.** `Chunklet.unmount` is reentrant-safe. Calling `unmount` within a listener does not cause double iteration of the context resources.
 - **Enable/disable errors.** If the value at `enabledPath` is not a plain object, Chunklet logs a warning and treats it as if the mechanism were disabled (all behaviors mount).
 
----
 
 ## 10. Behavioral Guarantees
 
@@ -528,7 +511,6 @@ Chunklet.define('node-card', withLogging(nodeCardFactory));
 | **Voyajer opt-in** | If Voyajer was not configured (via `setup` or `configure`), `ctx.voyajer` is `undefined` and `ctx.navigate`/`ctx.replace` throw when invoked. Silent no-op is never the behavior. |
 | **Symmetric enable/disable** | Both operations always produce an explicit entry in the enabled map, materializing intent even when no prior entry existed. See §7.3. |
 
----
 
 ## 11. Relationship with the Base Primitives
 
@@ -548,7 +530,6 @@ A pattern emerging from real widget construction is the need to subscribe to an 
 
 The resolution — a Chunklet `ctx` helper that watches an entity together with its related entities and re-invokes a callback when any of them change — has been decided architecturally to live in `ctx` (natural extension of the existing subscription primitives) but its exact API will be discovered iteratively during widget construction rather than specified in advance. See `PHASE_0_DEFERRED.md` (WIDGET-COMPOSITION).
 
----
 
 ## 12. Testing Considerations
 
@@ -565,7 +546,6 @@ An optional test-utility helper (`Chunklet.reset()`) is deferred to future versi
 
 **Note on enable/disable tests.** Tests for the enable/disable mechanism (§7) require `enabledPath` to be configured at `setup`. Because `setup` can only be called once per module, a single test harness sharing one setup cannot cleanly test enable/disable in isolation from tests that assume the mechanism is off. The recommended pattern is a dedicated harness file (`chunklet-enable.test.html`) that runs its own setup with `enabledPath`. See `PHASE_0_DEFERRED.md` (C-T7, C-2 sym).
 
----
 
 ## 13. Export Contract
 
@@ -602,7 +582,6 @@ Chunklet internally imports Pulsar, Graphlet, and optionally Voyajer from their 
 
 Chunklet does not bundle the base primitives. The consumer is responsible for ensuring they are resolvable at import time.
 
----
 
 ## 14. Versioning and Backward Compatibility
 
@@ -622,7 +601,6 @@ The following are considered part of the public API and cannot change without a 
 - The requirement that `setup` be called before any other API method, and that `configure` may be called only after `setup`.
 - The rule that `pulsar` is fixed at `setup` time and cannot be replaced by `configure`.
 
----
 
 ## Change Summary (v0.3.0 → v0.4.0)
 
@@ -659,6 +637,5 @@ The following are considered part of the public API and cannot change without a 
 - Error handling policies (§9).
 - The Nexus-level relationship (§11.1).
 
----
 
 *End of Specification.*

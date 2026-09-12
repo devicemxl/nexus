@@ -6,7 +6,6 @@
 
 Este documento **declara** el estado. Para la narrativa y el reasoning, consultar los complementarios.
 
----
 
 ## 1. Qué queda cerrado
 
@@ -59,7 +58,6 @@ Capa 12 se declara **cerrada en lo que resuelve** con deuda cross-adapter formal
 - Nexus Command Layer Specification (funcionalidad absorbida por `ChunkletJS.ctx`).
 - Tests antiguos de desarrollo (checkpoints CP1..CP6, fase8).
 
----
 
 ## 2. Qué queda diferido con evidencia
 
@@ -72,7 +70,6 @@ Capa 12 se declara **cerrada en lo que resuelve** con deuda cross-adapter formal
 
 **Regla aplicada uniformemente:** ningún ítem "unresolved" o "unknown". Todos con path.
 
----
 
 ## 3. Divergencia declarada respecto al roadmap original
 
@@ -86,7 +83,6 @@ El **Punto 6 del roadmap** sugería widgets canónicos de UI (toolbar, tabs, dra
 
 Esta divergencia es explícita, deliberada, y reconocida en `AUDIT_REPORT.md` §A/Punto 6.
 
----
 
 ## 4. Punto de partida para Fase 1
 
@@ -126,7 +122,6 @@ Estos son movimientos previstos, no compromisos formales. La disciplina "evidenc
 - **V-T2, V-T3, C-T7, C-2 sym**: comprometidos a Playwright en Escena 3.3 del roadmap, que es infraestructura independiente de Fase 1.
 - **ADAPTER-UTILS-DEDUP**: espera al 5º o 6º adapter para evidenciar la forma correcta del helper. Fase 1 probablemente no introduce nuevos adapters.
 
----
 
 ## 5. Estado del proyecto declarado
 
@@ -138,7 +133,6 @@ Los tres adjetivos que definen el estado — empíricamente verificable, documen
 - **Documentalmente coherente:** 11 documentos vivos con referencias cruzadas verificadas en `AUDIT_REPORT.md`.
 - **Con deuda formalizada:** 10 ítems en `PHASE_0_DEFERRED.md` con resolution path, cero ítems en estado "unknown".
 
----
 
 ## 6. Reconocimiento de límites
 
@@ -152,7 +146,6 @@ Este cierre reconoce cuatro cosas que Fase 0 **no** dejó resueltas y que no son
 
 **4.** No hay README de nivel proyecto. Todo vive en specs y mini-specs. Un punto de entrada narrativo para terceros o para el propio autor futuro es candidato natural de Fase 1 o inmediatamente después de este cierre.
 
----
 
 ## 7. Firma del cierre
 
@@ -168,6 +161,5 @@ Fase 0 cerrada según Roadmap definitivo de Fase 0, siete puntos.
 
 **Fase 1 queda habilitada para arrancar cuando el desarrollador lo decida.**
 
----
 
 *Fin del cierre de Fase 0.*

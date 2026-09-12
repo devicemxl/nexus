@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulsar — harness de regresión R-1</title>
+<style>
+  :root {
+    --papel:    #F1F3EF;
+    --superf:   #FBFCFA;
+    --tinta:    #1A1F1C;
+    --tenue:    #5C6660;
+    --regla:    #CBD2CB;
+    --verde:    #3D7A4E;
+    --oxido:    #A8342A;
+    --pizarra:  #43617F;
+    --sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 3rem 1.5rem 6rem;
+    background: var(--papel);
+    color: var(--tinta);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  main { max-width: 62rem; margin: 0 auto; }
+
+  h1 {
+    font-size: 1.45rem;
+    font-weight: 600;
+    letter-spacing: -0.011em;
+    margin: 0 0 0.4rem;
+  }
+
+  .subtitulo {
+    color: var(--tenue);
+    max-width: 46rem;
+    margin: 0 0 2rem;
+  }
+
+  .subtitulo code { font-family: var(--mono); font-size: 0.88em; }
+
+  /* ---- Barra de ejecución ---- */
+  .barra {
+    display: flex;
+    align-items: baseline;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    padding: 0.9rem 0;
+    border-top: 1px solid var(--regla);
+    border-bottom: 1px solid var(--regla);
+    margin-bottom: 2.5rem;
+  }
+
+  button {
+    font: inherit;
+    font-weight: 500;
+    color: var(--superf);
+    background: var(--tinta);
+    border: none;
+    border-radius: 3px;
+    padding: 0.45rem 1.1rem;
+    cursor: pointer;
+  }
+  button:hover { background: #2B332D; }
+  button:focus-visible { outline: 2px solid var(--pizarra); outline-offset: 2px; }
+  button[disabled] { opacity: 0.45; cursor: default; }
+
+  .marcador { font-family: var(--mono); font-size: 0.95rem; }
+  .marcador .cifra { font-weight: 600; }
+  .marcador.ok    .cifra { color: var(--verde); }
+  .marcador.mal   .cifra { color: var(--oxido); }
+  .reloj { font-family: var(--mono); color: var(--tenue); font-size: 0.9rem; }
+
+  /* ---- Panel de traza ---- */
+  .traza {
+    background: var(--superf);
+    border: 1px solid var(--regla);
+    border-radius: 4px;
+    padding: 1.4rem 1.5rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .traza h2 {
+    font-size: 0.98rem;
+    font-weight: 600;
+    margin: 0 0 0.3rem;
+  }
+
+  .traza p {
+    margin: 0 0 1.2rem;
+    color: var(--tenue);
+    font-size: 0.9rem;
+    max-width: 44rem;
+  }
+
+  ol.pasos {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-family: var(--mono);
+    font-size: 0.9rem;
+  }
+
+  ol.pasos li {
+    display: grid;
+    grid-template-columns: 1.9rem 1fr;
+    gap: 0.9rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px dotted var(--regla);
+  }
+  ol.pasos li:last-child { border-bottom: none; }
+
+  .paso-n { color: var(--tenue); text-align: right; }
+  .paso-val b { color: var(--pizarra); font-weight: 600; }
+  .paso-nota {
+    font-family: var(--sans);
+    color: var(--tenue);
+    font-size: 0.84rem;
+    display: block;
+  }
+  .paso-vacio { color: var(--tenue); font-style: italic; }
+
+  /* ---- Grupos de aserciones ---- */
+  section.grupo { margin-bottom: 2.25rem; }
+
+  section.grupo > h2 {
+    font-size: 0.98rem;
+    font-weight: 600;
+    margin: 0 0 0.15rem;
+  }
+  section.grupo > .nota {
+    color: var(--tenue);
+    font-size: 0.88rem;
+    margin: 0 0 0.8rem;
+    max-width: 46rem;
+  }
+
+  ul.asserts { list-style: none; margin: 0; padding: 0; }
+
+  ul.asserts li {
+    display: grid;
+    grid-template-columns: 4.2rem 1fr;
+    gap: 0.75rem;
+    align-items: baseline;
+    padding: 0.32rem 0;
+    border-bottom: 1px solid rgba(203,210,203,0.5);
+  }
+
+  .veredicto {
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    letter-spacing: 0.02em;
+  }
+  .veredicto.ok  { color: var(--verde); }
+  .veredicto.mal { color: var(--oxido); font-weight: 600; }
+
+  .detalle {
+    grid-column: 2;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    color: var(--oxido);
+    background: rgba(168,52,42,0.06);
+    border-left: 2px solid var(--oxido);
+    padding: 0.4rem 0.7rem;
+    margin-top: 0.35rem;
+    white-space: pre-wrap;
+  }
+
+  .oculto { display: none; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    ul.asserts li, ol.pasos li { animation: aparece 0.18s ease-out both; }
+    @keyframes aparece { from { opacity: 0; } to { opacity: 1; } }
+  }
+
+  @media (max-width: 34rem) {
+    ul.asserts li { grid-template-columns: 3.4rem 1fr; }
+    .detalle { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pulsar — harness de regresión R-1</h1>
+  <p class="subtitulo">
+    Verifica que <code>_notify</code> no corrompa el <code>previousValue</code> de un
+    selector listener cuando el listener dispara un <code>setState</code> reentrante,
+    y que el resto de la superficie del contrato v0.2.0 no haya cambiado.
+    Requiere <code>pulsar.js</code> v0.2.2 en el mismo directorio.
+    Revertir a v0.2.1 pone en rojo el grupo R-1 y deja verde todo lo demás.
+  </p>
+
+  <div class="barra">
+    <button id="correr">Correr el harness</button>
+    <span class="marcador" id="marcador">sin ejecutar</span>
+    <span class="reloj" id="reloj"></span>
+  </div>
+
+  <div class="traza">
+    <h2>Orden de entrega bajo reentrada</h2>
+    <p>
+      Un listener suscrito a <code>s =&gt; s.x</code> recibe <code>x = 2</code> y,
+      desde dentro, escribe <code>x = 3</code>. Cada paso es una invocación del
+      listener en el orden en que ocurrió. La secuencia debe ser monótona:
+      ningún paso puede reportar un valor anterior al del paso previo, y cada
+      <code>prev</code> debe ser el <code>actual</code> del paso anterior.
+    </p>
+    <ol class="pasos" id="pasos">
+      <li><span class="paso-n">—</span><span class="paso-val paso-vacio">pendiente de ejecución</span></li>
+    </ol>
+  </div>
+
+  <div id="resultados"></div>
+</main>
+
+<script type="module">
+import { createStatePulsar } from './pulsar.js';
+
+// ------------------------------------------------------------------
+// Runner mínimo
+// ------------------------------------------------------------------
+const grupos = [];
+let grupoActual = null;
+
+function grupo(titulo, nota) {
+  grupoActual = { titulo, nota, casos: [] };
+  grupos.push(grupoActual);
+}
+
+function eq(etiqueta, actual, esperado) {
+  const a = JSON.stringify(actual);
+  const e = JSON.stringify(esperado);
+  grupoActual.casos.push({ etiqueta, ok: a === e, actual: a, esperado: e });
+}
+
+// Silencia los console.error que las primitivas emiten a propósito
+// en los casos que ejercitan su tolerancia a fallos.
+function callado(fn) {
+  const original = console.error;
+  console.error = () => {};
+  try { return fn(); } finally { console.error = original; }
+}
+
+// ==================================================================
+// R-1 — los tres síntomas de la causa raíz corregida
+// ==================================================================
+grupo(
+  'R-1 · reentrada en selector listeners',
+  'Tres síntomas observables de una sola causa: los valores se capturaban antes ' +
+  'de invocar al listener y se escribían de vuelta después.'
+);
+
+// Traza compartida con el panel superior.
+let trazaReentrada = [];
+
+{
+  const p = createStatePulsar({ x: 1 });
+  const t = [];
+  let unaVez = false;
+
+  p.subscribeSelector((s) => s.x, (actual, prev) => {
+    t.push([actual, prev]);
+    if (!unaVez) { unaVez = true; p.setState({ x: 3 }); }
+  });
+
+  p.setState({ x: 2 });
+  trazaReentrada = t.map((par) => par.slice());
+
+  eq('la llamada reentrante recibe el prev correcto', t[1], [3, 2]);
+  eq('el estado converge al valor reentrante', p.getState().x, 3);
+  eq('la secuencia completa es monótona', t, [[2, 1], [3, 2]]);
+
+  const antes = t.length;
+  p.setState({ x: 3 });
+  eq('un setState con valor idéntico no re-notifica', t.length - antes, 0);
+}
+
+{
+  // Selector compartido por referencia: ambos listeners viven en el mismo registro.
+  const p = createStatePulsar({ x: 1 });
+  const selector = (s) => s.x;
+  const l1 = [], l2 = [];
+  let unaVez = false;
+
+  p.subscribeSelector(selector, (actual, prev) => {
+    l1.push([actual, prev]);
+    if (!unaVez) { unaVez = true; p.setState({ x: 3 }); }
+  });
+  p.subscribeSelector(selector, (actual, prev) => { l2.push([actual, prev]); });
+
+  p.setState({ x: 2 });
+
+  eq('el listener que reentra ve su propia secuencia ordenada', l1, [[2, 1], [3, 2]]);
+  eq('el segundo listener nunca recibe un valor obsoleto', l2, [[3, 1]]);
+  eq('ningún listener recibe el estado previo a la reentrada', l2.some(([v]) => v === 2), false);
+}
+
+{
+  // Reentrada encadenada: dos saltos anidados.
+  const p = createStatePulsar({ x: 0 });
+  const t = [];
+  p.subscribeSelector((s) => s.x, (actual, prev) => {
+    t.push([actual, prev]);
+    if (actual < 3) p.setState({ x: actual + 1 });
+  });
+  p.setState({ x: 1 });
+  eq('reentrada encadenada mantiene la cadena de prev', t, [[1, 0], [2, 1], [3, 2]]);
+}
+
+{
+  // La reentrada ocurre desde un listener global, no desde el selector.
+  const p = createStatePulsar({ x: 1 });
+  const t = [];
+  let unaVez = false;
+  p.subscribe(() => {
+    if (!unaVez) { unaVez = true; p.setState({ x: 3 }); }
+  });
+  p.subscribeSelector((s) => s.x, (actual, prev) => t.push([actual, prev]));
+  p.setState({ x: 2 });
+  eq('reentrada desde listener global no descoloca al selector', t, [[3, 1]]);
+}
+
+// ==================================================================
+// REG — conducta preexistente que el fix no debe alterar
+// ==================================================================
+grupo(
+  'REG · conducta preservada',
+  'El fix reordena escrituras dentro de _notify. Estos casos fijan lo que NO ' +
+  'debía moverse, incluidas las asimetrías deliberadas del diseño anterior.'
+);
+
+{
+  const p = createStatePulsar({ x: 1 });
+  const vistos = [];
+  const cancelar = p.subscribeSelector((s) => s.x, (v) => { vistos.push(v); cancelar(); });
+  p.setState({ x: 2 });
+  p.setState({ x: 3 });
+  eq('un listener puede desuscribirse a sí mismo durante notify', vistos, [2]);
+}
+
+{
+  const p = createStatePulsar({ x: 1 });
+  const t = [];
+  const selector = (s) => s.x;
+  p.subscribeSelector(selector, () => { cancelar2(); t.push('L1'); });
+  const cancelar2 = p.subscribeSelector(selector, () => { t.push('L2'); });
+  p.setState({ x: 2 });
+  eq('un listener desuscrito en la misma pasada aún se invoca', t, ['L1', 'L2']);
+}
+
+callado(() => {
+  const p = createStatePulsar({ x: 1 });
+  const ok = [];
+  p.subscribeSelector((s) => s.x, () => { throw new Error('boom'); });
+  p.subscribeSelector((s) => s.x, (v) => ok.push(v));
+  p.setState({ x: 2 });
+  eq('un listener que lanza no interrumpe a los demás', ok, [2]);
+});
+
+callado(() => {
+  const p = createStatePulsar({ x: 1 });
+  let n = 0;
+  p.subscribeSelector((s) => s.x, () => { n++; throw new Error('boom'); });
+  p.setState({ x: 2 });
+  p.setState({ x: 2 });
+  eq('un listener que lanza igualmente avanza su previousValue', n, 1);
+});
+
+callado(() => {
+  const p = createStatePulsar({ x: 1 });
+  const ok = [];
+  p.subscribeSelector(() => { throw new Error('selector roto'); }, (v) => ok.push(v));
+  p.subscribeSelector((s) => s.x, (v) => ok.push(v));
+  p.setState({ x: 2 });
+  eq('un selector que lanza no impide evaluar los demás', ok, [2]);
+});
+
+{
+  const p = createStatePulsar({ x: 1 });
+  const t = [];
+  let unaVez = false;
+  p.subscribe(() => {
+    if (unaVez) return;
+    unaVez = true;
+    p.subscribe(() => t.push('nuevo'));
+  });
+  p.setState({ x: 2 });
+  eq('una suscripción creada durante notify no corre en esa pasada', t, []);
+}
+
+{
+  const p = createStatePulsar({ x: 1 });
+  const t = [];
+  p.subscribeSelector((s) => s.x, (a, prev) => t.push([a, prev === undefined ? 'undef' : prev]),
+    { immediate: true });
+  p.setState({ x: 2 });
+  eq('immediate entrega el valor base y luego notifica normal', t, [[1, 'undef'], [2, 1]]);
+}
+
+{
+  const p = createStatePulsar({ o: { v: 1 } });
+  const t = [];
+  p.subscribeSelector((s) => s.o, (v) => t.push(v.v),
+    { equality: (a, b) => !!a && !!b && a.v === b.v });
+  p.setState({ o: { v: 1 } });
+  p.setState({ o: { v: 2 } });
+  eq('la equality personalizada sigue gobernando la notificación', t, [2]);
+}
+
+// ==================================================================
+// CONTRATO — superficie general, para detectar daño colateral
+// ==================================================================
+grupo(
+  'Contrato · superficie general',
+  'Recorrido de la superficie descrita en PulsarJS_Contract_Specification v0.2.0, ' +
+  'para que un daño colateral del fix no pase inadvertido.'
+);
+
+{
+  const p = createStatePulsar({ a: 1, b: 2 });
+  p.setState({ b: 3, c: 4 });
+  eq('setState hace shallow merge', p.getState(), { a: 1, b: 3, c: 4 });
+}
+
+{
+  const p = createStatePulsar({ u: { n: 'a', r: 'x' } });
+  p.setState({ u: { n: 'b' } });
+  eq('los objetos anidados se reemplazan, no se fusionan', p.getState().u, { n: 'b' });
+}
+
+{
+  const p = createStatePulsar({ a: { b: { c: 1 } } });
+  const s = p.getState();
+  eq('el freeze es recursivo', [Object.isFrozen(s), Object.isFrozen(s.a), Object.isFrozen(s.a.b)],
+    [true, true, true]);
+}
+
+{
+  const p = createStatePulsar({ a: { b: 1 } }, { freeze: false });
+  eq('el freeze se puede desactivar', Object.isFrozen(p.getState()), false);
+}
+
+{
+  const p = createStatePulsar({ a: 1 }, { skipEqualUpdates: true });
+  let n = 0;
+  p.subscribe(() => n++);
+  p.setState({ a: 1 });
+  p.setState({ a: 2 });
+  eq('skipEqualUpdates suprime la notificación redundante', n, 1);
+}
+
+{
+  const p = createStatePulsar({ a: 1 });
+  let tipo;
+  try { p.setState(42); tipo = 'no lanzó'; } catch (e) { tipo = e.constructor.name; }
+  eq('setState valida que partial sea objeto plano', tipo, 'TypeError');
+}
+
+{
+  let tipo;
+  try { createStatePulsar([1, 2]); tipo = 'no lanzó'; } catch (e) { tipo = e.constructor.name; }
+  eq('el factory valida que initialState sea objeto plano', tipo, 'TypeError');
+}
+
+{
+  const p = createStatePulsar({ ui: { sel: 'a' } });
+  const t = [];
+  p.subscribeSelector('ui.sel', (v) => t.push(v));
+  p.setState({ ui: { sel: 'b' } });
+  eq('el selector por ruta punteada funciona', t, ['b']);
+}
+
+{
+  const p = createStatePulsar({ users: [{ address: { city: 'MXL' } }] });
+  const t = [];
+  p.subscribeSelector('users[0].address.city', (v) => t.push(v));
+  p.setState({ users: [{ address: { city: 'TIJ' } }] });
+  eq('el selector por ruta con corchetes funciona', t, ['TIJ']);
+}
+
+{
+  const p = createStatePulsar({ a: 1 });
+  const t = [];
+  p.subscribeSelector('x.y.z', (v) => t.push(v === undefined ? 'undef' : v));
+  p.setState({ a: 2 });
+  eq('una ruta inexistente no dispara al listener', t, []);
+}
+
+{
+  const p = createStatePulsar({ a: 1, b: 1 });
+  const t = [];
+  p.subscribeSelector((s) => s.a, (v) => t.push(v));
+  p.setState({ b: 99 });
+  p.setState({ a: 2 });
+  eq('un selector ignora cambios ajenos a su porción', t, [2]);
+}
+
+{
+  const p = createStatePulsar({ a: 1 });
+  const t = [];
+  const cancelar = p.subscribeSelector((s) => s.a, (v) => t.push(v));
+  p.setState({ a: 2 });
+  cancelar();
+  p.setState({ a: 3 });
+  eq('el unsubscribe de un selector es efectivo', t, [2]);
+}
+
+{
+  const p = createStatePulsar({ a: 1 });
+  const t = [];
+  const cancelar = p.subscribe((s) => t.push(s.a));
+  p.setState({ a: 2 });
+  cancelar();
+  p.setState({ a: 3 });
+  eq('el unsubscribe global es efectivo', t, [2]);
+}
+
+{
+  const p = createStatePulsar({ a: 1, b: 1 });
+  const t = [];
+  p.subscribeSelector((s) => s.a, (v) => t.push(['a', v]));
+  p.subscribeSelector((s) => s.b, (v) => t.push(['b', v]));
+  p.setState({ a: 2, b: 2 });
+  eq('selectores independientes notifican por separado', t, [['a', 2], ['b', 2]]);
+}
+
+{
+  const p = createStatePulsar({ a: 1 });
+  let tipo;
+  try { p.subscribeSelector((s) => s.a, 'no es función'); tipo = 'no lanzó'; }
+  catch (e) { tipo = e.constructor.name; }
+  eq('subscribeSelector valida el listener', tipo, 'TypeError');
+}
+
+{
+  const p = createStatePulsar({ a: 1 });
+  let tipo;
+  try { p.subscribeSelector(42, () => {}); tipo = 'no lanzó'; }
+  catch (e) { tipo = e.constructor.name; }
+  eq('subscribeSelector valida el selector', tipo, 'TypeError');
+}
+
+// ------------------------------------------------------------------
+// Render
+// ------------------------------------------------------------------
+const $pasos = document.getElementById('pasos');
+const $resultados = document.getElementById('resultados');
+const $marcador = document.getElementById('marcador');
+const $reloj = document.getElementById('reloj');
+const $boton = document.getElementById('correr');
+
+function pintarTraza() {
+  if (trazaReentrada.length === 0) {
+    $pasos.innerHTML = '<li><span class="paso-n">—</span>' +
+      '<span class="paso-val paso-vacio">sin entregas registradas</span></li>';
+    return;
+  }
+  $pasos.innerHTML = trazaReentrada.map(([actual, prev], i) => {
+    const nota = i === 0
+      ? 'entrega inicial; el listener escribe x = 3 desde aquí'
+      : 'entrega reentrante; prev encadena con el paso anterior';
+    return `<li>
+      <span class="paso-n">${i + 1}</span>
+      <span class="paso-val">actual <b>${actual}</b> &nbsp; prev <b>${prev}</b>
+        <span class="paso-nota">${nota}</span></span>
+    </li>`;
+  }).join('');
+}
+
+function pintarResultados() {
+  let total = 0, fallos = 0;
+  $resultados.innerHTML = grupos.map((g) => {
+    const items = g.casos.map((c) => {
+      total++;
+      if (!c.ok) fallos++;
+      const detalle = c.ok ? '' :
+        `<div class="detalle">esperado  ${c.esperado}\nobtenido  ${c.actual}</div>`;
+      return `<li>
+        <span class="veredicto ${c.ok ? 'ok' : 'mal'}">${c.ok ? 'verde' : 'ROJO'}</span>
+        <span>${c.etiqueta}</span>
+        ${detalle}
+      </li>`;
+    }).join('');
+    return `<section class="grupo">
+      <h2>${g.titulo}</h2>
+      <p class="nota">${g.nota}</p>
+      <ul class="asserts">${items}</ul>
+    </section>`;
+  }).join('');
+  return { total, fallos };
+}
+
+function ejecutar() {
+  const t0 = performance.now();
+  pintarTraza();
+  const { total, fallos } = pintarResultados();
+  const ms = (performance.now() - t0).toFixed(1);
+
+  $marcador.className = 'marcador ' + (fallos === 0 ? 'ok' : 'mal');
+  $marcador.innerHTML = fallos === 0
+    ? `<span class="cifra">${total}/${total}</span> aserciones verdes`
+    : `<span class="cifra">${total - fallos}/${total}</span> verdes · ${fallos} en rojo`;
+  $reloj.textContent = `render ${ms} ms`;
+  $boton.textContent = 'Correr de nuevo';
+}
+
+$boton.addEventListener('click', ejecutar);
+ejecutar();
+</script>
+</body>
+</html>

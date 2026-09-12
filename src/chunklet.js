@@ -1,6 +1,13 @@
 /**
  * ChunkletJS - Orquestador de comportamientos sobre el stack Nexus
- * Versión: 0.4.0 (implementación del contrato v0.4.0)
+ * Versión: 0.4.1 (implementación del contrato v0.4.0)
+ *
+ * Cambios respecto a v0.4.0 (solo documentación, sin cambio de conducta):
+ *   - Se documenta que `_enabledUnsubscribe` no lo libera ningún camino
+ *     de código y por qué es deliberado.
+ *   - Se documenta el contrato entre `configure({ graphlet })` y los
+ *     adapters ya conectados: no se recablean, la aplicación debe
+ *     destruirlos y reinstanciarlos.
  *
  * Dependencias explícitas:
  *   - PulsarJS   → estado reactivo
@@ -47,7 +54,14 @@ let _config = null;              // { entityAttr, enabledPath }
 const _behaviors = new Map();    // name -> factory
 const _mounts = new Map();       // element -> Map<name, { ctx, destroy }>
 const _observers = new Set();    // MutationObserver activos
-let _enabledUnsubscribe = null;  // unsubscribe de enabledPath
+// Unsubscribe de la suscripción a `enabledPath` creada en setup().
+//
+// Ningún camino de código lo invoca hoy, y es deliberado: `setup()` es
+// one-shot y la suscripción debe vivir tanto como el módulo. La
+// referencia se retiene para el `Chunklet.reset()` que el Contract §12
+// anticipa como utilidad de testing; ese será su único consumidor.
+// Se documenta aquí para que no se lea como un cabo suelto.
+let _enabledUnsubscribe = null;
 
 // ============================================
 // UTILIDADES PRIVADAS
@@ -257,6 +271,32 @@ export function setup(options = {}) {
 // API PÚBLICA: configure
 // ============================================
 
+/**
+ * Ajusta el stack después del setup. Solo `graphlet` y `voyajer` son
+ * reconfigurables; `pulsar` se mantiene fijo porque los ctx ya montados
+ * y la suscripción a `enabledPath` dependen de esa instancia.
+ *
+ * AVISO SOBRE ADAPTERS. Los adapters del catálogo Nexus (Bridge,
+ * Persistence, External Event, Logging) observan Graphlet envolviendo
+ * sus métodos de mutación sobre la instancia concreta que recibieron.
+ * Sustituir el graphlet con `configure({ graphlet })` NO los recablea:
+ * quedan envolviendo la instancia anterior, y la nueva queda sin
+ * observar. Silenciosamente deja de haber proyección a Pulsar,
+ * persistencia, broadcast y logging.
+ *
+ * La aplicación que reemplace el graphlet es responsable de destruir
+ * los adapters vivos y reinstanciarlos contra la nueva instancia:
+ *
+ *   bridge.destroy();
+ *   persistence.flush(); persistence.destroy();
+ *   Chunklet.configure({ graphlet: nuevoGraphlet });
+ *   bridge = createGraphletPulsarBridge({ graphlet: nuevoGraphlet, pulsar });
+ *   persistence = createPersistenceAdapter({ graphlet: nuevoGraphlet }, { key });
+ *
+ * Chunklet no puede resolverlo por sí mismo: no conoce a los adapters
+ * (Nexus Adapter Contract §2 — ninguna primitiva referencia a un
+ * adapter) y no tiene forma de enumerarlos.
+ */
 export function configure(options = {}) {
   _assertConfigured();
   if (!_isPlainObject(options)) {

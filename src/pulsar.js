@@ -1,8 +1,23 @@
 /**
  * PulsarJS - Estado reactivo para el navegador
- * Versión: 0.2.1 (Implementación del contrato v0.2.0)
+ * Versión: 0.2.2 (Implementación del contrato v0.2.0)
  *
- * Cambios respecto a la versión anterior:
+ * Cambios respecto a v0.2.1 (fix R-1, sin cambio de API):
+ * - `_notify` ya no corrompe el `previousValue` de un selector listener
+ *   cuando el listener dispara un `setState` reentrante. Tres síntomas
+ *   observables quedaban de la misma causa raíz — valores capturados
+ *   antes de invocar y escritos de vuelta después:
+ *     (a) el frame externo sobrescribía con un valor obsoleto el
+ *         `previousValue` que la reentrada había dejado correcto,
+ *         produciendo notificaciones espurias posteriores;
+ *     (b) la llamada reentrante recibía un `previousValue` desactualizado;
+ *     (c) los listeners restantes de un selector compartido recibían un
+ *         `currentValue` obsoleto, anterior a la mutación reentrante.
+ *   El fix lee la entrada viva del registro, evalúa el selector por
+ *   listener y avanza `previousValue` antes de invocar. Ver
+ *   `PULSAR_R1_FIX.md`.
+ *
+ * Cambios respecto a v0.2.0:
  * - El módulo expone únicamente el named export `createStatePulsar`,
  *   alineado con el contrato. Se removió `export default Pulsar` y
  *   el named export de la clase.
@@ -225,35 +240,55 @@ class Pulsar {
 
     // Notificar selector listeners
     for (const [selector, listenerMap] of this._selectorListeners) {
-      // Evaluar valor actual
-      let currentValue;
-      try {
-        currentValue = selector(this._state);
-      } catch (error) {
-        console.error('[Pulsar] Error evaluando selector:', error);
-        continue;
-      }
-
-      // Iterar listeners de este selector (snapshot para reentrancy)
+      // Snapshot de los listeners de este selector (reentrancy safety).
       const listenerSnapshot = [...listenerMap.entries()];
 
-      for (const [id, { listener, equality, previousValue }] of listenerSnapshot) {
-        // Verificar si el valor cambió
-        if (!equality(currentValue, previousValue)) {
-          try {
-            listener(currentValue, previousValue, this._state);
-          } catch (error) {
-            console.error('[Pulsar] Error en selector listener:', error);
-          }
+      for (const [id, snapshotEntry] of listenerSnapshot) {
+        // R-1(a): leer la entrada VIVA, no la capturada en el snapshot.
+        // Un listener anterior de esta misma pasada pudo disparar un
+        // setState reentrante que ya avanzó este previousValue.
+        // Si el listener se desuscribió durante la pasada, caemos al
+        // snapshot: la semántica previa (un listener presente al inicio
+        // de la pasada se invoca) se preserva intacta.
+        const liveEntry = listenerMap.get(id);
+        const entry = liveEntry || snapshotEntry;
+        const { listener, equality, previousValue } = entry;
 
-          // Actualizar previousValue
-          if (listenerMap.has(id)) {
-            listenerMap.set(id, {
-              listener,
-              equality,
-              previousValue: currentValue
-            });
-          }
+        // R-1(b): evaluar el selector por listener y no una vez por
+        // grupo. Un listener anterior pudo mutar el estado de forma
+        // reentrante; los listeners restantes deben ver el estado real,
+        // no el que existía al entrar al grupo.
+        let currentValue;
+        try {
+          currentValue = selector(this._state);
+        } catch (error) {
+          console.error('[Pulsar] Error evaluando selector:', error);
+          continue;
+        }
+
+        if (equality(currentValue, previousValue)) continue;
+
+        // R-1(c): avanzar previousValue ANTES de invocar. Si el listener
+        // dispara un setState reentrante, la notificación anidada parte
+        // de este valor. Escribir después permitiría que este frame
+        // sobrescriba con un valor obsoleto lo que la reentrada dejó
+        // correcto.
+        //
+        // Nota: si el listener lanza, previousValue queda igualmente
+        // avanzado. Es la semántica que ya tenía la versión anterior
+        // (la escritura estaba fuera del catch); el fix no la altera.
+        if (liveEntry) {
+          listenerMap.set(id, {
+            listener,
+            equality,
+            previousValue: currentValue
+          });
+        }
+
+        try {
+          listener(currentValue, previousValue, this._state);
+        } catch (error) {
+          console.error('[Pulsar] Error en selector listener:', error);
         }
       }
     }

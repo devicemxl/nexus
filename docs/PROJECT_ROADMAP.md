@@ -10,7 +10,6 @@
 - Justificación de la reorganización: la propuesta v1 era portación (menos evidencia empírica sobre el stack), la v2 es construcción de una aplicación real distinta (más evidencia). Además, el chatbot ejercita dimensiones del stack que el editor no fuerza: streaming asíncrono, integración con API externa, texto rico. Ver §Reconocimientos honestos §7.
 - Este cambio revisa una declaración en `PHASE_0_CLOSURE.md §4` que decía "Fase 1 tiene por objetivo construir la widget factory como reemplazo funcional del código heredado de RiotJS". Esa declaración queda superseded por este roadmap v2, sin editar el closure de Fase 0 (que es documento inmutable por diseño). El objetivo global — reemplazar RiotJS — permanece; el orden de las fases cambia.
 
----
 
 ## Vista panorámica
 
@@ -41,7 +40,6 @@ FASE 5    Nexus como biblioteca abierta (opcional, según decisión)
 
 **Ruta crítica:** Fase 0 → Fase 1 → Fase 2 → Fase 4. Las Fases 3a y 3b son paralelizables desde Fase 1 en adelante. La Fase 5 depende de decisión externa al roadmap técnico.
 
----
 
 ## FASE 1 — Chatbot funcional sobre Nexus
 
@@ -151,7 +149,6 @@ Escenas posibles según lo que las 1.1-1.6 revelen: sync entre pestañas (usa Ex
 - ADAPTER-UTILS-DEDUP: no se introducen adapters nuevos en Fase 1. Sigue diferido.
 - V-T2, V-T3, C-T7, C-2 sym: independientes de Fase 1, esperan Playwright.
 
----
 
 ## FASE 2 — Editor de flujos sobre Nexus
 
@@ -202,7 +199,6 @@ Cuando todos los componentes están migrados, retirar RiotJS. El editor corre 10
 - Compatibilidad de datos con pipelines pre-migración.
 - Session doc + auditoría + closure de Fase 2.
 
----
 
 ## FASE 3a — Testing infrastructure (paralelizable)
 
@@ -230,7 +226,6 @@ Workflow que corre en cada push. Matriz de navegadores. Badge en README de proye
 - Cuatro ítems de testing infra resueltos.
 - Documentación de cómo correr los tests local vs CI.
 
----
 
 ## FASE 3b — Distribución pública (paralelizable)
 
@@ -262,7 +257,6 @@ Primer publish a npm. Verificar que un consumidor externo puede instalar y usar 
 - Guía de composición documentada.
 - Versionado semántico establecido.
 
----
 
 ## FASE 4 — Consolidación hacia v1.0
 
@@ -297,7 +291,6 @@ Cambio de "0.x" a "1.0" es declaración de estabilidad. Solo cuando la evidencia
 - v1.0 estable publicada.
 - Documentación completa.
 
----
 
 ## FASE 5 — Nexus como biblioteca abierta (opcional)
 
@@ -307,7 +300,6 @@ Esta fase es opcional y externa al roadmap técnico. La decisión depende de fac
 
 Si la decisión es afirmativa, la Fase 5 incluye típicamente: gobernanza, guidelines de contribución, changelog público, roadmap público, respuesta a issues, releases regulares. Ninguno de estos es trabajo técnico — son trabajo de comunidad.
 
----
 
 ## Reconocimientos honestos sobre este roadmap
 
@@ -327,7 +319,6 @@ Si la decisión es afirmativa, la Fase 5 incluye típicamente: gobernanza, guide
 
 **8.** Sobre el orden Fase 1 (chatbot) → Fase 2 (editor). Este orden asume que llegar al editor con un stack más maduro es mejor que llegar antes con un stack menos maduro. Es una apuesta que el chatbot no descubre huecos catastróficos que hagan retroceder Fase 0. Si eso pasa, no es fallo — es exactamente el propósito de construir aplicaciones reales antes de v1.0.
 
----
 
 ## Regla operativa transversal
 
@@ -343,6 +334,5 @@ Todas las fases siguen el ciclo canónico establecido en Fase 0:
 
 Este ciclo no es opcional. Es lo que permitió que Fase 0 llegara a estado auditable en un solo pase, sin deuda oculta.
 
----
 
 *Fin del roadmap general del proyecto Nexus (v2).*

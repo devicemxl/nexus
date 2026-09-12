@@ -4,13 +4,11 @@
 **Implementation status:** initial (snapshot-based, see §7)
 **Scope:** Projects Graphlet entity mutations into a Pulsar state slice so that reactive consumers (Chunklet behaviors, subscribers) can observe entity changes without polling Graphlet.
 
----
 
 ## 1. Purpose
 
 Graphlet is deliberately non-reactive (Graphlet Definition, "Lo que Graphlet no es"). To make entity data available to Chunklet behaviors that render reactively, an external observer must project Graphlet mutations into Pulsar. This adapter is that observer, and it is the reason Chunklet can render entity-bound UI without introducing a new subscription primitive.
 
----
 
 ## 2. Factory Signature
 
@@ -26,7 +24,6 @@ function createGraphletPulsarBridge(
 ): { destroy(): void };
 ```
 
----
 
 ## 3. Behavior (Correct, Reactive Version)
 
@@ -53,7 +50,6 @@ The correct version of this adapter operates entity-by-entity:
    - Do not touch Pulsar state. The projected entries remain; the application decides whether to clear them.
    - Idempotent: second `destroy` is no-op.
 
----
 
 ## 4. Composition Notes
 
@@ -63,7 +59,6 @@ The correct version of this adapter operates entity-by-entity:
 
 - **Write conflicts:** If application code writes directly to `pulsar.state[path][id]`, the next Graphlet mutation on that entity will overwrite. The bridge is authoritative for its path. Applications should not write under this path directly.
 
----
 
 ## 5. Behavioral Guarantees
 
@@ -76,7 +71,6 @@ The correct version of this adapter operates entity-by-entity:
 | **Idempotent destroy** | Second call to `destroy` is safe no-op. |
 | **No global handlers** | Bridge does not touch `window` or install `beforeunload`. |
 
----
 
 ## 6. What This Adapter Does NOT Do
 
@@ -86,7 +80,6 @@ The correct version of this adapter operates entity-by-entity:
 - **Does not emit typed change events.** Consumers subscribe to Pulsar; the reactive channel is Pulsar, not the bridge.
 - **Does not validate consistency.** If the application also writes to the projection path, the bridge does not detect or prevent divergence.
 
----
 
 ## 7. Note on Initial Implementation (Snapshot-Based)
 
@@ -121,7 +114,6 @@ Three implementation paths for the reactive version are identified (documented i
 
 Camino 2 is the recommended default for the first reactive implementation: it does not touch Graphlet, keeps the adapter self-contained, and accepts an O(N) cost only on `delete` (rare in target use cases like the diagram editor). Alternative caminos remain available if evidence suggests otherwise.
 
----
 
 ## 8. Versioning
 
@@ -129,6 +121,5 @@ Camino 2 is the recommended default for the first reactive implementation: it do
 - **Minor:** New options that do not break existing consumers.
 - **Major:** Changes to the factory signature, changes to the projected shape, or changes to which methods are wrapped.
 
----
 
 *End of Mini-Spec.*

@@ -5,7 +5,6 @@
 **Punto de arranque:** cuatro primitivas vivas (Pulsar 0.2.1, Graphlet 0.3.0, Voyajer 0.2.1, Chunklet 0.4.0), dos adapters vivos (Bridge, Hydration), Nexus Contract "traspapelado".
 **Punto de salida:** cinco adapters vivos con harness verde y widget canónico validado, deuda técnica formalizada, tres specs alineadas contra código real.
 
----
 
 ## Lo bueno
 
@@ -26,7 +25,6 @@
 
 **6. La auditoría documental hecha al cierre de la sesión anterior dio sus frutos aquí.** Cuando arrancamos, ya sabíamos que Graphlet estaba en 0.3.0 con G-0 aplicado, que Chunklet 0.4.0 tenía `configure`, y que la spec de Nexus tenía referencias desactualizadas. Ninguno de los cuatro adapters escritos en esta sesión tuvo problemas por asunciones erróneas sobre las primitivas. La disciplina de mantener docs alineadas paga.
 
----
 
 ## Lo malo (o por lo menos, no ideal)
 
@@ -42,7 +40,6 @@
 
 **6. El widget del Bridge acumuló ruido reactivo hasta 73% en un test manual con N=8.** Esta es evidencia dura pero relativamente barata (8 entidades). No probamos con N=50 o N=100 donde el ratio se acerca al 99%. La extrapolación teórica es sólida, pero no tenemos evidencia para descartar sorpresas a escala. Un widget con N=100 sintéticas tomaría 10 minutos escribir; no lo hicimos porque el número extrapolado es lo bastante convincente y respeta Article I sin exceso.
 
----
 
 ## Lo aprendido
 
@@ -58,7 +55,6 @@
 
 **6. El scope congelado por widget (Disciplina 1) es más importante que su elegancia sugiere.** El widget de External Event pudo haber crecido a "editor colaborativo entre tabs con Bridge y Persistence" y habría sido interesante pero habría probado tres cosas a la vez. Al congelarlo en "sync minimal entre dos tabs sin más adapters", el reporte que produjiste fue interpretable línea por línea. Al mezclarse habría sido difícil saber qué exactamente estaba fallando o funcionando.
 
----
 
 ## Lo diferido explícitamente
 
@@ -75,7 +71,6 @@ Y **una deuda arquitectónica emergente** identificada en esta retrospectiva per
 
 Recomendación: registrar esta última en `PHASE_0_DEFERRED.md` en la Parte 2 de esta misma sesión.
 
----
 
 ## Lo que NO se hizo (y por qué está bien)
 
@@ -87,7 +82,6 @@ Recomendación: registrar esta última en `PHASE_0_DEFERRED.md` en la Parte 2 de
 
 **4. No se construyó un "widget canónico completo" con los cinco adapters combinados.** Habría sido tentador — un editor de flujo que hidrata, mostra reactivamente, sincroniza entre tabs, persiste, y loguea todo. Pero eso es Fase 1, no cierre de Fase 0. El scope congelado (Disciplina 1) protegió contra este scope creep silencioso.
 
----
 
 ## Recomendaciones para la Fase 1
 
@@ -101,7 +95,6 @@ Basado en lo aprendido, no en especulación:
 
 **4. Escribir un `README.md` de nivel proyecto que explique el stack.** Todo lo que hicimos vive en specs y mini-specs. Falta el punto de entrada narrativo que le diga a un tercero (o a ti mismo dentro de tres meses) "esto es Nexus, así se compone". Es candidato para el Punto 7 o para arrancar Fase 1.
 
----
 
 ## Métricas de esta sesión
 
@@ -121,6 +114,5 @@ Basado en lo aprendido, no en especulación:
 
 **Ciclos de "descubrir → registrar → codificar → validar":** 5 completos, cero incompletos.
 
----
 
 *Fin del Session Doc.*

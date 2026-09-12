@@ -4,7 +4,6 @@
 
 **Metodología:** Article II — describir el estado real, sin inflar aciertos ni ocultar huecos.
 
----
 
 ## Parte A — Cobertura de los 7 puntos del roadmap
 
@@ -18,7 +17,6 @@
 
 **Nota:** no verificado directamente por mí en esta sesión (asumo el registro previo). Si se quiere verificación adicional, revisar `git log` para los commits de archivado.
 
----
 
 ### Punto 2: Actualizar `Nexus_Contract_Specification.md`
 
@@ -32,7 +30,6 @@
 - Zero menciones al Command Layer (verificable con `grep`).
 - Alineado con implementaciones actuales de las cuatro primitivas.
 
----
 
 ### Punto 3: Cerrar observaciones sin deuda técnica
 
@@ -46,7 +43,6 @@
 
 **Cambio en esta sesión:** BRIDGE-REACTIVE recibió evidencia empírica cuantificada (73% ruido con N=8), transformándolo de hipótesis a dato accionable.
 
----
 
 ### Punto 4: Escribir `Nexus_Adapter_Contract_Specification.md`
 
@@ -61,7 +57,6 @@
 
 **Nota:** el roadmap dice "150-200 líneas" pero el archivo parece más largo. Esto no es problema — es preferible completitud sobre economía cuando el catálogo enumera 5 categorías.
 
----
 
 ### Punto 5: Implementar adapters en versión suficiente-para-probar
 
@@ -83,7 +78,6 @@
 
 **Nota importante:** Capa 12 (External Event) se declara **cerrada en lo que resuelve pero con deuda formal registrada** (12-BRIDGE-INTEGRATION, 12-PERSISTENCE-INTEGRATION), siguiendo la instrucción explícita del usuario en su turno correspondiente.
 
----
 
 ### Punto 6: Validación empírica con widgets canónicos
 
@@ -105,7 +99,6 @@
 
 **Lo que NO se hizo (transparente):** no se construyó un widget con drag-and-drop, tabs, ni popup form. Ninguno de esos tres emergió como necesario para validar los adapters, y construirlos ahora sería adelantar Fase 1.
 
----
 
 ### Punto 7: Cierre de Fase 0
 
@@ -118,7 +111,6 @@
 - ✅ Evidencia empírica de que los adapters cumplen el propósito para el que fueron diseñados.
 - ⚠️ El "punto de partida documentado para Fase 1" no existe todavía — es lo que hay que escribir en Punto 7.
 
----
 
 ## Parte B — Auditoría de coherencia entre documentos
 
@@ -184,7 +176,6 @@
 
 **Recomendación:** patch en Punto 7 (bump menor o simplemente clarificación de status).
 
----
 
 ## Parte C — Verificación de deuda técnica
 
@@ -233,7 +224,6 @@ Repaso mental de la sesión buscando ítems que hayan aparecido y no estén regi
 
 **Ningún ítem adicional necesita registrarse como deuda formal.** Los 10 ítems en `PHASE_0_DEFERRED.md` capturan todo lo diferido con resolution path explícito.
 
----
 
 ## Parte D — Hallazgos menores para el Punto 7
 
@@ -249,7 +239,6 @@ Consolidados en orden de importancia (ninguno crítico):
 
 **5.** Escribir el documento formal de cierre de Fase 0 (`PHASE_0_CLOSURE.md` o equivalente) que declare: qué está cerrado, qué está deferido con evidencia, cuál es el punto de partida de Fase 1.
 
----
 
 ## Parte E — Estado listo-para-Punto-7
 
@@ -265,7 +254,6 @@ Consolidados en orden de importancia (ninguno crítico):
 
 **Conclusión:** todos los insumos están listos. El Punto 7 es un ejercicio de consolidación documental, no de construcción nueva. Estimado: una sesión corta con dos entregables (los ajustes menores de Parte D + el documento de cierre).
 
----
 
 ## Parte F — Métricas consolidadas de Fase 0
 
@@ -292,7 +280,6 @@ Consolidados en orden de importancia (ninguno crítico):
 
 **Deuda documental (housekeeping):** 3 ajustes menores identificados (hallazgo D.1, D.2, D.3).
 
----
 
 ## Conclusión de la auditoría
 
@@ -302,6 +289,5 @@ Consolidados en orden de importancia (ninguno crítico):
 
 **Recomendación honesta:** consolidar los 3 ajustes menores + escribir el documento de cierre en el mismo turno del Punto 7. Es coherente con la disciplina "cerrar todo lo pendiente antes de mover".
 
----
 
 *Fin del reporte de auditoría.*

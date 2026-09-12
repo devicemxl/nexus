@@ -1,8 +1,25 @@
 # Nexus Contract Specification
 
-**Version:** 0.3.1
-**Status:** Design Contract (aligned with implementations: Pulsar 0.2.1, Graphlet 0.3.0, Voyajer 0.2.1, Chunklet 0.4.0)
+**Version:** 0.3.2
+**Status:** Design Contract (aligned with implementations: Pulsar 0.2.2, Graphlet 0.3.0, Voyajer 0.2.1, Chunklet 0.4.1)
 **Scope:** Defines the collaboration, boundaries, and integration rules for the Nexus ecosystem: GraphletJS, PulsarJS, VoyajerJS, and ChunkletJS.
+
+**Changes from v0.3.1 (patch, non-breaking):**
+- §1 gains a new §1.1 (**Motivation and target environments**) documenting the
+  reason the Nexus stack exists — to replace RiotJS in the author's projects —
+  and the deployment class (webview-embedded applications hosted by Wails,
+  Tauri, and similar small native runtimes) whose constraints govern the
+  browser-first / zero-build-step / no-Node-runtime posture declared throughout
+  the specification. The constraint was previously stated without its
+  motivation, inviting the wrong reading (stylistic preference rather than
+  deployment requirement). Article IV — Architectural Sovereignty — governs the
+  addition: architecture designed to meet an actual need. §1.1 also records
+  that the target hosts serve assets under managed http-like origins rather
+  than `file://`, and restates the invariant accordingly — `file://` is a
+  convenience, not a requirement, and is stricter than the real target.
+- Header status updated to reflect the current versions of Pulsar (0.2.2, R-1
+  fix) and Chunklet (0.4.1, documentation-only patch on `configure()` and
+  `_enabledUnsubscribe`).
 
 **Changes from v0.3.0 (patch, non-breaking):**
 - Header status updated from "pre-implementation" to reflect that all four primitives and two first-generation adapters exist and are testable (Article II — describe reality as it is).
@@ -13,7 +30,6 @@
 
 No semantic changes. No changes to dependency direction, primitive responsibilities, or namespacing conventions.
 
----
 
 ## 1. Purpose
 
@@ -25,7 +41,61 @@ The contract codifies:
 - The optional adapter layer that bridges non-reactive and reactive domains.
 - The state-tree conventions that keep composition disciplined at scale.
 
----
+
+### 1.1 Motivation and target environments
+
+Nexus exists to replace RiotJS in the author's own projects. RiotJS began as
+a browser-native library that could be used with Node; it has since become a
+primarily Node-based library. That shift reflects the frontend ecosystem's
+general direction but leaves without a viable option a class of deployment
+targets that Nexus considers first-class: applications embedded in a webview
+through a small native host (Wails, Tauri, and similar bindings that pair a
+compiled runtime — Go, Rust — with the system webview).
+
+In that class, dragging a Node runtime into production is not a matter of
+taste. The memory footprint alone — measured in gigabytes for realistic
+dependency graphs — makes it inviable on the same devices where the native
+host was chosen precisely to avoid it. Any stack that requires bundlers,
+transpilers, or Node at runtime forecloses these deployments. The
+"browser-first, zero build step, no Node runtime in production" constraint
+declared throughout this specification is therefore not a stylistic
+preference; it is a hard deployment requirement inherited from the
+environments the author must serve. Article IV (Architectural Sovereignty)
+governs: the architecture is designed to meet an actual need, not to conform
+to an ecosystem convention.
+
+A precision matters here, because the constraint is easy to over-tighten.
+The webview hosts above do **not** load assets from `file://`. Wails serves
+embedded assets through its AssetServer under an internal origin
+(`wails://wails` in production builds, `localhost:34115` under `wails dev`);
+Tauri serves them under `tauri://localhost`, or `http://tauri.localhost` on
+Windows and `https://tauri.localhost` on Android. These are managed origins
+with http-like semantics, not direct disk access.
+
+The distinction is load-bearing. `file://` is **stricter** than the real
+deployment target in ways that affect this stack directly: ES module imports
+are blocked by CORS in Chromium and WebKit, `fetch` is unavailable,
+`localStorage` may be scoped to an opaque origin, and the History API is
+unusable. A stack that treats `file://` as a requirement pays all of those
+costs for a scenario none of the target hosts actually present.
+
+The operative invariant is therefore narrower and more accurate:
+
+> **No build step, no Node runtime in production, and assets that any minimal
+> static server can serve.**
+
+Wails's AssetServer, Tauri's custom protocol handler, a static host, and a
+one-line development server all satisfy it equally. Opening a page directly
+from `file://` is a convenience for quick inspection — it works in Firefox and
+is useful for reading a test harness without starting anything — but it is not
+a supported deployment mode and no design decision should be constrained by
+it.
+
+Publishing the libraries as public open source (npm, CDN) does not modify
+this. Consumers using Nexus in bundler-heavy pipelines see the same API as
+consumers embedding it in a Wails webview; the constraint is that the second
+use case remain viable, not that the first be discouraged.
+
 
 ## 2. Component Definitions
 
@@ -53,7 +123,6 @@ The contract codifies:
 **Core Methods:** `setup`, `configure`, `define`, `mount`, `unmount`, `observe`, `disconnect`, `enable`, `disable`, and the `ctx` resource registry and stack accessor.
 **Constraint:** Depends on PulsarJS and GraphletJS. Optionally depends on VoyajerJS. Does not own or persist state; state lives in Pulsar, model in Graphlet, navigation in Voyajer. Does not generate DOM nodes.
 
----
 
 ## 3. Dependency Direction (The Law of Hierarchy)
 
@@ -96,7 +165,6 @@ LEVEL 4: Application
 
 The dependencies of ChunkletJS on the lower primitives are not architectural leaks. They are the explicit basis on which Chunklet provides an orchestration surface. Applications that require Pulsar, Graphlet, or Voyajer without Chunklet can use them directly at their own level.
 
----
 
 ## 4. The Adapter Layer
 
@@ -128,7 +196,6 @@ The authoritative catalog of first-generation adapters (with concrete mini-speci
 
 Concrete signatures, options, and behavioral guarantees are defined per adapter in the adapter contract and its associated mini-specifications.
 
----
 
 ## 5. State Tree Namespacing Convention
 
@@ -153,7 +220,6 @@ A producer writes only under its reserved key. Reads from any key are permitted.
 
 Without namespacing, Pulsar's state tree accumulates keys from multiple producers at the root level. The first non-trivial refactor becomes "I moved this key and broke three subscriptions in unrelated modules." Namespacing localizes such changes.
 
----
 
 ## 6. Data Flow Patterns
 
@@ -196,7 +262,6 @@ Storage → Hydration Adapter → Graphlet [+ Pulsar via Bridge]
 
 The canonical startup sequence is documented in the ChunkletJS Contract Specification §3.3.
 
----
 
 ## 7. Lifecycle and Resource Management
 
@@ -222,7 +287,6 @@ The canonical startup sequence is documented in the ChunkletJS Contract Specific
 **Resource Ownership Rule:**
 > The component that acquires a resource is responsible for releasing it. In practice, ChunkletJS owns DOM resources acquired through behavior contexts, Voyajer owns window events, and the application owns adapters and any handlers registered outside the primitives.
 
----
 
 ## 8. Behavioral Guarantees
 
@@ -238,7 +302,6 @@ The canonical startup sequence is documented in the ChunkletJS Contract Specific
 | **Zero Build Requirement** | All primitives are distributed as ES modules. They can be imported directly from CDN without bundlers, transpilers, or build steps. |
 | **Client-Side Only Runtime** | Nexus is designed to run entirely in the browser. Server-side runtimes (Node, Deno) are supported as development/testing conveniences but are not required for any production use case. |
 
----
 
 ## 9. Versioning and Backward Compatibility
 
@@ -252,7 +315,6 @@ The Nexus Contract itself is versioned independently of the individual primitive
 - Each primitive follows its own semantic versioning.
 - A major version bump in any primitive must be accompanied by a review of this contract. If the dependency direction or core responsibility changes, the contract must be bumped to the next major version.
 
----
 
 ## 10. On Invariants and Purpose
 
@@ -262,7 +324,6 @@ If an invariant obstructs the delivery of a real application requirement without
 
 The current invariants have been formulated in reference to a concrete application (a browser-side, backend-agnostic diagram/flow editor) and are expected to evolve as that application and others reveal new requirements.
 
----
 
 ## Change Summary (v0.3.0 → v0.3.1)
 
@@ -285,6 +346,5 @@ The current invariants have been formulated in reference to a concrete applicati
 
 **Semantic impact:** None. All changes are alignments between the contract text and the current implementations or with sibling documents. Applications, adapters, and behaviors written against v0.3.0 remain valid under v0.3.1 without modification.
 
----
 
 *End of Specification.*

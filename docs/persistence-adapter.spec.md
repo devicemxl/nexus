@@ -4,7 +4,6 @@
 **Implementation status:** initial
 **Scope:** Observes GraphletJS mutations and persists the entire graph to a storage backend, so that on the next application load a Hydration Adapter can restore state.
 
----
 
 ## 1. Purpose
 
@@ -12,7 +11,6 @@ Persistence is the write-side complement of Hydration. Hydration reads a snapsho
 
 The adapter serializes the graph in the **same canonical shape** the Hydration Adapter consumes (see `hydration-adapter.spec.md` §3.1). A snapshot written by Persistence and read back by Hydration on the next load reproduces the graph.
 
----
 
 ## 2. Factory Signature
 
@@ -54,7 +52,6 @@ function createPersistenceAdapter(
 - `flush()`: forces an immediate serialize+write, canceling any pending debounced write. Useful before intentional shutdown (e.g., a `beforeunload` handler at the application level, or a manual "save now" button). Idempotent — calling flush with no pending writes is a no-op.
 - `destroy()`: unwraps the Graphlet methods, cancels any pending timer, and marks the adapter inert. Idempotent. **Does not flush by default** — the application decides whether pending state should be persisted before shutdown (typically via `flush()` before `destroy()`).
 
----
 
 ## 3. Behavior
 
@@ -101,7 +98,6 @@ No retry logic. Persistence is best-effort; the caller decides if a retry strate
 
 `destroy()` does **not** call `flush()` automatically. The rationale: destruction happens for many reasons (test cleanup, controlled shutdown, teardown before switching graphs), and not all of them mean "save what's pending." An application that wants save-on-destroy can call `adapter.flush(); adapter.destroy();` — two lines, explicit, no surprise.
 
----
 
 ## 4. Composition Notes
 
@@ -132,7 +128,6 @@ createPersistenceAdapter(
 
 - **With multiple graphs:** an application with multiple independent Graphlet instances instantiates one Persistence Adapter per graph, each with its own `key`. The adapter does not multiplex.
 
----
 
 ## 5. Behavioral Guarantees
 
@@ -147,7 +142,6 @@ createPersistenceAdapter(
 | **No global handlers** | Adapter does not install `beforeunload` or any `window`-level listener. |
 | **Explicit shutdown** | `destroy()` does not implicitly flush; callers wanting save-on-destroy call `flush()` first. |
 
----
 
 ## 6. What This Adapter Does NOT Do
 
@@ -159,7 +153,6 @@ createPersistenceAdapter(
 - **Does not handle cross-tab coordination.** If two tabs of the same application write to the same key, the last write wins. Cross-tab sync is a job for a future External Event Adapter using `BroadcastChannel` or the `storage` event.
 - **Does not support IndexedDB in v0.1.0.** localStorage only (synchronous, ~5MB per origin, string-only). IndexedDB support is deferred — see §7.
 
----
 
 ## 7. Deferred: IndexedDB Support
 
@@ -173,7 +166,6 @@ IndexedDB is the natural next backend for this adapter because it removes the 5M
 
 Documented as PERSISTENCE-INDEXEDDB in `PHASE_0_DEFERRED.md` when this mini-spec lands.
 
----
 
 ## 8. Versioning
 
@@ -181,6 +173,5 @@ Documented as PERSISTENCE-INDEXEDDB in `PHASE_0_DEFERRED.md` when this mini-spec
 - **Minor:** New options that do not break existing consumers (e.g., new modes, new `onError` phases).
 - **Major:** Changes to the factory signature, changes to the canonical shape, or changes to `destroy()`'s no-flush guarantee.
 
----
 
 *End of Mini-Spec.*
