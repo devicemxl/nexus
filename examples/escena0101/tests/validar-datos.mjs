@@ -55,13 +55,13 @@ function snapshotDe(n) {
   return { entities };
 }
 function arrancarContando(opciones = {}) {
-  const { graphlet, pulsar } = crearPrimitivas();
+  const { nebula, pulsar } = crearPrimitivas();
   let setStateN = 0;
   const original = pulsar.setState.bind(pulsar);
   pulsar.setState = (p) => { setStateN++; return original(p); };
   const t0 = performance.now();
-  const datos = arrancarDatos({ graphlet, pulsar, ...opciones });
-  return { graphlet, pulsar, datos, setStateN, ms: performance.now() - t0 };
+  const datos = arrancarDatos({ nebula, pulsar, ...opciones });
+  return { nebula, pulsar, datos, setStateN, ms: performance.now() - t0 };
 }
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -128,7 +128,7 @@ console.log('\n  Snapshot ilegible');
   }));
   const r = callado(() => arrancarContando({ storage, clave: 't' }));
   eq('links malformados detectados antes del grafo real', r.datos.hidratacion.estado, 'corrupto');
-  eq('el grafo real queda intacto', r.graphlet.allIds(), []);
+  eq('el grafo real queda intacto', r.nebula.allIds(), []);
   r.datos.destruir({ guardarPendiente: false });
 }
 {
@@ -138,7 +138,7 @@ console.log('\n  Snapshot ilegible');
   }));
   const r = callado(() => arrancarContando({ storage, clave: 't' }));
   eq('link huérfano no invalida el snapshot', r.datos.hidratacion.estado, 'ok');
-  eq('la entidad se hidrata igualmente', r.graphlet.allIds(), ['a:1']);
+  eq('la entidad se hidrata igualmente', r.nebula.allIds(), ['a:1']);
   r.datos.destruir({ guardarPendiente: false });
 }
 
@@ -155,9 +155,9 @@ console.log('\n  Persistencia');
   const storage = storageMock();
   const r = arrancarContando({ storage, clave: 't', debounceMs: 30 });
   storage.escrituras = 0;
-  r.graphlet.put('msg:1', { texto: 'hola' });
-  r.graphlet.put('msg:2', { texto: 'qué tal' });
-  r.graphlet.put('msg:3', { texto: 'bien' });
+  r.nebula.put('msg:1', { texto: 'hola' });
+  r.nebula.put('msg:2', { texto: 'qué tal' });
+  r.nebula.put('msg:3', { texto: 'bien' });
   eq('las mutaciones no escriben de inmediato', storage.escrituras, 0);
   await esperar(80);
   eq('la ráfaga se agrupa en una escritura', storage.escrituras, 1);
@@ -168,7 +168,7 @@ console.log('\n  Persistencia');
 {
   const storage = storageMock();
   const r = arrancarContando({ storage, clave: 't', debounceMs: 5000 });
-  r.graphlet.put('msg:1', { texto: 'pendiente' });
+  r.nebula.put('msg:1', { texto: 'pendiente' });
   storage.escrituras = 0;
   r.datos.destruir({ guardarPendiente: true });
   eq('destruir con guardado materializa lo pendiente', storage.escrituras, 1);
@@ -179,11 +179,11 @@ console.log('\n  Persistencia');
   r.datos.destruir({ guardarPendiente: false });
   storage.escrituras = 0;
   const antes = JSON.stringify(r.pulsar.getState().entities);
-  r.graphlet.put('msg:9', { texto: 'después' });
+  r.nebula.put('msg:9', { texto: 'después' });
   await esperar(80);
   eq('tras destruir no se proyecta', JSON.stringify(r.pulsar.getState().entities), antes);
   eq('tras destruir no se persiste', storage.escrituras, 0);
-  eq('el grafo sigue funcionando', r.graphlet.get('msg:9').properties.texto, 'después');
+  eq('el grafo sigue funcionando', r.nebula.get('msg:9').properties.texto, 'después');
 }
 
 console.log(`\n  === ${pass}/${pass + fail} verdes, ${fail} en rojo ===\n`);

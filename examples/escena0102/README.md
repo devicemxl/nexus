@@ -6,9 +6,9 @@
 
 ## Qué es
 
-El modelo de entidades del chat y los dos widgets que lo presentan: una lista de conversaciones en el lateral y una fila por conversación. Crear muta Graphlet; el repintado llega por el Bridge a través de Pulsar. Seleccionar no toca el modelo.
+El modelo de entidades del chat y los dos widgets que lo presentan: una lista de conversaciones en el lateral y una fila por conversación. Crear muta nebula; el repintado llega por el Bridge a través de Pulsar. Seleccionar no toca el modelo.
 
-Es la primera evidencia de que el patrón Chunklet + Bridge + Graphlet + Pulsar funciona en construcción, no en portación.
+Es la primera evidencia de que el patrón Chunklet + Bridge + nebula + Pulsar funciona en construcción, no en portación.
 
 ## Cómo correrla
 
@@ -95,7 +95,7 @@ Lo que justificaría el diff es que aparezca algo que sí se pierda al recrear l
 
 ## Decisión diferida a la Escena 1.3
 
-**Dirección de la relación entre conversación y mensajes.** Graphlet no mantiene índice inverso: la travesía inversa exige una consulta que recorre todas las entidades. Para renderizar los mensajes de la conversación activa, `conversation --contiene--> message` se lee directo de los links, mientras que `message --perteneceA--> conversation` obliga a escanear el grafo entero. La entidad de conversación está diseñada para admitir cualquiera de las dos, y la decisión se toma con el widget de mensajes delante.
+**Dirección de la relación entre conversación y mensajes.** nebula no mantiene índice inverso: la travesía inversa exige una consulta que recorre todas las entidades. Para renderizar los mensajes de la conversación activa, `conversation --contiene--> message` se lee directo de los links, mientras que `message --perteneceA--> conversation` obliga a escanear el grafo entero. La entidad de conversación está diseñada para admitir cualquiera de las dos, y la decisión se toma con el widget de mensajes delante.
 
 ## Verificación
 

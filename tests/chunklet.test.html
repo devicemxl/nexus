@@ -19,7 +19,7 @@
 
   <script type="module">
     import { createStatePulsar } from '../src/pulsar.js';
-    import { createGraphlet } from '../src/graphlet.js';
+    import { createnebula } from '../src/nebula.js';
     import { createVoyajer } from '../src/voyajer.js';
     import * as Chunklet from '../src/chunklet.js';
 
@@ -142,17 +142,17 @@
     // ============================================================
     // TEST 2: setup retorna el stack con auto-creación
     // ============================================================
-    section('TEST 2: setup auto-crea Pulsar y Graphlet cuando no se pasan');
+    section('TEST 2: setup auto-crea Pulsar y nebula cuando no se pasan');
 
     // El setup de arriba fue con {} — sin instancias explícitas.
-    // Verificamos que auto-creó Pulsar y Graphlet, y que Voyajer
+    // Verificamos que auto-creó Pulsar y nebula, y que Voyajer
     // quedó undefined (por ser opcional).
     //
     // Para inspeccionar el stack necesitamos un ctx montado. Definimos
     // un behavior efímero solo para eso.
     let capturedStack = null;
     Chunklet.define('__inspect__', (element, ctx) => {
-      capturedStack = { pulsar: ctx.pulsar, graphlet: ctx.graphlet, voyajer: ctx.voyajer };
+      capturedStack = { pulsar: ctx.pulsar, nebula: ctx.nebula, voyajer: ctx.voyajer };
     });
 
     const inspectEl = makeElement({ 'data-chunk': '__inspect__' });
@@ -161,8 +161,8 @@
     assert(capturedStack !== null, 'setup: ctx recibe el stack tras mount');
     assert(capturedStack.pulsar && typeof capturedStack.pulsar.getState === 'function',
       'setup: pulsar auto-creado tiene API correcta');
-    assert(capturedStack.graphlet && typeof capturedStack.graphlet.get === 'function',
-      'setup: graphlet auto-creado tiene API correcta');
+    assert(capturedStack.nebula && typeof capturedStack.nebula.get === 'function',
+      'setup: nebula auto-creado tiene API correcta');
     assert(capturedStack.voyajer === undefined,
       'setup: voyajer queda undefined cuando no se pasa');
 

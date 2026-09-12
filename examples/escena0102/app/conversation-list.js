@@ -106,8 +106,8 @@ export function conversationList(elemento, ctx) {
   // ----------------------------------------------------------------
   if (botonNueva) {
     ctx.listen(botonNueva, 'click', () => {
-      const id = crearConversacion(ctx.graphlet);
-      // La creación pasa por Graphlet; el repintado llega por el Bridge.
+      const id = crearConversacion(ctx.nebula);
+      // La creación pasa por nebula; el repintado llega por el Bridge.
       // Seleccionar es estado de interfaz y va directo a Pulsar.
       ctx.setState({ ui: { ...ctx.getState().ui, activeConversation: id } });
     });

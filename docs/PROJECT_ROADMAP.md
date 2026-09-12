@@ -49,14 +49,14 @@ FASE 5    Nexus como biblioteca abierta (opcional, según decisión)
 
 ### 1.1 Prerrequisitos (todos cumplidos por Fase 0)
 
-- Stack completo verificable (Pulsar, Graphlet, Voyajer, Chunklet).
+- Stack completo verificable (Pulsar, nebula, Voyajer, Chunklet).
 - Cinco adapters de primera generación en `src/adapters/`.
 - Contratos alineados con implementaciones.
 - Ciclo de desarrollo probado (mini-spec → código → harness → widget).
 
 ### 1.2 Modelo de dominio propuesto
 
-**Entidades en Graphlet:**
+**Entidades en nebula:**
 - `conversation:X` — properties: título, timestamp de creación, modelo asociado.
 - `message:Y` — properties: rol (user/assistant), contenido, timestamp, estado (streaming/complete).
 - Relación: `conversation:X --contains--> message:Y1, message:Y2, ...`
@@ -72,7 +72,7 @@ FASE 5    Nexus como biblioteca abierta (opcional, según decisión)
 - `/` → sin conversación activa (vista de bienvenida o lista).
 - `/#/c/uuid` → conversación específica activa.
 
-**Persistencia:** todo Graphlet vía Persistence Adapter con debounce moderado. localStorage inicial; IndexedDB solo si la escena de scroll infinito lo demanda.
+**Persistencia:** todo nebula vía Persistence Adapter con debounce moderado. localStorage inicial; IndexedDB solo si la escena de scroll infinito lo demanda.
 
 Esta propuesta es punto de partida, no compromiso. Cada escena la refina según lo que descubra.
 
@@ -101,14 +101,14 @@ La disciplina de scope congelado (equivalente a la Disciplina 1 de Punto 6 en Fa
 Las cuatro primeras están descritas con precisión. Las siguientes con menos detalle: son la trayectoria esperada, sujeta a evidencia.
 
 **Escena 1.1 — Setup del stack y vista mínima.**
-Setup de Chunklet con Pulsar, Graphlet, Voyajer, Bridge, Hydration y Persistence instanciados en orden canónico. Widget "app-shell" con sidebar vacío + área principal vacía. Sin behaviors aún; solo verificar que el stack arranca y monta. Cero funcionalidad de chat, cero LLM.
+Setup de Chunklet con Pulsar, nebula, Voyajer, Bridge, Hydration y Persistence instanciados en orden canónico. Widget "app-shell" con sidebar vacío + área principal vacía. Sin behaviors aún; solo verificar que el stack arranca y monta. Cero funcionalidad de chat, cero LLM.
 
 *Salida:* HTML servible en local que arranca sin errores. Deuda esperada: probablemente cero, es setup.
 
 **Escena 1.2 — Widget "conversation-list" en sidebar.**
-Primer widget real: renderiza la lista de conversaciones desde `entities.conversations`. Botón "Nueva conversación" que hace `graphlet.put('conversation:...', {título, ts})`. Click en una conversación actualiza `ui.activeConversation`. Este widget ejercita: Bridge (renderizado reactivo desde Graphlet), Chunklet (behavior de click), y Pulsar (activeConversation).
+Primer widget real: renderiza la lista de conversaciones desde `entities.conversations`. Botón "Nueva conversación" que hace `nebula.put('conversation:...', {título, ts})`. Click en una conversación actualiza `ui.activeConversation`. Este widget ejercita: Bridge (renderizado reactivo desde nebula), Chunklet (behavior de click), y Pulsar (activeConversation).
 
-*Salida:* widget funcional, primera evidencia empírica de que el patrón Chunklet+Bridge+Graphlet+Pulsar funciona en un caso real de construcción (no de portación). Deuda esperada: probablemente aparece la necesidad del helper WIDGET-COMPOSITION.
+*Salida:* widget funcional, primera evidencia empírica de que el patrón Chunklet+Bridge+nebula+Pulsar funciona en un caso real de construcción (no de portación). Deuda esperada: probablemente aparece la necesidad del helper WIDGET-COMPOSITION.
 
 **Escena 1.3 — Widget "conversation-messages" con mock streaming.**
 Widget principal que renderiza los mensajes de la conversación activa. Componer un mock provider que "responde" un mensaje token a token con setTimeout, para simular streaming sin depender de un LLM real. Este widget ejercita: renderizado condicional (según activeConversation), streaming (mutación incremental de una entidad), scroll automático al recibir tokens.
@@ -162,7 +162,7 @@ Escenas posibles según lo que las 1.1-1.6 revelen: sync entre pestañas (usa Ex
 
 ### 2.2 Modelo de dominio propuesto
 
-**Entidades en Graphlet:**
+**Entidades en nebula:**
 - `node:X` — nodos del pipeline, properties: tipo, posición, configuración específica.
 - `edge:Y` — conexiones entre nodos, properties: source-port, target-port, estilo.
 - `pipeline:Z` — contenedor top-level, properties: nombre, versión.
@@ -239,7 +239,7 @@ Workflow que corre en cada push. Matriz de navegadores. Badge en README de proye
 ### 3b.2 Escenas
 
 **Escena 3b.1 — `package.json` publicable por primitiva y por adapter.**
-Cada primitiva y cada adapter puede publicarse independientemente (`@dfc/pulsar`, `@dfc/graphlet`, `@dfc/adapter-bridge`, etc.) o como paquete monolítico. Decisión guiada por patrones de consumo que las Fases 1 y 2 hayan revelado.
+Cada primitiva y cada adapter puede publicarse independientemente (`@dfc/pulsar`, `@dfc/nebula`, `@dfc/adapter-bridge`, etc.) o como paquete monolítico. Decisión guiada por patrones de consumo que las Fases 1 y 2 hayan revelado.
 
 **Escena 3b.2 — README de proyecto.**
 Documento narrativo de entrada. El chatbot de Fase 1 es candidato natural como ejemplo runnable en el README — es una aplicación completa, autónoma, no requiere backend propio.

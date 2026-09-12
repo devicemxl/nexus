@@ -4,7 +4,7 @@
  * Contrato: adapters/persistence-adapter.spec.md v0.1.0
  * Implementation version: 0.1.0
  *
- * Observa mutaciones en Graphlet y persiste el grafo completo a un
+ * Observa mutaciones en nebula y persiste el grafo completo a un
  * backend de storage (por defecto localStorage) en la forma canónica
  * que Hydration consume.
  *
@@ -15,7 +15,7 @@
  * Uso:
  *   import { createPersistenceAdapter } from './adapters/persistence-adapter.js';
  *   const p = createPersistenceAdapter(
- *     { graphlet },
+ *     { nebula },
  *     { key: 'my-app-graph', mode: 'debounced', debounceMs: 300 }
  *   );
  *   // ... vida útil ...
@@ -34,7 +34,7 @@ function _isPlainObject(value) {
   return proto === Object.prototype || proto === null;
 }
 
-function _isGraphletInstance(value) {
+function _isnebulaInstance(value) {
   return (
     value !== null &&
     typeof value === 'object' &&
@@ -68,7 +68,7 @@ function _isStorageLike(value) {
  * Crea un Persistence Adapter.
  *
  * @param {Object} context
- * @param {GraphletInstance} context.graphlet - Graphlet a observar.
+ * @param {nebulaInstance} context.nebula - nebula a observar.
  * @param {Object} options
  * @param {string} options.key - Storage key. Requerido.
  * @param {'eager'|'debounced'} [options.mode='debounced'] - Cuándo escribir.
@@ -83,9 +83,9 @@ export function createPersistenceAdapter(context, options = {}) {
   if (!context || typeof context !== 'object') {
     throw new TypeError('[PersistenceAdapter] context debe ser un objeto');
   }
-  if (!_isGraphletInstance(context.graphlet)) {
+  if (!_isnebulaInstance(context.nebula)) {
     throw new TypeError(
-      '[PersistenceAdapter] context.graphlet debe ser una instancia de Graphlet'
+      '[PersistenceAdapter] context.nebula debe ser una instancia de nebula'
     );
   }
 
@@ -135,18 +135,18 @@ export function createPersistenceAdapter(context, options = {}) {
         console.warn(`[PersistenceAdapter] fallo en ${phase}:`, error);
       };
 
-  const { graphlet } = context;
+  const { nebula } = context;
   const key = options.key;
 
   // ---------- Estado interno ----------
   const _originals = {
-    put: graphlet.put,
-    upsert: graphlet.upsert,
-    update: graphlet.update,
-    delete: graphlet.delete,
-    link: graphlet.link,
-    unlink: graphlet.unlink,
-    unlinkAll: graphlet.unlinkAll,
+    put: nebula.put,
+    upsert: nebula.upsert,
+    update: nebula.update,
+    delete: nebula.delete,
+    link: nebula.link,
+    unlink: nebula.unlink,
+    unlinkAll: nebula.unlinkAll,
   };
 
   let _destroyed = false;
@@ -157,7 +157,7 @@ export function createPersistenceAdapter(context, options = {}) {
   // ============================================
 
   /**
-   * Serializa el estado actual de Graphlet en la shape canónica que
+   * Serializa el estado actual de nebula en la shape canónica que
    * Hydration consume (ver hydration-adapter.spec.md §3.1) y lo escribe
    * al storage. Los errores se reportan por onError; no se propagan.
    */
@@ -167,9 +167,9 @@ export function createPersistenceAdapter(context, options = {}) {
     let snapshotString;
     try {
       const entities = {};
-      const ids = graphlet.allIds();
+      const ids = nebula.allIds();
       for (const id of ids) {
-        const entity = graphlet.get(id);
+        const entity = nebula.get(id);
         // Estructura canónica: { properties, links }
         // Omitimos el 'id' interno del get() porque en la shape del
         // snapshot el id ya es la clave del map de entities.
@@ -221,11 +221,11 @@ export function createPersistenceAdapter(context, options = {}) {
   //
   // Reutiliza el patrón del Bridge: para link/unlink/unlinkAll,
   // comparamos el shape de links del source pre y post mutación.
-  // Si no cambió, era no-op de Graphlet (G-0), y no programamos
+  // Si no cambió, era no-op de nebula (G-0), y no programamos
   // escritura.
 
   function _snapshotLinksOf(id) {
-    const entity = graphlet.get(id);
+    const entity = nebula.get(id);
     if (!entity || !entity.links) return null;
     const out = {};
     for (const [rel, targets] of Object.entries(entity.links)) {
@@ -258,39 +258,39 @@ export function createPersistenceAdapter(context, options = {}) {
   // WRAPPERS DE MUTACIÓN
   // ============================================
 
-  graphlet.put = function(id, properties) {
-    if (_destroyed) return _originals.put.call(graphlet, id, properties);
-    const result = _originals.put.call(graphlet, id, properties);
+  nebula.put = function(id, properties) {
+    if (_destroyed) return _originals.put.call(nebula, id, properties);
+    const result = _originals.put.call(nebula, id, properties);
     _scheduleWrite();
     return result;
   };
 
-  graphlet.upsert = function(id, properties) {
-    if (_destroyed) return _originals.upsert.call(graphlet, id, properties);
-    const result = _originals.upsert.call(graphlet, id, properties);
+  nebula.upsert = function(id, properties) {
+    if (_destroyed) return _originals.upsert.call(nebula, id, properties);
+    const result = _originals.upsert.call(nebula, id, properties);
     _scheduleWrite();
     return result;
   };
 
-  graphlet.update = function(id, patch) {
-    if (_destroyed) return _originals.update.call(graphlet, id, patch);
-    const result = _originals.update.call(graphlet, id, patch);
+  nebula.update = function(id, patch) {
+    if (_destroyed) return _originals.update.call(nebula, id, patch);
+    const result = _originals.update.call(nebula, id, patch);
     _scheduleWrite();
     return result;
   };
 
-  graphlet.delete = function(id) {
-    if (_destroyed) return _originals.delete.call(graphlet, id);
-    const result = _originals.delete.call(graphlet, id);
+  nebula.delete = function(id) {
+    if (_destroyed) return _originals.delete.call(nebula, id);
+    const result = _originals.delete.call(nebula, id);
     _scheduleWrite();
     return result;
   };
 
-  graphlet.link = function(sourceId, relation, targetId) {
-    if (_destroyed) return _originals.link.call(graphlet, sourceId, relation, targetId);
+  nebula.link = function(sourceId, relation, targetId) {
+    if (_destroyed) return _originals.link.call(nebula, sourceId, relation, targetId);
 
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.link.call(graphlet, sourceId, relation, targetId);
+    const result = _originals.link.call(nebula, sourceId, relation, targetId);
     const after = _snapshotLinksOf(sourceId);
 
     if (!_sameShallowLinks(before, after)) {
@@ -299,11 +299,11 @@ export function createPersistenceAdapter(context, options = {}) {
     return result;
   };
 
-  graphlet.unlink = function(sourceId, relation, targetId) {
-    if (_destroyed) return _originals.unlink.call(graphlet, sourceId, relation, targetId);
+  nebula.unlink = function(sourceId, relation, targetId) {
+    if (_destroyed) return _originals.unlink.call(nebula, sourceId, relation, targetId);
 
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.unlink.call(graphlet, sourceId, relation, targetId);
+    const result = _originals.unlink.call(nebula, sourceId, relation, targetId);
     const after = _snapshotLinksOf(sourceId);
 
     if (!_sameShallowLinks(before, after)) {
@@ -312,11 +312,11 @@ export function createPersistenceAdapter(context, options = {}) {
     return result;
   };
 
-  graphlet.unlinkAll = function(sourceId, relation) {
-    if (_destroyed) return _originals.unlinkAll.call(graphlet, sourceId, relation);
+  nebula.unlinkAll = function(sourceId, relation) {
+    if (_destroyed) return _originals.unlinkAll.call(nebula, sourceId, relation);
 
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.unlinkAll.call(graphlet, sourceId, relation);
+    const result = _originals.unlinkAll.call(nebula, sourceId, relation);
     const after = _snapshotLinksOf(sourceId);
 
     if (!_sameShallowLinks(before, after)) {
@@ -359,7 +359,7 @@ export function createPersistenceAdapter(context, options = {}) {
   }
 
   /**
-   * Restaura los métodos originales de Graphlet, cancela cualquier
+   * Restaura los métodos originales de nebula, cancela cualquier
    * escritura pendiente y marca el adapter como inerte.
    *
    * NO llama a flush() implícitamente. El caller que quiera "guardar
@@ -375,13 +375,13 @@ export function createPersistenceAdapter(context, options = {}) {
       _pendingTimer = null;
     }
 
-    graphlet.put = _originals.put;
-    graphlet.upsert = _originals.upsert;
-    graphlet.update = _originals.update;
-    graphlet.delete = _originals.delete;
-    graphlet.link = _originals.link;
-    graphlet.unlink = _originals.unlink;
-    graphlet.unlinkAll = _originals.unlinkAll;
+    nebula.put = _originals.put;
+    nebula.upsert = _originals.upsert;
+    nebula.update = _originals.update;
+    nebula.delete = _originals.delete;
+    nebula.link = _originals.link;
+    nebula.unlink = _originals.unlink;
+    nebula.unlinkAll = _originals.unlinkAll;
   }
 
   return {

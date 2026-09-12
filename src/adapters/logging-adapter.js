@@ -4,7 +4,7 @@
  * Contrato: adapters/logging-adapter.spec.md v0.1.0
  * Implementation version: 0.1.0
  *
- * Observa mutaciones en Graphlet y/o transiciones en Pulsar,
+ * Observa mutaciones en nebula y/o transiciones en Pulsar,
  * emitiendo eventos estructurados a un sink pluggable. Estrictamente
  * read-only: no modifica el comportamiento de las primitivas observadas.
  *
@@ -12,11 +12,11 @@
  *   import { createLoggingAdapter } from './adapters/logging-adapter.js';
  *
  *   // Observar ambas primitivas con sink default (console)
- *   const log = createLoggingAdapter({ graphlet, pulsar });
+ *   const log = createLoggingAdapter({ nebula, pulsar });
  *
  *   // Sink custom, con filtro
  *   const log = createLoggingAdapter(
- *     { graphlet },
+ *     { nebula },
  *     {
  *       sink: (event) => myBuffer.push(event),
  *       filter: (event) => event.op !== 'link',
@@ -31,7 +31,7 @@
 // UTILIDADES PRIVADAS
 // ============================================
 
-function _isGraphletInstance(value) {
+function _isnebulaInstance(value) {
   return (
     value !== null &&
     typeof value === 'object' &&
@@ -86,7 +86,7 @@ function _summarizeArg(arg, maxLen = 80) {
 function _formatEvent(event) {
   const argsPart = event.args.map(a => _summarizeArg(a)).join(', ');
   // Padding fijo para 'source' de modo que las líneas se alineen visualmente
-  // en el console. 'graphlet' es 8 chars, 'pulsar' es 6.
+  // en el console. 'nebula' es 8 chars, 'pulsar' es 6.
   const sourcePadded = event.source.padEnd(8);
   return `[${_formatTimestamp()}] [${sourcePadded}] ${event.op}(${argsPart})`;
 }
@@ -103,7 +103,7 @@ function _defaultSink(event) {
  * Crea un Logging Adapter.
  *
  * @param {Object} context
- * @param {GraphletInstance} [context.graphlet] - Graphlet a observar (opcional).
+ * @param {nebulaInstance} [context.nebula] - nebula a observar (opcional).
  * @param {PulsarInstance} [context.pulsar] - Pulsar a observar (opcional).
  *   Al menos uno debe estar presente.
  * @param {Object} [options]
@@ -119,18 +119,18 @@ export function createLoggingAdapter(context, options = {}) {
     throw new TypeError('[LoggingAdapter] context debe ser un objeto');
   }
 
-  const hasGraphlet = context.graphlet !== undefined;
+  const hasnebula = context.nebula !== undefined;
   const hasPulsar = context.pulsar !== undefined;
 
-  if (!hasGraphlet && !hasPulsar) {
+  if (!hasnebula && !hasPulsar) {
     throw new TypeError(
-      '[LoggingAdapter] al menos context.graphlet o context.pulsar debe estar presente'
+      '[LoggingAdapter] al menos context.nebula o context.pulsar debe estar presente'
     );
   }
 
-  if (hasGraphlet && !_isGraphletInstance(context.graphlet)) {
+  if (hasnebula && !_isnebulaInstance(context.nebula)) {
     throw new TypeError(
-      '[LoggingAdapter] context.graphlet debe ser una instancia de Graphlet'
+      '[LoggingAdapter] context.nebula debe ser una instancia de nebula'
     );
   }
 
@@ -151,18 +151,18 @@ export function createLoggingAdapter(context, options = {}) {
     throw new TypeError('[LoggingAdapter] options.filter debe ser una función');
   }
 
-  const { graphlet, pulsar } = context;
+  const { nebula, pulsar } = context;
 
   // ---------- Estado interno ----------
   let _destroyed = false;
-  const _graphletOriginals = hasGraphlet ? {
-    put: graphlet.put,
-    upsert: graphlet.upsert,
-    update: graphlet.update,
-    delete: graphlet.delete,
-    link: graphlet.link,
-    unlink: graphlet.unlink,
-    unlinkAll: graphlet.unlinkAll,
+  const _nebulaOriginals = hasnebula ? {
+    put: nebula.put,
+    upsert: nebula.upsert,
+    update: nebula.update,
+    delete: nebula.delete,
+    link: nebula.link,
+    unlink: nebula.unlink,
+    unlinkAll: nebula.unlinkAll,
   } : null;
 
   const _pulsarOriginals = hasPulsar ? {
@@ -209,12 +209,12 @@ export function createLoggingAdapter(context, options = {}) {
   }
 
   // ============================================
-  // HELPERS PARA SET SEMANTICS DETECTION (Graphlet)
+  // HELPERS PARA SET SEMANTICS DETECTION (nebula)
   // ============================================
 
   function _snapshotLinksOf(id) {
-    if (!hasGraphlet) return null;
-    const entity = graphlet.get(id);
+    if (!hasnebula) return null;
+    const entity = nebula.get(id);
     if (!entity || !entity.links) return null;
     const out = {};
     for (const [rel, targets] of Object.entries(entity.links)) {
@@ -244,64 +244,64 @@ export function createLoggingAdapter(context, options = {}) {
   }
 
   // ============================================
-  // WRAPPERS DE GRAPHLET
+  // WRAPPERS DE nebula
   // ============================================
 
-  if (hasGraphlet) {
-    graphlet.put = function(id, properties) {
-      const result = _graphletOriginals.put.call(graphlet, id, properties);
-      _emit('graphlet', 'put', [id, properties]);
+  if (hasnebula) {
+    nebula.put = function(id, properties) {
+      const result = _nebulaOriginals.put.call(nebula, id, properties);
+      _emit('nebula', 'put', [id, properties]);
       return result;
     };
 
-    graphlet.upsert = function(id, properties) {
-      const result = _graphletOriginals.upsert.call(graphlet, id, properties);
-      _emit('graphlet', 'upsert', [id, properties]);
+    nebula.upsert = function(id, properties) {
+      const result = _nebulaOriginals.upsert.call(nebula, id, properties);
+      _emit('nebula', 'upsert', [id, properties]);
       return result;
     };
 
-    graphlet.update = function(id, patch) {
-      const result = _graphletOriginals.update.call(graphlet, id, patch);
-      _emit('graphlet', 'update', [id, patch]);
+    nebula.update = function(id, patch) {
+      const result = _nebulaOriginals.update.call(nebula, id, patch);
+      _emit('nebula', 'update', [id, patch]);
       return result;
     };
 
-    graphlet.delete = function(id) {
-      const result = _graphletOriginals.delete.call(graphlet, id);
-      _emit('graphlet', 'delete', [id]);
+    nebula.delete = function(id) {
+      const result = _nebulaOriginals.delete.call(nebula, id);
+      _emit('nebula', 'delete', [id]);
       return result;
     };
 
-    graphlet.link = function(sourceId, relation, targetId) {
+    nebula.link = function(sourceId, relation, targetId) {
       const before = _snapshotLinksOf(sourceId);
-      const result = _graphletOriginals.link.call(graphlet, sourceId, relation, targetId);
+      const result = _nebulaOriginals.link.call(nebula, sourceId, relation, targetId);
       const after = _snapshotLinksOf(sourceId);
 
-      // Set semantics: no emitir si fue no-op de Graphlet
+      // Set semantics: no emitir si fue no-op de nebula
       if (!_sameShallowLinks(before, after)) {
-        _emit('graphlet', 'link', [sourceId, relation, targetId]);
+        _emit('nebula', 'link', [sourceId, relation, targetId]);
       }
       return result;
     };
 
-    graphlet.unlink = function(sourceId, relation, targetId) {
+    nebula.unlink = function(sourceId, relation, targetId) {
       const before = _snapshotLinksOf(sourceId);
-      const result = _graphletOriginals.unlink.call(graphlet, sourceId, relation, targetId);
+      const result = _nebulaOriginals.unlink.call(nebula, sourceId, relation, targetId);
       const after = _snapshotLinksOf(sourceId);
 
       if (!_sameShallowLinks(before, after)) {
-        _emit('graphlet', 'unlink', [sourceId, relation, targetId]);
+        _emit('nebula', 'unlink', [sourceId, relation, targetId]);
       }
       return result;
     };
 
-    graphlet.unlinkAll = function(sourceId, relation) {
+    nebula.unlinkAll = function(sourceId, relation) {
       const before = _snapshotLinksOf(sourceId);
-      const result = _graphletOriginals.unlinkAll.call(graphlet, sourceId, relation);
+      const result = _nebulaOriginals.unlinkAll.call(nebula, sourceId, relation);
       const after = _snapshotLinksOf(sourceId);
 
       if (!_sameShallowLinks(before, after)) {
-        _emit('graphlet', 'unlinkAll', [sourceId, relation]);
+        _emit('nebula', 'unlinkAll', [sourceId, relation]);
       }
       return result;
     };
@@ -327,14 +327,14 @@ export function createLoggingAdapter(context, options = {}) {
     if (_destroyed) return;
     _destroyed = true;
 
-    if (hasGraphlet && _graphletOriginals) {
-      graphlet.put = _graphletOriginals.put;
-      graphlet.upsert = _graphletOriginals.upsert;
-      graphlet.update = _graphletOriginals.update;
-      graphlet.delete = _graphletOriginals.delete;
-      graphlet.link = _graphletOriginals.link;
-      graphlet.unlink = _graphletOriginals.unlink;
-      graphlet.unlinkAll = _graphletOriginals.unlinkAll;
+    if (hasnebula && _nebulaOriginals) {
+      nebula.put = _nebulaOriginals.put;
+      nebula.upsert = _nebulaOriginals.upsert;
+      nebula.update = _nebulaOriginals.update;
+      nebula.delete = _nebulaOriginals.delete;
+      nebula.link = _nebulaOriginals.link;
+      nebula.unlink = _nebulaOriginals.unlink;
+      nebula.unlinkAll = _nebulaOriginals.unlinkAll;
     }
 
     if (hasPulsar && _pulsarOriginals) {

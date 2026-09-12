@@ -33,11 +33,11 @@ function storageMock() {
  * evaluaciones del selector frente a repintados efectivos.
  */
 function escenario({ conversaciones, mutacionesAjenas, conEquality }) {
-  const { graphlet, pulsar } = crearPrimitivas();
-  const datos = arrancarDatos({ graphlet, pulsar, storage: storageMock(), clave: 't' });
+  const { nebula, pulsar } = crearPrimitivas();
+  const datos = arrancarDatos({ nebula, pulsar, storage: storageMock(), clave: 't' });
 
   for (let i = 0; i < conversaciones; i++) {
-    modelo.crearConversacion(graphlet, { titulo: `Conversación ${i}` });
+    modelo.crearConversacion(nebula, { titulo: `Conversación ${i}` });
   }
 
   let evaluaciones = 0;
@@ -56,7 +56,7 @@ function escenario({ conversaciones, mutacionesAjenas, conEquality }) {
   // Mutaciones sobre entidades que NO son conversaciones: mensajes, que es
   // exactamente lo que produce el streaming de la Escena 1.3.
   for (let i = 0; i < mutacionesAjenas; i++) {
-    graphlet.put(`message:${i}`, { texto: `token ${i}` });
+    nebula.put(`message:${i}`, { texto: `token ${i}` });
   }
 
   datos.destruir({ guardarPendiente: false });

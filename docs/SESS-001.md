@@ -10,15 +10,15 @@
 | **mantenedor**      | `Equipo de desarrollo (NexusJS)`                                                                                                                             |
 | **depende\_de**     | `SESS-001` (Reestructuración, Optimización de Imports y Limpieza de Dependencias)                                                                            |
 | **habilita**        | `L-001` (Logbook de Arquitectura NexusJS)                                                                                                                    |
-| **gobierna**        | `Arquitectura del ecosistema NexusJS: PulsarJS, GraphletJS, ChunkletJS, BinderJS, VoyajerJS, Adapters y Command Layer`                                       |
-| **rag\_tags**       | `sesión, arquitectura, diseño, primitivos, pulsar, graphlet, chunklet, binder, voyajer, adapters, commands, editor, flujo, browser-first, zero-dependencies` |
+| **gobierna**        | `Arquitectura del ecosistema NexusJS: PulsarJS, nebulaJS, ChunkletJS, BinderJS, VoyajerJS, Adapters y Command Layer`                                       |
+| **rag\_tags**       | `sesión, arquitectura, diseño, primitivos, pulsar, nebula, chunklet, binder, voyajer, adapters, commands, editor, flujo, browser-first, zero-dependencies` |
 
 * * *
 
 ## 1. Participantes y Contexto[](#1-participantes-y-contexto)
 
 - **Participantes:** Equipo de desarrollo (sesión asíncrona, documentada con el asistente).
-- **Contexto:** Tras la reestructuración de archivos y optimización de imports (SESS-001), se procedió a definir la arquitectura completa del ecosistema NexusJS. Se partió del análisis de los contratos de especificación para cinco primitivos (PulsarJS, GraphletJS, ChunkletJS, BinderJS, VoyajerJS) y dos capas de orquestación (Command Layer y Adapter Layer). El objetivo es construir un reemplazo browser-first para drawflow en un editor de diagramas de flujo, sin dependencias de Node.js ni toolchains de build.
+- **Contexto:** Tras la reestructuración de archivos y optimización de imports (SESS-001), se procedió a definir la arquitectura completa del ecosistema NexusJS. Se partió del análisis de los contratos de especificación para cinco primitivos (PulsarJS, nebulaJS, ChunkletJS, BinderJS, VoyajerJS) y dos capas de orquestación (Command Layer y Adapter Layer). El objetivo es construir un reemplazo browser-first para drawflow en un editor de diagramas de flujo, sin dependencias de Node.js ni toolchains de build.
 - **Contexto adicional:** El usuario proporcionó ocho documentos de especificación (Nexus Contract, Command Layer, Adapter Layer, y cinco por primitivo) más una sesión de revisión arquitectónica (`Session_2026-08-28_NexusJS_architectural_review.md`). Todos los documentos estaban marcados como `Design Contract (pre-implementation)`.
 
 * * *
@@ -36,18 +36,18 @@
 
 | Decisión                                                     | Detalle                                                                                                                                                                                             | Justificación                                                                                                                                                                                                                |
 |--------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **1. Confirmar los cinco primitivos como independientes**    | PulsarJS (estado reactivo), GraphletJS (modelo semántico), ChunkletJS (DOM behaviors), BinderJS (form binding), VoyajerJS (URL routing).                                                            | Cada uno tiene una responsabilidad única y no se solapan. Binder "llena lo que Chunklet renuncia" (state management, binding, expression parsing). Voyajer es una responsabilidad especializada de sincronización URL↔store. |
-| **2. Establecer la jerarquía de dependencias estricta**      | Nivel 0: GraphletJS (sin deps). Nivel 1: PulsarJS (sin deps). Nivel 2: BinderJS/VoyajerJS (dependen de Pulsar). Nivel 3: ChunkletJS (consume cualquiera). Nivel 4: Adapters. Nivel 5: Commands/App. | Previene fugas arquitectónicas y asegura que cada primitivo es reemplazable.                                                                                                                                                 |
+| **1. Confirmar los cinco primitivos como independientes**    | PulsarJS (estado reactivo), nebulaJS (modelo semántico), ChunkletJS (DOM behaviors), BinderJS (form binding), VoyajerJS (URL routing).                                                            | Cada uno tiene una responsabilidad única y no se solapan. Binder "llena lo que Chunklet renuncia" (state management, binding, expression parsing). Voyajer es una responsabilidad especializada de sincronización URL↔store. |
+| **2. Establecer la jerarquía de dependencias estricta**      | Nivel 0: nebulaJS (sin deps). Nivel 1: PulsarJS (sin deps). Nivel 2: BinderJS/VoyajerJS (dependen de Pulsar). Nivel 3: ChunkletJS (consume cualquiera). Nivel 4: Adapters. Nivel 5: Commands/App. | Previene fugas arquitectónicas y asegura que cada primitivo es reemplazable.                                                                                                                                                 |
 | **3. Promover `subscribeSelector` a core de PulsarJS**       | Acepta función selector o string path, con equality configurable.                                                                                                                                   | El editor emite \~60 updates/segundo durante drag; notificar a todos los listeners es inviable. `subscribeSelector` es un requisito de hot path, no un plugin opcional.                                                      |
 | **4. Definir namespacing del state tree en Pulsar**          | Keys reservadas: `route` (Voyajer), `form` (Binder), `entities` (adapters), `ui` (app), `net` (app).                                                                                                | Evita colisiones entre productores, hace la propiedad del estado trazable, facilita refactoring.                                                                                                                             |
-| **5. Command Layer como patrón, no librería**                | Commands son funciones puras que reciben input y contexto (`{ graphlet, pulsar, voyajer, binder }`).                                                                                                | Aislar lógica de negocio de UI, hacerla testeable, y mantener los primitivos libres de orquestación.                                                                                                                         |
+| **5. Command Layer como patrón, no librería**                | Commands son funciones puras que reciben input y contexto (`{ nebula, pulsar, voyajer, binder }`).                                                                                                | Aislar lógica de negocio de UI, hacerla testeable, y mantener los primitivos libres de orquestación.                                                                                                                         |
 | **6. Reversible Commands para undo/redo**                    | Patrón `{ apply, revert, label }` para comandos que pueden deshacerse.                                                                                                                              | El editor necesita undo/redo como funcionalidad de primera clase. El history stack lo gestiona la aplicación.                                                                                                                |
-| **7. Adapters como capa opcional**                           | GraphletSync (Graphlet→Pulsar), Hydration (storage→Graphlet+Pulsar), Persistence, EventBridge, UndoRedo.                                                                                            | Automatizan sincronización sin modificar los primitivos. Son opcionales; la app puede usar Commands explícitos.                                                                                                              |
+| **7. Adapters como capa opcional**                           | nebulaSync (nebula→Pulsar), Hydration (storage→nebula+Pulsar), Persistence, EventBridge, UndoRedo.                                                                                            | Automatizan sincronización sin modificar los primitivos. Son opcionales; la app puede usar Commands explícitos.                                                                                                              |
 | **8. Binder como primitivo, no convención sobre Chunklet**   | Binder maneja binding DOM↔Pulsar con validación, submission states, y dynamic panel binding.                                                                                                        | Chunklet renuncia a state management y binding; Binder es el complemento especializado.                                                                                                                                      |
 | **9. Voyajer como primitivo, no función dentro de Chunklet** | Voyajer sincroniza URL↔Pulsar con parse/serialize simétrico.                                                                                                                                        | URL synchronization es una responsabilidad distinta que no debe contaminar otros primitivos.                                                                                                                                 |
 | **10. Zero dependencias runtime**                            | Todos los primitivos son ES Modules, browser-first, sin Node APIs.                                                                                                                                  | Permite carga directa desde CDN, sin build steps, y funciona offline.                                                                                                                                                        |
 | **11. Multi-behavior en Chunklet**                           | `data-chunk="draggable selectable resizable"` monta múltiples behaviors independientes en un elemento.                                                                                              | Un nodo del editor es simultáneamente draggable, selectable, resizable, y tiene context menu. Forzar un behavior por elemento crearía "super-behaviors" artificiales.                                                        |
-| **12. Graphlet con tres semánticas de mutación**             | `put` (replace), `upsert` (merge idempotente), `update` (merge estricto, throw si no existe).                                                                                                       | Cada semántica es una decisión deliberada: `put` para snapshot restore, `upsert` para hydration/sync, `update` para fail-fast en operaciones sobre entidades conocidas.                                                      |
+| **12. nebula con tres semánticas de mutación**             | `put` (replace), `upsert` (merge idempotente), `update` (merge estricto, throw si no existe).                                                                                                       | Cada semántica es una decisión deliberada: `put` para snapshot restore, `upsert` para hydration/sync, `update` para fail-fast en operaciones sobre entidades conocidas.                                                      |
 | **13. Editor como caso de uso principal**                    | El editor de diagramas (reemplazo de drawflow) valida la arquitectura. Los requisitos de rendimiento, persistencia, y undo/redo son críticos.                                                       | La arquitectura se diseña para el editor, no como framework general.                                                                                                                                                         |
 
 * * *
@@ -75,13 +75,13 @@ nexus/
 ├── src/
 │   ├── index.js                      # Exportaciones principales
 │   ├── pulsar.js                     # PulsarJS - Estado reactivo
-│   ├── graphlet.js                   # GraphletJS - Modelo semántico
+│   ├── nebula.js                   # nebulaJS - Modelo semántico
 │   ├── chunklet.js                   # ChunkletJS - DOM behaviors
 │   ├── binder.js                     # BinderJS - Form binding
 │   ├── voyajer.js                    # VoyajerJS - URL routing
 │   └── adapters/
 │       ├── index.js                  # Exportaciones de adapters
-│       ├── graphlet-sync.js          # Adapter Graphlet→Pulsar
+│       ├── nebula-sync.js          # Adapter nebula→Pulsar
 │       ├── hydration.js              # Adapter de hidratación
 │       ├── persistence.js            # Adapter de persistencia
 │       ├── event-bridge.js           # Adapter de eventos externos
@@ -118,7 +118,7 @@ nexus/
 │   ├── harness.js                    # Test harness
 │   ├── assert.js                     # Librería de aserciones
 │   ├── pulsar.test.js                # Tests PulsarJS
-│   ├── graphlet.test.js              # Tests GraphletJS
+│   ├── nebula.test.js              # Tests nebulaJS
 │   ├── chunklet.test.js              # Tests ChunkletJS
 │   ├── binder.test.js                # Tests BinderJS
 │   ├── voyajer.test.js               # Tests VoyajerJS
@@ -134,7 +134,7 @@ nexus/
 │   └── contracts/
 │       ├── Nexus_Contract_Specification.md
 │       ├── PulsarJS_Contract_Specification.md
-│       ├── GraphletJS_Contract_Specification.md
+│       ├── nebulaJS_Contract_Specification.md
 │       ├── ChunkletJS_Contract_Specification.md
 │       ├── BinderJS_Contract_Specification.md
 │       ├── VoyajerJS_Contract_Specification.md
@@ -158,7 +158,7 @@ nexus/
            ▼
 ┌─────────────────────────────────────┐
 │         Adapter Layer               │
-│  (GraphletSync, Hydration,         │
+│  (nebulaSync, Hydration,         │
 │   Persistence, EventBridge)        │
 └──────────┬──────────────────────────┘
            │
@@ -183,11 +183,11 @@ nexus/
            │
            ▼
 ┌─────────────────────────────────────┐
-│         GraphletJS (Model)          │
+│         nebulaJS (Model)          │
 │  (Entities, Relationships, Query)   │
 └─────────────────────────────────────┘
 
-Nivel 0: GraphletJS (sin dependencias)
+Nivel 0: nebulaJS (sin dependencias)
 Nivel 1: PulsarJS (sin dependencias)
 Nivel 2: BinderJS, VoyajerJS (dependen de Pulsar)
 Nivel 3: ChunkletJS (consume cualquiera)
@@ -203,14 +203,14 @@ Nivel 5: Application/Commands (orquesta todo)
 
 ```
 
-DOM Event → Chunklet → Command → Graphlet + Pulsar → Chunklet → DOM
+DOM Event → Chunklet → Command → nebula + Pulsar → Chunklet → DOM
 ```
 
 ### 7.2 External Event (System → UI)[](#7-2-external-event-system-ui)
 
 ```
 
-External Event → Command → Graphlet + Pulsar → Chunklet → DOM
+External Event → Command → nebula + Pulsar → Chunklet → DOM
 ```
 
 ### 7.3 Navigation (URL → UI)[](#7-3-navigation-url-ui)
@@ -224,14 +224,14 @@ URL Change → Voyajer → Pulsar → Chunklet → DOM
 
 ```
 
-Form Submit → Binder → Command → Graphlet + Pulsar → Binder + Chunklet → DOM
+Form Submit → Binder → Command → nebula + Pulsar → Binder + Chunklet → DOM
 ```
 
 ### 7.5 Startup Hydration (Storage → Model)[](#7-5-startup-hydration-storage-model)
 
 ```
 
-Storage → Adapter/Command → Graphlet + Pulsar → Chunklet.mount → DOM
+Storage → Adapter/Command → nebula + Pulsar → Chunklet.mount → DOM
 ```
 
 * * *
@@ -245,7 +245,7 @@ Storage → Adapter/Command → Graphlet + Pulsar → Chunklet.mount → DOM
 - **Implementación:** Acepta función selector o string path (con bracket notation para arrays), con equality configurable (default `Object.is`).
 - **Racional:** "N listeners × M setState calls per second" se vuelve prohibitivo para aplicaciones interactivas. Deferir esto a un plugin forzaría a instalar siempre (de facto core) o produciría fallos silenciosos de performance.
 
-### 8.2 GraphletJS: Tres Semánticas de Mutación[](#8-2-graphlet-js-tres-semanticas-de-mutacion)
+### 8.2 nebulaJS: Tres Semánticas de Mutación[](#8-2-nebula-js-tres-semanticas-de-mutacion)
 
 | Método   | Si existe             | Si no existe | Uso                                   |
 |----------|-----------------------|--------------|---------------------------------------|
@@ -270,19 +270,19 @@ Storage → Adapter/Command → Graphlet + Pulsar → Chunklet.mount → DOM
 ```javascript
 
 function moveNodeCommand(input, context) {
-  const { graphlet, pulsar } = context;
+  const { nebula, pulsar } = context;
   const { nodeId, from, to } = input;
 
   return {
     label: `Move node ${nodeId}`,
     apply: () => {
-      graphlet.update(nodeId, { x: to.x, y: to.y });
+      nebula.update(nodeId, { x: to.x, y: to.y });
       pulsar.setState({
         ui: { ...pulsar.getState().ui, lastMovedNode: nodeId }
       });
     },
     revert: () => {
-      graphlet.update(nodeId, { x: from.x, y: from.y });
+      nebula.update(nodeId, { x: from.x, y: from.y });
       pulsar.setState({
         ui: { ...pulsar.getState().ui, lastMovedNode: nodeId }
       });
@@ -296,15 +296,15 @@ function moveNodeCommand(input, context) {
 ```javascript
 
 // Canonical Startup Sequence
-const hydration = createHydration({ graphlet, pulsar }, {
+const hydration = createHydration({ nebula, pulsar }, {
   storage: 'indexedDB',
   key: 'diagram_document',
   targets: {
-    graphlet: async (data, graphlet) => {
+    nebula: async (data, nebula) => {
       for (const [id, record] of Object.entries(data.entities)) {
-        graphlet.upsert(id, record.properties);
+        nebula.upsert(id, record.properties);
         for (const [rel, targets] of Object.entries(record.links || {})) {
-          for (const target of targets) graphlet.link(id, rel, target);
+          for (const target of targets) nebula.link(id, rel, target);
         }
       }
     },
@@ -312,8 +312,8 @@ const hydration = createHydration({ graphlet, pulsar }, {
       pulsar.setState({ ui: data.ui || {} });
     }
   },
-  onEmpty: ({ graphlet }) => {
-    graphlet.put('doc:root', { title: 'Untitled', created: Date.now() });
+  onEmpty: ({ nebula }) => {
+    nebula.put('doc:root', { title: 'Untitled', created: Date.now() });
   }
 });
 
@@ -362,11 +362,11 @@ Chunklet.mount(document.body);
 ## 11. Próximos Pasos (Derivados de la Sesión)[](#11-proximos-pasos-derivados-de-la-sesion)
 
 - **Implementar PulsarJS Core** con `subscribeSelector`, freeze, y skipEqualUpdates.
-- **Implementar GraphletJS Core** con `put`, `upsert`, `update`, `delete`, `link`, `unlink`, `query`.
+- **Implementar nebulaJS Core** con `put`, `upsert`, `update`, `delete`, `link`, `unlink`, `query`.
 - **Implementar ChunkletJS Core** con `define`, `mount`, `unmount`, `observe`, y Context API.
 - **Implementar BinderJS** con bind, unbind, validate, submit, y dynamic panel binding.
 - **Implementar VoyajerJS** con push, replace, sync, y parse/serialize simétrico.
-- **Implementar Adapters** (GraphletSync, Hydration, Persistence).
+- **Implementar Adapters** (nebulaSync, Hydration, Persistence).
 - **Construir el editor de ejemplo** end-to-end (toolbox → canvas → property panel).
 - **Definir tests** para cada primitivo (test harness browser-native).
 - **Establecer benchmarks** de rendimiento (drag simulation, setState con muchos listeners).

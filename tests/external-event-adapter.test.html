@@ -18,7 +18,7 @@
   <div id="output"></div>
 
   <script type="module">
-    import { createGraphlet } from '../src/graphlet.js';
+    import { createnebula } from '../src/nebula.js';
     import { createExternalEventAdapter } from '../src/adapters/external-event-adapter.js';
 
     const output = document.getElementById('output');
@@ -111,14 +111,14 @@
     // ============================================================
     // TEST 1: Sync básico de una mutación entre tab A y tab B
     // ============================================================
-    section('TEST 1: Mutación local en A se aplica al Graphlet de B');
+    section('TEST 1: Mutación local en A se aplica al nebula de B');
 
     {
       const chans = createChannelPair();
-      const gA = createGraphlet();
-      const gB = createGraphlet();
-      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
-      const adB = createExternalEventAdapter({ graphlet: gB }, { channelName: 'x', channel: chans.b });
+      const gA = createnebula();
+      const gB = createnebula();
+      const adA = createExternalEventAdapter({ nebula: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter({ nebula: gB }, { channelName: 'x', channel: chans.b });
 
       gA.put('x:1', { name: 'From A' });
       await flushMicrotasks();
@@ -139,10 +139,10 @@
 
     {
       const chans = createChannelPair();
-      const gA = createGraphlet();
-      const gB = createGraphlet();
-      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
-      const adB = createExternalEventAdapter({ graphlet: gB }, { channelName: 'x', channel: chans.b });
+      const gA = createnebula();
+      const gB = createnebula();
+      const adA = createExternalEventAdapter({ nebula: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter({ nebula: gB }, { channelName: 'x', channel: chans.b });
 
       gA.put('from:a', { origin: 'A' });
       gB.put('from:b', { origin: 'B' });
@@ -164,10 +164,10 @@
 
     {
       const chans = createChannelPair();
-      const gA = createGraphlet();
-      const gB = createGraphlet();
-      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
-      const adB = createExternalEventAdapter({ graphlet: gB }, { channelName: 'x', channel: chans.b });
+      const gA = createnebula();
+      const gB = createnebula();
+      const adA = createExternalEventAdapter({ nebula: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter({ nebula: gB }, { channelName: 'x', channel: chans.b });
 
       // Contamos cuántos posts hace A a la red.
       const postsBefore = chans.a._state.postCount;
@@ -195,10 +195,10 @@
 
     {
       const chans = createChannelPair();
-      const gA = createGraphlet();
-      const gB = createGraphlet();
-      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
-      const adB = createExternalEventAdapter({ graphlet: gB }, { channelName: 'x', channel: chans.b });
+      const gA = createnebula();
+      const gB = createnebula();
+      const adA = createExternalEventAdapter({ nebula: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter({ nebula: gB }, { channelName: 'x', channel: chans.b });
 
       // put
       gA.put('a', { role: 'source' });
@@ -252,8 +252,8 @@
 
     {
       const chans = createChannelPair();
-      const gA = createGraphlet();
-      const gB = createGraphlet();
+      const gA = createnebula();
+      const gB = createnebula();
       gA.put('a', {});
       gA.put('b', {});
       gB.put('a', {});
@@ -261,8 +261,8 @@
       // (sincronizamos manualmente el estado inicial; en la app real
       // esto vendría de Hydration antes de instanciar el adapter)
 
-      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
-      const adB = createExternalEventAdapter({ graphlet: gB }, { channelName: 'x', channel: chans.b });
+      const adA = createExternalEventAdapter({ nebula: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter({ nebula: gB }, { channelName: 'x', channel: chans.b });
 
       const postsBase = chans.a._state.postCount;
 
@@ -290,10 +290,10 @@
 
     {
       const chans = createChannelPair();
-      const gA = createGraphlet();
-      const gB = createGraphlet();
-      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
-      const adB = createExternalEventAdapter({ graphlet: gB }, { channelName: 'x', channel: chans.b });
+      const gA = createnebula();
+      const gB = createnebula();
+      const adA = createExternalEventAdapter({ nebula: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter({ nebula: gB }, { channelName: 'x', channel: chans.b });
 
       // Simular tráfico ajeno: usamos chans.a.postMessage con otro type.
       // Como es "de A", debería llegar a B y ser ignorado por su handler.
@@ -301,8 +301,8 @@
       chans.a.postMessage({ hello: 'world' });
       chans.a.postMessage(null);
       chans.a.postMessage('string message');
-      chans.a.postMessage({ type: 'graphlet-mutation' });   // falta origin/op/args
-      chans.a.postMessage({ type: 'graphlet-mutation', origin: 'x', op: 'put' }); // falta args
+      chans.a.postMessage({ type: 'nebula-mutation' });   // falta origin/op/args
+      chans.a.postMessage({ type: 'nebula-mutation', origin: 'x', op: 'put' }); // falta args
       await flushMicrotasks();
 
       assert(gB.allIds().length === 0, 'B ignoró todos los mensajes malformados o ajenos');
@@ -324,13 +324,13 @@
 
     {
       const chans = createChannelPair();
-      const gA = createGraphlet();
-      const gB = createGraphlet();
+      const gA = createnebula();
+      const gB = createnebula();
       const errorsB = [];
 
-      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
+      const adA = createExternalEventAdapter({ nebula: gA }, { channelName: 'x', channel: chans.a });
       const adB = createExternalEventAdapter(
-        { graphlet: gB },
+        { nebula: gB },
         {
           channelName: 'x',
           channel: chans.b,
@@ -361,12 +361,12 @@
       // el evento remoto para probar el error handling. Es lo que hacemos:
 
       const chans2 = createChannelPair();
-      const gB2 = createGraphlet();
+      const gB2 = createnebula();
       gB2.put('a', {});
       // gB2 NO tiene 'b'
       const errorsB2 = [];
       const adB2 = createExternalEventAdapter(
-        { graphlet: gB2 },
+        { nebula: gB2 },
         {
           channelName: 'x',
           channel: chans2.b,
@@ -376,7 +376,7 @@
 
       // Enviar evento manual desde el otro endpoint intentando link a target inexistente
       chans2.a.postMessage({
-        type: 'graphlet-mutation',
+        type: 'nebula-mutation',
         origin: 'someone-else',
         op: 'link',
         args: ['a', 'rel', 'ghost'],
@@ -391,7 +391,7 @@
 
       // Confirmar que el listener sigue vivo tras el fallo
       chans2.a.postMessage({
-        type: 'graphlet-mutation',
+        type: 'nebula-mutation',
         origin: 'someone-else',
         op: 'put',
         args: ['recovered', { ok: true }],
@@ -411,12 +411,12 @@
 
     {
       const chans = createChannelPair();
-      const gA = createGraphlet();
-      const gB = createGraphlet();
+      const gA = createnebula();
+      const gB = createnebula();
       const originalPutA = gA.put;
 
-      const adA = createExternalEventAdapter({ graphlet: gA }, { channelName: 'x', channel: chans.a });
-      const adB = createExternalEventAdapter({ graphlet: gB }, { channelName: 'x', channel: chans.b });
+      const adA = createExternalEventAdapter({ nebula: gA }, { channelName: 'x', channel: chans.a });
+      const adB = createExternalEventAdapter({ nebula: gB }, { channelName: 'x', channel: chans.b });
 
       assert(gA.put !== originalPutA, 'put está wrappeado tras instanciar');
       adA.destroy();
@@ -442,9 +442,9 @@
     {
       // Canal inyectado: no se cierra
       const chans = createChannelPair();
-      const gA = createGraphlet();
+      const gA = createnebula();
       const adA = createExternalEventAdapter(
-        { graphlet: gA },
+        { nebula: gA },
         { channelName: 'x', channel: chans.a }
       );
       assert(!chans.a._state.closed, 'canal inyectado: no cerrado antes de destroy');
@@ -460,9 +460,9 @@
 
     {
       const chans = createChannelPair();
-      const gA = createGraphlet();
+      const gA = createnebula();
       const adA = createExternalEventAdapter(
-        { graphlet: gA },
+        { nebula: gA },
         { channelName: 'x', channel: chans.a }
       );
 
@@ -482,18 +482,18 @@
     {
       const chans = createChannelPair();
 
-      // 11.1: context sin graphlet
+      // 11.1: context sin nebula
       let t = false;
       try {
         createExternalEventAdapter({}, { channelName: 'x', channel: chans.a });
       } catch (e) { t = true; }
-      assert(t, '11.1: context sin graphlet lanza TypeError');
+      assert(t, '11.1: context sin nebula lanza TypeError');
 
       // 11.2: falta channelName
       t = false;
       try {
         createExternalEventAdapter(
-          { graphlet: createGraphlet() },
+          { nebula: createnebula() },
           { channel: chans.a }
         );
       } catch (e) { t = true; }
@@ -503,7 +503,7 @@
       t = false;
       try {
         createExternalEventAdapter(
-          { graphlet: createGraphlet() },
+          { nebula: createnebula() },
           { channelName: '  ', channel: chans.a }
         );
       } catch (e) { t = true; }
@@ -513,7 +513,7 @@
       t = false;
       try {
         createExternalEventAdapter(
-          { graphlet: createGraphlet() },
+          { nebula: createnebula() },
           { channelName: 'x', channel: { foo: 'bar' } }
         );
       } catch (e) { t = true; }
@@ -530,11 +530,11 @@
       const chans2 = createChannelPair();
 
       const adA1 = createExternalEventAdapter(
-        { graphlet: createGraphlet() },
+        { nebula: createnebula() },
         { channelName: 'x', channel: chans.a }
       );
       const adA2 = createExternalEventAdapter(
-        { graphlet: createGraphlet() },
+        { nebula: createnebula() },
         { channelName: 'x', channel: chans2.a }
       );
 

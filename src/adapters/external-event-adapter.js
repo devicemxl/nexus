@@ -4,7 +4,7 @@
  * Contrato: adapters/external-event-adapter.spec.md v0.1.0
  * Implementation version: 0.1.0
  *
- * Sincronización bidireccional cross-tab de mutaciones de Graphlet vía
+ * Sincronización bidireccional cross-tab de mutaciones de nebula vía
  * BroadcastChannel, con anti-eco explícito por origin+original.
  *
  * Limitaciones documentadas (mini-spec §4.1, §4.2, §6):
@@ -16,7 +16,7 @@
  * Uso:
  *   import { createExternalEventAdapter } from './adapters/external-event-adapter.js';
  *   const ev = createExternalEventAdapter(
- *     { graphlet },
+ *     { nebula },
  *     { channelName: 'my-app-sync' }
  *   );
  *   // ... vida útil ...
@@ -27,7 +27,7 @@
 // UTILIDADES PRIVADAS
 // ============================================
 
-function _isGraphletInstance(value) {
+function _isnebulaInstance(value) {
   return (
     value !== null &&
     typeof value === 'object' &&
@@ -58,7 +58,7 @@ function _isValidMutationEvent(payload) {
   return (
     payload !== null &&
     typeof payload === 'object' &&
-    payload.type === 'graphlet-mutation' &&
+    payload.type === 'nebula-mutation' &&
     typeof payload.origin === 'string' &&
     typeof payload.op === 'string' &&
     Array.isArray(payload.args)
@@ -87,7 +87,7 @@ function _generateOrigin() {
  * Crea un External Event Adapter (BroadcastChannel-based).
  *
  * @param {Object} context
- * @param {GraphletInstance} context.graphlet - Graphlet a observar y actualizar.
+ * @param {nebulaInstance} context.nebula - nebula a observar y actualizar.
  * @param {Object} options
  * @param {string} options.channelName - Nombre del BroadcastChannel. Requerido.
  * @param {BroadcastChannel} [options.channel] - Canal preexistente inyectable (útil en tests).
@@ -99,9 +99,9 @@ export function createExternalEventAdapter(context, options = {}) {
   if (!context || typeof context !== 'object') {
     throw new TypeError('[ExternalEventAdapter] context debe ser un objeto');
   }
-  if (!_isGraphletInstance(context.graphlet)) {
+  if (!_isnebulaInstance(context.nebula)) {
     throw new TypeError(
-      '[ExternalEventAdapter] context.graphlet debe ser una instancia de Graphlet'
+      '[ExternalEventAdapter] context.nebula debe ser una instancia de nebula'
     );
   }
 
@@ -143,18 +143,18 @@ export function createExternalEventAdapter(context, options = {}) {
         );
       };
 
-  const { graphlet } = context;
+  const { nebula } = context;
   const origin = _generateOrigin();
 
   // ---------- Estado interno ----------
   const _originals = {
-    put: graphlet.put,
-    upsert: graphlet.upsert,
-    update: graphlet.update,
-    delete: graphlet.delete,
-    link: graphlet.link,
-    unlink: graphlet.unlink,
-    unlinkAll: graphlet.unlinkAll,
+    put: nebula.put,
+    upsert: nebula.upsert,
+    update: nebula.update,
+    delete: nebula.delete,
+    link: nebula.link,
+    unlink: nebula.unlink,
+    unlinkAll: nebula.unlinkAll,
   };
 
   let _destroyed = false;
@@ -166,7 +166,7 @@ export function createExternalEventAdapter(context, options = {}) {
   function _broadcast(op, args) {
     if (_destroyed) return;
     const event = {
-      type: 'graphlet-mutation',
+      type: 'nebula-mutation',
       origin: origin,
       op: op,
       args: args,
@@ -189,7 +189,7 @@ export function createExternalEventAdapter(context, options = {}) {
   // Reutiliza el patrón de Bridge y Persistence.
 
   function _snapshotLinksOf(id) {
-    const entity = graphlet.get(id);
+    const entity = nebula.get(id);
     if (!entity || !entity.links) return null;
     const out = {};
     for (const [rel, targets] of Object.entries(entity.links)) {
@@ -222,39 +222,39 @@ export function createExternalEventAdapter(context, options = {}) {
   // WRAPPERS DE MUTACIÓN (outbound)
   // ============================================
 
-  graphlet.put = function(id, properties) {
-    if (_destroyed) return _originals.put.call(graphlet, id, properties);
-    const result = _originals.put.call(graphlet, id, properties);
+  nebula.put = function(id, properties) {
+    if (_destroyed) return _originals.put.call(nebula, id, properties);
+    const result = _originals.put.call(nebula, id, properties);
     _broadcast('put', [id, properties]);
     return result;
   };
 
-  graphlet.upsert = function(id, properties) {
-    if (_destroyed) return _originals.upsert.call(graphlet, id, properties);
-    const result = _originals.upsert.call(graphlet, id, properties);
+  nebula.upsert = function(id, properties) {
+    if (_destroyed) return _originals.upsert.call(nebula, id, properties);
+    const result = _originals.upsert.call(nebula, id, properties);
     _broadcast('upsert', [id, properties]);
     return result;
   };
 
-  graphlet.update = function(id, patch) {
-    if (_destroyed) return _originals.update.call(graphlet, id, patch);
-    const result = _originals.update.call(graphlet, id, patch);
+  nebula.update = function(id, patch) {
+    if (_destroyed) return _originals.update.call(nebula, id, patch);
+    const result = _originals.update.call(nebula, id, patch);
     _broadcast('update', [id, patch]);
     return result;
   };
 
-  graphlet.delete = function(id) {
-    if (_destroyed) return _originals.delete.call(graphlet, id);
-    const result = _originals.delete.call(graphlet, id);
+  nebula.delete = function(id) {
+    if (_destroyed) return _originals.delete.call(nebula, id);
+    const result = _originals.delete.call(nebula, id);
     _broadcast('delete', [id]);
     return result;
   };
 
-  graphlet.link = function(sourceId, relation, targetId) {
-    if (_destroyed) return _originals.link.call(graphlet, sourceId, relation, targetId);
+  nebula.link = function(sourceId, relation, targetId) {
+    if (_destroyed) return _originals.link.call(nebula, sourceId, relation, targetId);
 
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.link.call(graphlet, sourceId, relation, targetId);
+    const result = _originals.link.call(nebula, sourceId, relation, targetId);
     const after = _snapshotLinksOf(sourceId);
 
     if (!_sameShallowLinks(before, after)) {
@@ -263,11 +263,11 @@ export function createExternalEventAdapter(context, options = {}) {
     return result;
   };
 
-  graphlet.unlink = function(sourceId, relation, targetId) {
-    if (_destroyed) return _originals.unlink.call(graphlet, sourceId, relation, targetId);
+  nebula.unlink = function(sourceId, relation, targetId) {
+    if (_destroyed) return _originals.unlink.call(nebula, sourceId, relation, targetId);
 
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.unlink.call(graphlet, sourceId, relation, targetId);
+    const result = _originals.unlink.call(nebula, sourceId, relation, targetId);
     const after = _snapshotLinksOf(sourceId);
 
     if (!_sameShallowLinks(before, after)) {
@@ -276,11 +276,11 @@ export function createExternalEventAdapter(context, options = {}) {
     return result;
   };
 
-  graphlet.unlinkAll = function(sourceId, relation) {
-    if (_destroyed) return _originals.unlinkAll.call(graphlet, sourceId, relation);
+  nebula.unlinkAll = function(sourceId, relation) {
+    if (_destroyed) return _originals.unlinkAll.call(nebula, sourceId, relation);
 
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.unlinkAll.call(graphlet, sourceId, relation);
+    const result = _originals.unlinkAll.call(nebula, sourceId, relation);
     const after = _snapshotLinksOf(sourceId);
 
     if (!_sameShallowLinks(before, after)) {
@@ -320,7 +320,7 @@ export function createExternalEventAdapter(context, options = {}) {
     // mecanismo primario de anti-eco: si aplicáramos vía el wrapped,
     // re-broadcastearíamos y crearíamos un loop.
     try {
-      _originals[payload.op].apply(graphlet, payload.args);
+      _originals[payload.op].apply(nebula, payload.args);
     } catch (error) {
       onRemoteError(error, payload);
     }
@@ -337,13 +337,13 @@ export function createExternalEventAdapter(context, options = {}) {
     _destroyed = true;
 
     // Restaurar métodos originales
-    graphlet.put = _originals.put;
-    graphlet.upsert = _originals.upsert;
-    graphlet.update = _originals.update;
-    graphlet.delete = _originals.delete;
-    graphlet.link = _originals.link;
-    graphlet.unlink = _originals.unlink;
-    graphlet.unlinkAll = _originals.unlinkAll;
+    nebula.put = _originals.put;
+    nebula.upsert = _originals.upsert;
+    nebula.update = _originals.update;
+    nebula.delete = _originals.delete;
+    nebula.link = _originals.link;
+    nebula.unlink = _originals.unlink;
+    nebula.unlinkAll = _originals.unlinkAll;
 
     // Desconectar listener
     channel.removeEventListener('message', _handleMessage);

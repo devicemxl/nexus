@@ -1,7 +1,7 @@
 /**
- * Graphlet ↔ Pulsar Bridge (implementación inicial, snapshot-based)
+ * nebula ↔ Pulsar Bridge (implementación inicial, snapshot-based)
  *
- * Contrato: adapters/graphlet-pulsar-bridge.spec.md v0.1.0
+ * Contrato: adapters/nebula-pulsar-bridge.spec.md v0.1.0
  * Implementation version: 0.1.0
  * Status: initial (snapshot-based, NOT the reactive per-entity version)
  *
@@ -11,9 +11,9 @@
  * La versión reactiva por-entidad queda diferida (ver §7 de la mini-spec).
  *
  * Uso:
- *   import { createGraphletPulsarBridge } from './adapters/graphlet-pulsar-bridge.js';
- *   const bridge = createGraphletPulsarBridge(
- *     { graphlet, pulsar },
+ *   import { createnebulaPulsarBridge } from './adapters/nebula-pulsar-bridge.js';
+ *   const bridge = createnebulaPulsarBridge(
+ *     { nebula, pulsar },
  *     { path: 'entities' }
  *   );
  *   // ... vida útil de la aplicación ...
@@ -53,7 +53,7 @@ function _setByPath(obj, path, value) {
   };
 }
 
-function _isGraphletInstance(value) {
+function _isnebulaInstance(value) {
   return (
     value !== null &&
     typeof value === 'object' &&
@@ -83,10 +83,10 @@ function _isPulsarInstance(value) {
 // ============================================
 
 /**
- * Crea un bridge Graphlet↔Pulsar.
+ * Crea un bridge nebula↔Pulsar.
  *
  * @param {Object} context
- * @param {GraphletInstance} context.graphlet - Instancia Graphlet a observar.
+ * @param {nebulaInstance} context.nebula - Instancia nebula a observar.
  * @param {PulsarInstance} context.pulsar - Instancia Pulsar donde proyectar.
  * @param {Object} [options]
  * @param {string} [options.path='entities'] - Ruta en Pulsar donde escribir.
@@ -95,31 +95,31 @@ function _isPulsarInstance(value) {
  *   entidades existentes al instanciar.
  * @returns {{destroy: () => void}}
  */
-export function createGraphletPulsarBridge(context, options = {}) {
+export function createnebulaPulsarBridge(context, options = {}) {
   // Validación del context
   if (!context || typeof context !== 'object') {
-    throw new TypeError('[GraphletPulsarBridge] context debe ser un objeto');
+    throw new TypeError('[nebulaPulsarBridge] context debe ser un objeto');
   }
-  if (!_isGraphletInstance(context.graphlet)) {
-    throw new TypeError('[GraphletPulsarBridge] context.graphlet debe ser una instancia de Graphlet');
+  if (!_isnebulaInstance(context.nebula)) {
+    throw new TypeError('[nebulaPulsarBridge] context.nebula debe ser una instancia de nebula');
   }
   if (!_isPulsarInstance(context.pulsar)) {
-    throw new TypeError('[GraphletPulsarBridge] context.pulsar debe ser una instancia de Pulsar');
+    throw new TypeError('[nebulaPulsarBridge] context.pulsar debe ser una instancia de Pulsar');
   }
 
-  const { graphlet, pulsar } = context;
+  const { nebula, pulsar } = context;
   const path = (options.path && typeof options.path === 'string') ? options.path : 'entities';
   const skipInitialSync = options.skipInitialSync === true;
 
   // Guardar referencias a los métodos originales para restaurar en destroy.
   const _originals = {
-    put: graphlet.put,
-    upsert: graphlet.upsert,
-    update: graphlet.update,
-    delete: graphlet.delete,
-    link: graphlet.link,
-    unlink: graphlet.unlink,
-    unlinkAll: graphlet.unlinkAll,
+    put: nebula.put,
+    upsert: nebula.upsert,
+    update: nebula.update,
+    delete: nebula.delete,
+    link: nebula.link,
+    unlink: nebula.unlink,
+    unlinkAll: nebula.unlinkAll,
   };
 
   let _destroyed = false;
@@ -129,7 +129,7 @@ export function createGraphletPulsarBridge(context, options = {}) {
   // ============================================
 
   /**
-   * Re-proyecta TODAS las entidades de Graphlet en Pulsar bajo `path`.
+   * Re-proyecta TODAS las entidades de nebula en Pulsar bajo `path`.
    * Es O(N) donde N = número de entidades. Aceptable para conjuntos
    * pequeños; la versión reactiva por-entidad reduce a O(1).
    */
@@ -137,9 +137,9 @@ export function createGraphletPulsarBridge(context, options = {}) {
     if (_destroyed) return;
 
     const projection = {};
-    const ids = graphlet.allIds();
+    const ids = nebula.allIds();
     for (const id of ids) {
-      projection[id] = graphlet.get(id);
+      projection[id] = nebula.get(id);
     }
 
     // Construir el nuevo estado preservando otras claves y respetando path.
@@ -158,47 +158,47 @@ export function createGraphletPulsarBridge(context, options = {}) {
   // Para `unlink`, análogamente: si el target no estaba, no se
   // re-proyecta.
 
-  graphlet.put = function(id, properties) {
+  nebula.put = function(id, properties) {
     if (_destroyed) {
       // El adapter fue destruido pero alguien tiene aún la referencia
       // wrappeada. Delega al original si aún existe en _originals.
       // (En destroy restauramos los originals, así que esto solo
       // sucede si otro código guardó la referencia wrappeada.)
-      return _originals.put.call(graphlet, id, properties);
+      return _originals.put.call(nebula, id, properties);
     }
-    const result = _originals.put.call(graphlet, id, properties);
+    const result = _originals.put.call(nebula, id, properties);
     _reprojectAll();
     return result;
   };
 
-  graphlet.upsert = function(id, properties) {
-    if (_destroyed) return _originals.upsert.call(graphlet, id, properties);
-    const result = _originals.upsert.call(graphlet, id, properties);
+  nebula.upsert = function(id, properties) {
+    if (_destroyed) return _originals.upsert.call(nebula, id, properties);
+    const result = _originals.upsert.call(nebula, id, properties);
     _reprojectAll();
     return result;
   };
 
-  graphlet.update = function(id, patch) {
-    if (_destroyed) return _originals.update.call(graphlet, id, patch);
-    const result = _originals.update.call(graphlet, id, patch);
+  nebula.update = function(id, patch) {
+    if (_destroyed) return _originals.update.call(nebula, id, patch);
+    const result = _originals.update.call(nebula, id, patch);
     _reprojectAll();
     return result;
   };
 
-  graphlet.delete = function(id) {
-    if (_destroyed) return _originals.delete.call(graphlet, id);
-    const result = _originals.delete.call(graphlet, id);
+  nebula.delete = function(id) {
+    if (_destroyed) return _originals.delete.call(nebula, id);
+    const result = _originals.delete.call(nebula, id);
     _reprojectAll();
     return result;
   };
 
-  graphlet.link = function(sourceId, relation, targetId) {
-    if (_destroyed) return _originals.link.call(graphlet, sourceId, relation, targetId);
+  nebula.link = function(sourceId, relation, targetId) {
+    if (_destroyed) return _originals.link.call(nebula, sourceId, relation, targetId);
 
     // Set semantics detection: capturar el shape del source antes.
     // Si no cambia después, era un no-op y no re-proyectamos.
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.link.call(graphlet, sourceId, relation, targetId);
+    const result = _originals.link.call(nebula, sourceId, relation, targetId);
     const after = _snapshotLinksOf(sourceId);
 
     if (!_sameShallowLinks(before, after)) {
@@ -207,11 +207,11 @@ export function createGraphletPulsarBridge(context, options = {}) {
     return result;
   };
 
-  graphlet.unlink = function(sourceId, relation, targetId) {
-    if (_destroyed) return _originals.unlink.call(graphlet, sourceId, relation, targetId);
+  nebula.unlink = function(sourceId, relation, targetId) {
+    if (_destroyed) return _originals.unlink.call(nebula, sourceId, relation, targetId);
 
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.unlink.call(graphlet, sourceId, relation, targetId);
+    const result = _originals.unlink.call(nebula, sourceId, relation, targetId);
     const after = _snapshotLinksOf(sourceId);
 
     if (!_sameShallowLinks(before, after)) {
@@ -220,11 +220,11 @@ export function createGraphletPulsarBridge(context, options = {}) {
     return result;
   };
 
-  graphlet.unlinkAll = function(sourceId, relation) {
-    if (_destroyed) return _originals.unlinkAll.call(graphlet, sourceId, relation);
+  nebula.unlinkAll = function(sourceId, relation) {
+    if (_destroyed) return _originals.unlinkAll.call(nebula, sourceId, relation);
 
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.unlinkAll.call(graphlet, sourceId, relation);
+    const result = _originals.unlinkAll.call(nebula, sourceId, relation);
     const after = _snapshotLinksOf(sourceId);
 
     if (!_sameShallowLinks(before, after)) {
@@ -244,7 +244,7 @@ export function createGraphletPulsarBridge(context, options = {}) {
    * Si la entidad no existe, retorna null.
    */
   function _snapshotLinksOf(id) {
-    const entity = graphlet.get(id);
+    const entity = nebula.get(id);
     if (!entity || !entity.links) return null;
     const out = {};
     for (const [rel, targets] of Object.entries(entity.links)) {
@@ -289,15 +289,15 @@ export function createGraphletPulsarBridge(context, options = {}) {
     if (_destroyed) return; // Idempotente
     _destroyed = true;
 
-    // Restaurar los métodos originales en la instancia de Graphlet.
+    // Restaurar los métodos originales en la instancia de nebula.
     // A partir de este punto, las mutaciones no producen re-proyección.
-    graphlet.put = _originals.put;
-    graphlet.upsert = _originals.upsert;
-    graphlet.update = _originals.update;
-    graphlet.delete = _originals.delete;
-    graphlet.link = _originals.link;
-    graphlet.unlink = _originals.unlink;
-    graphlet.unlinkAll = _originals.unlinkAll;
+    nebula.put = _originals.put;
+    nebula.upsert = _originals.upsert;
+    nebula.update = _originals.update;
+    nebula.delete = _originals.delete;
+    nebula.link = _originals.link;
+    nebula.unlink = _originals.unlink;
+    nebula.unlinkAll = _originals.unlinkAll;
 
     // No tocamos Pulsar state. La proyección permanece; la aplicación
     // decide si limpiarla.
@@ -308,4 +308,4 @@ export function createGraphletPulsarBridge(context, options = {}) {
   };
 }
 
-export default createGraphletPulsarBridge;
+export default createnebulaPulsarBridge;

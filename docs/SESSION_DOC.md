@@ -2,7 +2,7 @@
 
 **Fecha:** Septiembre 2026
 **Duración estimada:** una sesión larga con múltiples turnos
-**Punto de arranque:** cuatro primitivas vivas (Pulsar 0.2.1, Graphlet 0.3.0, Voyajer 0.2.1, Chunklet 0.4.0), dos adapters vivos (Bridge, Hydration), Nexus Contract "traspapelado".
+**Punto de arranque:** cuatro primitivas vivas (Pulsar 0.2.1, nebula 0.3.0, Voyajer 0.2.1, Chunklet 0.4.0), dos adapters vivos (Bridge, Hydration), Nexus Contract "traspapelado".
 **Punto de salida:** cinco adapters vivos con harness verde y widget canónico validado, deuda técnica formalizada, tres specs alineadas contra código real.
 
 
@@ -23,7 +23,7 @@
 
 **5. Los harness browser-native con mocks inyectables funcionaron limpio.** Ningún test necesitó Node ni Playwright. El mock de `BroadcastChannel` para External Event fue el más elaborado y aún así encajó en el patrón. Métricas de tiempo excelentes salvo Persistence que legítimamente espera timeouts (4.3 ms External Event, 2.2 ms Logging, contra 486 ms de Persistence — la diferencia se explica sola).
 
-**6. La auditoría documental hecha al cierre de la sesión anterior dio sus frutos aquí.** Cuando arrancamos, ya sabíamos que Graphlet estaba en 0.3.0 con G-0 aplicado, que Chunklet 0.4.0 tenía `configure`, y que la spec de Nexus tenía referencias desactualizadas. Ninguno de los cuatro adapters escritos en esta sesión tuvo problemas por asunciones erróneas sobre las primitivas. La disciplina de mantener docs alineadas paga.
+**6. La auditoría documental hecha al cierre de la sesión anterior dio sus frutos aquí.** Cuando arrancamos, ya sabíamos que nebula estaba en 0.3.0 con G-0 aplicado, que Chunklet 0.4.0 tenía `configure`, y que la spec de Nexus tenía referencias desactualizadas. Ninguno de los cuatro adapters escritos en esta sesión tuvo problemas por asunciones erróneas sobre las primitivas. La disciplina de mantener docs alineadas paga.
 
 
 ## Lo malo (o por lo menos, no ideal)
@@ -36,16 +36,16 @@
 
 **4. El TEST 9 del harness de External Event (canal ownership) verifica solo el path de canal inyectado, no el de canal propio.** Es una asimetría intencional — verificar `channel.close()` en el canal real de BroadcastChannel requeriría un mecanismo de observación que no está en la API pública. Pero es un test menos completo de lo ideal.
 
-**5. Algunas decisiones micro las tomé sin consultar y las anuncié después ("un ajuste que hice sin consultar").** En ningún caso hubo objeción tuya, pero el patrón puede erosionar el ciclo de confirmación explícita si se abusa. Lista de decisiones micro no consultadas en esta sesión: `onError` callback en Persistence, `flush()` público en Persistence, wire event shape en External Event (`type`/`origin`/`op`/`args`), `onRemoteError` en External Event, "sink error silencioso con warn" en Logging, "al menos uno de graphlet/pulsar requerido" en Logging. **Reflexión:** todas fueron decisiones defendibles y las anuncié al presentar los artefactos. Pero si aparecen decisiones más consecuentes, deberían pasar por confirmación explícita antes de codificar, no después.
+**5. Algunas decisiones micro las tomé sin consultar y las anuncié después ("un ajuste que hice sin consultar").** En ningún caso hubo objeción tuya, pero el patrón puede erosionar el ciclo de confirmación explícita si se abusa. Lista de decisiones micro no consultadas en esta sesión: `onError` callback en Persistence, `flush()` público en Persistence, wire event shape en External Event (`type`/`origin`/`op`/`args`), `onRemoteError` en External Event, "sink error silencioso con warn" en Logging, "al menos uno de nebula/pulsar requerido" en Logging. **Reflexión:** todas fueron decisiones defendibles y las anuncié al presentar los artefactos. Pero si aparecen decisiones más consecuentes, deberían pasar por confirmación explícita antes de codificar, no después.
 
 **6. El widget del Bridge acumuló ruido reactivo hasta 73% en un test manual con N=8.** Esta es evidencia dura pero relativamente barata (8 entidades). No probamos con N=50 o N=100 donde el ratio se acerca al 99%. La extrapolación teórica es sólida, pero no tenemos evidencia para descartar sorpresas a escala. Un widget con N=100 sintéticas tomaría 10 minutos escribir; no lo hicimos porque el número extrapolado es lo bastante convincente y respeta Article I sin exceso.
 
 
 ## Lo aprendido
 
-**1. El patrón "monkey-patch para observar, no para transformar" es un contrato implícito de cuatro de los cinco adapters.** Bridge, Persistence, External Event, Logging — todos wrappean los siete métodos de mutación de Graphlet, capturan originales, y `destroy` restaura. La única diferencia entre ellos es qué hacen entre `original(...)` y `return`. El Logging Adapter hizo esto explícito en su spec ("strictly read-only"), pero es una propiedad que **todos** los adapters de este patrón comparten. Solo el Bridge modifica también estado externo (Pulsar); los otros son puros observers. **Consecuencia arquitectónica:** en Fase 1, si aparece un patrón "adapter-wrapper genérico" que factorice esto, sería un buen punto de estabilización.
+**1. El patrón "monkey-patch para observar, no para transformar" es un contrato implícito de cuatro de los cinco adapters.** Bridge, Persistence, External Event, Logging — todos wrappean los siete métodos de mutación de nebula, capturan originales, y `destroy` restaura. La única diferencia entre ellos es qué hacen entre `original(...)` y `return`. El Logging Adapter hizo esto explícito en su spec ("strictly read-only"), pero es una propiedad que **todos** los adapters de este patrón comparten. Solo el Bridge modifica también estado externo (Pulsar); los otros son puros observers. **Consecuencia arquitectónica:** en Fase 1, si aparece un patrón "adapter-wrapper genérico" que factorice esto, sería un buen punto de estabilización.
 
-**2. La set semantics de Graphlet (G-0) simplificó el diseño de cuatro adapters.** Sin G-0, cada adapter tendría que preguntarse "¿este link es duplicado?" o aceptar que emite eventos de no-ops. Con G-0, la respuesta viene gratis del snapshot pre/post. Es un caso donde una decisión de bajo nivel (semántica de link en Graphlet) elimina complejidad en la capa de arriba (adapters). El diseño de v0.3.0 de Graphlet pagó dividendos exactamente donde se anticipó.
+**2. La set semantics de nebula (G-0) simplificó el diseño de cuatro adapters.** Sin G-0, cada adapter tendría que preguntarse "¿este link es duplicado?" o aceptar que emite eventos de no-ops. Con G-0, la respuesta viene gratis del snapshot pre/post. Es un caso donde una decisión de bajo nivel (semántica de link en nebula) elimina complejidad en la capa de arriba (adapters). El diseño de v0.3.0 de nebula pagó dividendos exactamente donde se anticipó.
 
 **3. `BroadcastChannel` sí permite que dos instancias en el mismo tab se comuniquen entre sí.** No lo tenía completamente claro al empezar el widget de External Event, pero fue crucial para que el workaround del re-render funcionara: el `listenerChannel` externo al adapter recibe los mismos eventos que el canal interno. La restricción "no recibe sus propios mensajes" es **por instancia**, no por tab. Este dato micro no está en la mini-spec pero merece añadirse a la documentación operativa del adapter en algún momento.
 
@@ -67,7 +67,7 @@ De esta sesión salieron **cuatro ítems nuevos de deuda formal:**
 
 Y **una deuda arquitectónica emergente** identificada en esta retrospectiva pero **no registrada formalmente todavía**:
 
-- **ADAPTER-UTILS-DEDUP** — los cuatro adapters que wrappean Graphlet duplican `_snapshotLinksOf` y `_sameShallowLinks`. Consolidación candidata a v0.2.0 de Fase 1. Ver §Lo malo #1.
+- **ADAPTER-UTILS-DEDUP** — los cuatro adapters que wrappean nebula duplican `_snapshotLinksOf` y `_sameShallowLinks`. Consolidación candidata a v0.2.0 de Fase 1. Ver §Lo malo #1.
 
 Recomendación: registrar esta última en `PHASE_0_DEFERRED.md` en la Parte 2 de esta misma sesión.
 
@@ -103,7 +103,7 @@ Basado en lo aprendido, no en especulación:
 - 5 archivos de código adapter.
 - 5 harness browser-native.
 - 5 widgets canónicos.
-- 3 specs de primitivas actualizadas (Graphlet 0.3.0, Chunklet 0.4.0, Nexus 0.3.1).
+- 3 specs de primitivas actualizadas (nebula 0.3.0, Chunklet 0.4.0, Nexus 0.3.1).
 - 1 documento de deuda técnica actualizado (`PHASE_0_DEFERRED.md`).
 
 **Aserciones verdes acumuladas:** 241 en harness (50 + 41 + 50 + 42 + 58).

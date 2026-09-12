@@ -17,7 +17,7 @@
   <div id="output"></div>
 
   <script type="module">
-    import { createGraphlet } from '../src/graphlet.js';
+    import { createnebula } from '../src/nebula.js';
     import { createHydrationAdapter } from '../src/adapters/hydration-adapter.js';
 
     const output = document.getElementById('output');
@@ -65,7 +65,7 @@
     section('TEST 1: Hidratación básica poblando entidades y links');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const snapshot = {
         entities: {
           'user:1': {
@@ -78,7 +78,7 @@
           }
         }
       };
-      createHydrationAdapter({ graphlet: g }, { snapshot });
+      createHydrationAdapter({ nebula: g }, { snapshot });
 
       const u1 = g.get('user:1');
       const t7 = g.get('team:7');
@@ -97,13 +97,13 @@
     section('TEST 2: La hidratación es síncrona; datos disponibles al retornar');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const snapshot = { entities: { 'x:1': { properties: { v: 1 } } } };
 
       // Antes de instanciar: vacío.
-      assert(g.allIds().length === 0, 'Graphlet vacío antes del adapter');
+      assert(g.allIds().length === 0, 'nebula vacío antes del adapter');
 
-      const adapter = createHydrationAdapter({ graphlet: g }, { snapshot });
+      const adapter = createHydrationAdapter({ nebula: g }, { snapshot });
 
       // Inmediatamente después: poblado. Sin await, sin microtask.
       assert(g.get('x:1') !== null,
@@ -118,10 +118,10 @@
     section('TEST 3: Two-pass permite que un link referencie una entidad definida más tarde en el snapshot');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       // NOTA: 'source' aparece ANTES que 'target' en el objeto, pero
       // 'source.links' referencia a 'target'. Si no fuera two-pass,
-      // graphlet.link('source', 'x', 'target') fallaría porque
+      // nebula.link('source', 'x', 'target') fallaría porque
       // 'target' aún no existiría al procesar 'source'.
       const snapshot = {
         entities: {
@@ -137,7 +137,7 @@
 
       let threw = false;
       try {
-        createHydrationAdapter({ graphlet: g }, { snapshot });
+        createHydrationAdapter({ nebula: g }, { snapshot });
       } catch (e) {
         threw = true;
       }
@@ -152,7 +152,7 @@
     section("TEST 4: mode='merge' (default) hace upsert — properties preexistentes se preservan");
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       g.put('user:1', { name: 'Alice', role: 'admin' });
 
       const snapshot = {
@@ -160,7 +160,7 @@
           'user:1': { properties: { age: 30 } }
         }
       };
-      createHydrationAdapter({ graphlet: g }, { snapshot });
+      createHydrationAdapter({ nebula: g }, { snapshot });
 
       const u = g.get('user:1');
       assert(u.properties.name === 'Alice', "merge preserva 'name' preexistente");
@@ -174,7 +174,7 @@
     section("TEST 5: mode='replace' hace put — properties preexistentes se descartan");
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       g.put('user:1', { name: 'Alice', role: 'admin' });
 
       const snapshot = {
@@ -182,7 +182,7 @@
           'user:1': { properties: { age: 30 } }
         }
       };
-      createHydrationAdapter({ graphlet: g }, { snapshot, mode: 'replace' });
+      createHydrationAdapter({ nebula: g }, { snapshot, mode: 'replace' });
 
       const u = g.get('user:1');
       assert(u.properties.age === 30, "replace escribe 'age'");
@@ -196,7 +196,7 @@
     section('TEST 6: Targets duplicados en un array de links se deduplican antes de llamar link');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const snapshot = {
         entities: {
           a: {
@@ -207,7 +207,7 @@
           c: { properties: {} }
         }
       };
-      createHydrationAdapter({ graphlet: g }, { snapshot });
+      createHydrationAdapter({ nebula: g }, { snapshot });
 
       const links = g.get('a').links.rel;
       assert(links.length === 2, `dedup: array final tiene 2 targets (recibido: ${links.length})`);
@@ -221,10 +221,10 @@
     // ============================================================
     // TEST 7: onMissingTarget: 'throw' (default) propaga el error
     // ============================================================
-    section("TEST 7: onMissingTarget='throw' (default) propaga error de Graphlet");
+    section("TEST 7: onMissingTarget='throw' (default) propaga error de nebula");
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const snapshot = {
         entities: {
           a: { properties: {}, links: { rel: ['ghost'] } }  // 'ghost' no existe
@@ -234,7 +234,7 @@
       let threw = false;
       let errorMsg = '';
       try {
-        createHydrationAdapter({ graphlet: g }, { snapshot });
+        createHydrationAdapter({ nebula: g }, { snapshot });
       } catch (e) {
         threw = true;
         errorMsg = e.message;
@@ -253,7 +253,7 @@
     section("TEST 8: onMissingTarget='skip' loguea warning y continúa con los demás links");
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const snapshot = {
         entities: {
           a: {
@@ -268,7 +268,7 @@
       const warnings = withWarnCapture(() => {
         try {
           createHydrationAdapter(
-            { graphlet: g },
+            { nebula: g },
             { snapshot, onMissingTarget: 'skip' }
           );
         } catch (e) {
@@ -291,7 +291,7 @@
     section('TEST 9: parse permite hidratar desde una shape no canónica');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       // Shape "externa": un array de {id, props, edges}
       const external = [
         { id: 'n:1', props: { label: 'Uno' }, edges: [{ rel: 'next', to: 'n:2' }] },
@@ -309,7 +309,7 @@
         return { entities };
       };
 
-      createHydrationAdapter({ graphlet: g }, { snapshot: external, parse });
+      createHydrationAdapter({ nebula: g }, { snapshot: external, parse });
 
       assert(g.get('n:1').properties.label === 'Uno', 'parse: n:1 hidratada');
       assert(g.get('n:2').properties.label === 'Dos', 'parse: n:2 hidratada');
@@ -322,9 +322,9 @@
     section('TEST 10: destroy() es no-op idempotente (no hay recursos vivos)');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const adapter = createHydrationAdapter(
-        { graphlet: g },
+        { nebula: g },
         { snapshot: { entities: {} } }
       );
 
@@ -343,15 +343,15 @@
     section('TEST 11: Validación de context y options');
 
     {
-      // 11.1: context sin graphlet
+      // 11.1: context sin nebula
       let t = false;
       try { createHydrationAdapter({}, { snapshot: { entities: {} } }); }
       catch (e) { t = true; }
-      assert(t, '11.1: context sin graphlet lanza TypeError');
+      assert(t, '11.1: context sin nebula lanza TypeError');
 
       // 11.2: falta snapshot
       t = false;
-      try { createHydrationAdapter({ graphlet: createGraphlet() }, {}); }
+      try { createHydrationAdapter({ nebula: createnebula() }, {}); }
       catch (e) { t = true; }
       assert(t, '11.2: falta options.snapshot lanza TypeError');
 
@@ -359,7 +359,7 @@
       t = false;
       try {
         createHydrationAdapter(
-          { graphlet: createGraphlet() },
+          { nebula: createnebula() },
           { snapshot: { entities: {} }, mode: 'invalid' }
         );
       } catch (e) { t = true; }
@@ -369,7 +369,7 @@
       t = false;
       try {
         createHydrationAdapter(
-          { graphlet: createGraphlet() },
+          { nebula: createnebula() },
           { snapshot: { entities: {} }, onMissingTarget: 'invalid' }
         );
       } catch (e) { t = true; }
@@ -379,7 +379,7 @@
       t = false;
       try {
         createHydrationAdapter(
-          { graphlet: createGraphlet() },
+          { nebula: createnebula() },
           { snapshot: { foo: 'bar' } }
         );
       } catch (e) { t = true; }
@@ -390,7 +390,7 @@
       let errMsg = '';
       try {
         createHydrationAdapter(
-          { graphlet: createGraphlet() },
+          { nebula: createnebula() },
           { snapshot: { entities: { 'x:1': 'not-an-object' } } }
         );
       } catch (e) { t = true; errMsg = e.message; }
@@ -402,7 +402,7 @@
       t = false;
       try {
         createHydrationAdapter(
-          { graphlet: createGraphlet() },
+          { nebula: createnebula() },
           { snapshot: { entities: { 'x:1': { properties: {}, links: 'nope' } } } }
         );
       } catch (e) { t = true; }
@@ -415,13 +415,13 @@
     section('TEST 12: Snapshot con entities: {} es válido y hidrata a un grafo vacío');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       let threw = false;
       try {
-        createHydrationAdapter({ graphlet: g }, { snapshot: { entities: {} } });
+        createHydrationAdapter({ nebula: g }, { snapshot: { entities: {} } });
       } catch (e) { threw = true; }
       assert(!threw, 'snapshot vacío no lanza');
-      assert(g.allIds().length === 0, 'graphlet permanece vacío');
+      assert(g.allIds().length === 0, 'nebula permanece vacío');
     }
 
     // ============================================================

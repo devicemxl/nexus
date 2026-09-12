@@ -42,8 +42,8 @@
       font-family: inherit;
     }
     button:hover { background: #1177bb; }
-    button.graphlet { background: #2a6f4a; }
-    button.graphlet:hover { background: #348d5c; }
+    button.nebula { background: #2a6f4a; }
+    button.nebula:hover { background: #348d5c; }
     button.pulsar { background: #7a5800; }
     button.pulsar:hover { background: #8f6800; }
     button.warn { background: #a1260d; }
@@ -80,7 +80,7 @@
       padding: 1px 4px;
       border-left: 2px solid transparent;
     }
-    .log-viewer .entry.graphlet {
+    .log-viewer .entry.nebula {
       border-left-color: #4ec9b0;
       color: #4ec9b0;
     }
@@ -104,7 +104,7 @@
       border-radius: 3px;
       border-left: 3px solid #444;
     }
-    .counter-card.graphlet { border-left-color: #4ec9b0; }
+    .counter-card.nebula { border-left-color: #4ec9b0; }
     .counter-card.pulsar { border-left-color: #dcdcaa; }
     .counter-card.total { border-left-color: #9cdcfe; }
     .counter-card .label { color: #888; font-size: 11px; }
@@ -145,19 +145,19 @@
 <body>
   <h1>📋 Widget: Log viewer con controles</h1>
   <div class="subtitle">
-    Validación empírica del Logging Adapter v0.1.0 observando Graphlet y Pulsar simultáneamente.
+    Validación empírica del Logging Adapter v0.1.0 observando nebula y Pulsar simultáneamente.
   </div>
 
   <div class="panel">
     <div class="panel-title">Controles de mutación</div>
 
     <div class="btn-row">
-      <span class="btn-label">Graphlet:</span>
-      <button class="graphlet" id="btn-put">put entidad</button>
-      <button class="graphlet" id="btn-update">update última</button>
-      <button class="graphlet" id="btn-delete">delete última</button>
-      <button class="graphlet" id="btn-link">link (real)</button>
-      <button class="graphlet" id="btn-link-dup">link (duplicado, G-0)</button>
+      <span class="btn-label">nebula:</span>
+      <button class="nebula" id="btn-put">put entidad</button>
+      <button class="nebula" id="btn-update">update última</button>
+      <button class="nebula" id="btn-delete">delete última</button>
+      <button class="nebula" id="btn-link">link (real)</button>
+      <button class="nebula" id="btn-link-dup">link (duplicado, G-0)</button>
     </div>
 
     <div class="btn-row">
@@ -173,7 +173,7 @@
 
     <div class="btn-row">
       <span class="btn-label">Log:</span>
-      <button class="toggle" id="btn-filter-graphlet">Solo Graphlet</button>
+      <button class="toggle" id="btn-filter-nebula">Solo nebula</button>
       <button class="toggle" id="btn-filter-pulsar">Solo Pulsar</button>
       <button class="toggle" id="btn-clear">🧹 Clear log</button>
     </div>
@@ -187,9 +187,9 @@
       <div class="empty">— sin eventos —</div>
     </div>
     <div class="counter-grid">
-      <div class="counter-card graphlet">
-        <div class="label">Eventos Graphlet</div>
-        <div class="value" id="count-graphlet">0</div>
+      <div class="counter-card nebula">
+        <div class="label">Eventos nebula</div>
+        <div class="value" id="count-nebula">0</div>
       </div>
       <div class="counter-card pulsar">
         <div class="label">Eventos Pulsar</div>
@@ -205,30 +205,30 @@
       <ul style="margin: 4px 0 0 20px; padding: 0;">
         <li><strong>Set semantics:</strong> "link (duplicado)" NO produce evento la segunda vez (G-0).</li>
         <li><strong>Fail-fast:</strong> "update inexistente" lanza en el llamador, pero NO deja evento en el log.</li>
-        <li><strong>Filter:</strong> activa "Solo Graphlet" o "Solo Pulsar" y mira que los eventos filtrados no aparecen.</li>
+        <li><strong>Filter:</strong> activa "Solo nebula" o "Solo Pulsar" y mira que los eventos filtrados no aparecen.</li>
         <li><strong>Sink custom:</strong> este log renderiza vía sink; la consola de DevTools está silenciada porque redirigimos el default.</li>
       </ul>
     </div>
   </div>
 
   <script type="module">
-    import { createGraphlet } from '../src/graphlet.js';
+    import { createnebula } from '../src/nebula.js';
     import { createStatePulsar } from '../src/pulsar.js';
     import { createLoggingAdapter } from '../src/adapters/logging-adapter.js';
 
     // ============================================================
     // Setup
     // ============================================================
-    const graphlet = createGraphlet();
+    const nebula = createnebula();
     const pulsar = createStatePulsar({ ui: {}, counter: 0 });
 
     // Sembrado inicial para tener con qué operar
-    graphlet.put('seed:1', { name: 'Seed 1', value: 0 });
-    graphlet.put('seed:2', { name: 'Seed 2', value: 0 });
+    nebula.put('seed:1', { name: 'Seed 1', value: 0 });
+    nebula.put('seed:2', { name: 'Seed 2', value: 0 });
 
     // Estado del widget
-    let filterMode = 'all';  // 'all' | 'graphlet-only' | 'pulsar-only'
-    let counters = { graphlet: 0, pulsar: 0, total: 0 };
+    let filterMode = 'all';  // 'all' | 'nebula-only' | 'pulsar-only'
+    let counters = { nebula: 0, pulsar: 0, total: 0 };
     const logBuffer = [];  // últimos 100 eventos
     const MAX_LOG_ENTRIES = 100;
 
@@ -271,7 +271,7 @@
     // ============================================================
     const filter = (event) => {
       if (filterMode === 'all') return true;
-      if (filterMode === 'graphlet-only') return event.source === 'graphlet';
+      if (filterMode === 'nebula-only') return event.source === 'nebula';
       if (filterMode === 'pulsar-only') return event.source === 'pulsar';
       return true;
     };
@@ -280,7 +280,7 @@
     // Instanciar el adapter observando AMBAS primitivas
     // ============================================================
     const loggingAdapter = createLoggingAdapter(
-      { graphlet, pulsar },
+      { nebula, pulsar },
       { sink, filter }
     );
 
@@ -301,7 +301,7 @@
     }
 
     function renderCounters() {
-      document.getElementById('count-graphlet').textContent = String(counters.graphlet);
+      document.getElementById('count-nebula').textContent = String(counters.nebula);
       document.getElementById('count-pulsar').textContent = String(counters.pulsar);
       document.getElementById('count-total').textContent = String(counters.total);
     }
@@ -310,13 +310,13 @@
       const el = document.getElementById('filter-status');
       const labels = {
         'all': 'Filter: pasar todo',
-        'graphlet-only': 'Filter: solo Graphlet (Pulsar descartado)',
-        'pulsar-only': 'Filter: solo Pulsar (Graphlet descartado)',
+        'nebula-only': 'Filter: solo nebula (Pulsar descartado)',
+        'pulsar-only': 'Filter: solo Pulsar (nebula descartado)',
       };
       el.textContent = labels[filterMode];
       el.classList.toggle('active', filterMode !== 'all');
 
-      document.getElementById('btn-filter-graphlet').classList.toggle('active', filterMode === 'graphlet-only');
+      document.getElementById('btn-filter-nebula').classList.toggle('active', filterMode === 'nebula-only');
       document.getElementById('btn-filter-pulsar').classList.toggle('active', filterMode === 'pulsar-only');
     }
 
@@ -335,34 +335,34 @@
     document.getElementById('btn-put').addEventListener('click', () => {
       const id = `entity:${nextId++}`;
       lastPutId = id;
-      graphlet.put(id, { name: `Item ${nextId - 1}`, value: Math.floor(Math.random() * 100) });
+      nebula.put(id, { name: `Item ${nextId - 1}`, value: Math.floor(Math.random() * 100) });
     });
 
     document.getElementById('btn-update').addEventListener('click', () => {
       // Actualiza la última entidad conocida; si no existe, la crea (upsert)
       // para no forzar el path de error aquí (hay un botón dedicado a eso).
-      if (graphlet.get(lastPutId)) {
-        graphlet.update(lastPutId, { value: Math.floor(Math.random() * 100) });
+      if (nebula.get(lastPutId)) {
+        nebula.update(lastPutId, { value: Math.floor(Math.random() * 100) });
       } else {
         // Fallback: usa la primera seed
-        graphlet.update('seed:1', { value: Math.floor(Math.random() * 100) });
+        nebula.update('seed:1', { value: Math.floor(Math.random() * 100) });
       }
     });
 
     document.getElementById('btn-delete').addEventListener('click', () => {
-      if (graphlet.get(lastPutId) && !lastPutId.startsWith('seed:')) {
-        graphlet.delete(lastPutId);
+      if (nebula.get(lastPutId) && !lastPutId.startsWith('seed:')) {
+        nebula.delete(lastPutId);
       } else {
         // Coger un ID no-seed cualquiera
-        const nonSeed = graphlet.allIds().find(id => !id.startsWith('seed:'));
-        if (nonSeed) graphlet.delete(nonSeed);
+        const nonSeed = nebula.allIds().find(id => !id.startsWith('seed:'));
+        if (nonSeed) nebula.delete(nonSeed);
       }
     });
 
     document.getElementById('btn-link').addEventListener('click', () => {
       // link real: entre las dos seeds (o hasta que quede saturado, entonces será no-op)
       try {
-        graphlet.link('seed:1', 'connects', 'seed:2');
+        nebula.link('seed:1', 'connects', 'seed:2');
       } catch (e) {
         // Puede pasar si alguna seed fue borrada
         console.warn('link falló:', e.message);
@@ -373,7 +373,7 @@
       // Este intenta el mismo link que el botón anterior. Si ya existe, G-0
       // hace no-op y el adapter NO emite evento.
       try {
-        graphlet.link('seed:1', 'connects', 'seed:2');
+        nebula.link('seed:1', 'connects', 'seed:2');
       } catch (e) {
         console.warn('link duplicado falló:', e.message);
       }
@@ -394,21 +394,21 @@
       // Este DEBE lanzar (update sobre inexistente). El adapter NO debe
       // emitir evento. El log no crece.
       try {
-        graphlet.update('does-not-exist', { foo: 1 });
+        nebula.update('does-not-exist', { foo: 1 });
       } catch (e) {
         // Esperado: mostramos un log manual (no del adapter) para dejar
         // evidencia visible al usuario de que la op falló pero el adapter
         // se comportó correctamente.
         const line = `[UI-NOTE] update lanzó como esperaba: "${e.message}" — sin evento del adapter`;
-        logBuffer.push({ source: 'graphlet', line });
+        logBuffer.push({ source: 'nebula', line });
         if (logBuffer.length > MAX_LOG_ENTRIES) logBuffer.shift();
         renderLog();
         // NO tocamos los contadores porque el adapter no emitió.
       }
     });
 
-    document.getElementById('btn-filter-graphlet').addEventListener('click', () => {
-      filterMode = (filterMode === 'graphlet-only') ? 'all' : 'graphlet-only';
+    document.getElementById('btn-filter-nebula').addEventListener('click', () => {
+      filterMode = (filterMode === 'nebula-only') ? 'all' : 'nebula-only';
       renderFilterStatus();
     });
 
@@ -419,7 +419,7 @@
 
     document.getElementById('btn-clear').addEventListener('click', () => {
       logBuffer.length = 0;
-      counters = { graphlet: 0, pulsar: 0, total: 0 };
+      counters = { nebula: 0, pulsar: 0, total: 0 };
       renderLog();
       renderCounters();
     });
@@ -432,7 +432,7 @@
     renderFilterStatus();
 
     // Exponer al window para exploración manual
-    window.__widget = { graphlet, pulsar, loggingAdapter, logBuffer };
+    window.__widget = { nebula, pulsar, loggingAdapter, logBuffer };
     console.log('Widget listo. Objetos en window.__widget');
     console.log('El sink del adapter escribe al log-viewer del UI, no a esta consola.');
   </script>

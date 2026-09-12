@@ -181,16 +181,16 @@ function snapshotDe(n) {
 
 /** Arranca la capa de datos contando las llamadas a setState. */
 function arrancarContando(opciones = {}) {
-  const { graphlet, pulsar } = crearPrimitivas();
+  const { nebula, pulsar } = crearPrimitivas();
   let setStateN = 0;
   const original = pulsar.setState.bind(pulsar);
   pulsar.setState = (p) => { setStateN++; return original(p); };
 
   const t0 = performance.now();
-  const datos = arrancarDatos({ graphlet, pulsar, ...opciones });
+  const datos = arrancarDatos({ nebula, pulsar, ...opciones });
   const ms = performance.now() - t0;
 
-  return { graphlet, pulsar, datos, setStateN, ms };
+  return { nebula, pulsar, datos, setStateN, ms };
 }
 
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -296,7 +296,7 @@ async function ejecutarCasos() {
     const r = callado(() => arrancarContando({ storage, clave: 'nexus.test' }));
     eq('links malformados se detectan antes de tocar el grafo real',
       r.datos.hidratacion.estado, 'corrupto');
-    eq('el grafo real queda intacto', r.graphlet.allIds(), []);
+    eq('el grafo real queda intacto', r.nebula.allIds(), []);
     r.datos.destruir({ guardarPendiente: false });
   }
 
@@ -308,7 +308,7 @@ async function ejecutarCasos() {
     }));
     const r = callado(() => arrancarContando({ storage, clave: 'nexus.test' }));
     eq('un link huérfano no invalida el snapshot', r.datos.hidratacion.estado, 'ok');
-    eq('la entidad se hidrata igualmente', r.graphlet.allIds(), ['a:1']);
+    eq('la entidad se hidrata igualmente', r.nebula.allIds(), ['a:1']);
     r.datos.destruir({ guardarPendiente: false });
   }
 
@@ -331,9 +331,9 @@ async function ejecutarCasos() {
     const r = arrancarContando({ storage, clave: 'nexus.test', debounceMs: 30 });
     storage.escrituras = 0;
 
-    r.graphlet.put('msg:1', { texto: 'hola' });
-    r.graphlet.put('msg:2', { texto: 'qué tal' });
-    r.graphlet.put('msg:3', { texto: 'bien' });
+    r.nebula.put('msg:1', { texto: 'hola' });
+    r.nebula.put('msg:2', { texto: 'qué tal' });
+    r.nebula.put('msg:3', { texto: 'bien' });
 
     eq('las mutaciones no escriben de inmediato', storage.escrituras, 0);
     await esperar(80);
@@ -349,7 +349,7 @@ async function ejecutarCasos() {
   {
     const storage = storageMock();
     const r = arrancarContando({ storage, clave: 'nexus.test', debounceMs: 5000 });
-    r.graphlet.put('msg:1', { texto: 'pendiente' });
+    r.nebula.put('msg:1', { texto: 'pendiente' });
     storage.escrituras = 0;
 
     r.datos.destruir({ guardarPendiente: true });
@@ -363,13 +363,13 @@ async function ejecutarCasos() {
     storage.escrituras = 0;
 
     const antes = JSON.stringify(r.pulsar.getState().entities);
-    r.graphlet.put('msg:9', { texto: 'después del destroy' });
+    r.nebula.put('msg:9', { texto: 'después del destroy' });
     await esperar(80);
 
     eq('tras destruir, las mutaciones ya no se proyectan',
       JSON.stringify(r.pulsar.getState().entities), antes);
     eq('tras destruir, las mutaciones ya no se persisten', storage.escrituras, 0);
-    eq('el grafo sigue funcionando', r.graphlet.get('msg:9').properties.texto,
+    eq('el grafo sigue funcionando', r.nebula.get('msg:9').properties.texto,
       'después del destroy');
   }
 
@@ -390,13 +390,13 @@ async function ejecutarCasos() {
     const storage = storageMock();
     storage.setItem('nexus.test', JSON.stringify(snapshotDe(2)));
 
-    const { graphlet, pulsar } = crearPrimitivas();
-    const datos = arrancarDatos({ graphlet, pulsar, storage, clave: 'nexus.test' });
+    const { nebula, pulsar } = crearPrimitivas();
+    const datos = arrancarDatos({ nebula, pulsar, storage, clave: 'nexus.test' });
 
     let stack = null;
     let fallo = null;
     try {
-      stack = montarInterfaz({ graphlet, pulsar, raiz: fixture, modoRuta: 'hash' });
+      stack = montarInterfaz({ nebula, pulsar, raiz: fixture, modoRuta: 'hash' });
     } catch (error) {
       fallo = error.message;
     }
@@ -405,7 +405,7 @@ async function ejecutarCasos() {
 
     if (stack) {
       eq('el stack expone las tres primitivas',
-        [!!stack.pulsar, !!stack.graphlet, !!stack.voyajer], [true, true, true]);
+        [!!stack.pulsar, !!stack.nebula, !!stack.voyajer], [true, true, true]);
       eq('Voyajer escribió la ruta en Pulsar',
         typeof pulsar.getState().route.path, 'string');
     }
@@ -418,7 +418,7 @@ async function ejecutarCasos() {
     eq('el behavior leyó el modelo proyectado', zonaEntidades.textContent, '2 entidades hidratadas');
 
     // --- Reactividad: una mutación del modelo llega al DOM ---
-    graphlet.put('node:99', { title: 'nuevo' });
+    nebula.put('node:99', { title: 'nuevo' });
     eq('una mutación del modelo repinta la zona', zonaEntidades.textContent,
       '3 entidades hidratadas');
 
@@ -429,7 +429,7 @@ async function ejecutarCasos() {
     eq('el cleanup del behavior corrió', zonaEstado.textContent, 'stack desmontado');
     eq('el cleanup revirtió su marca en ui.*', pulsar.getState().ui.shellMontado, false);
 
-    graphlet.put('node:100', { title: 'tras desmontar' });
+    nebula.put('node:100', { title: 'tras desmontar' });
     eq('tras desmontar, el DOM ya no reacciona', zonaEntidades.textContent, estadoAntes);
 
     datos.destruir({ guardarPendiente: false });

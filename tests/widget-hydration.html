@@ -119,7 +119,7 @@
   </div>
 
   <!-- Snapshot embebido como script tag no ejecutable.
-       El adapter lo lee al arranque y puebla Graphlet ANTES del primer render. -->
+       El adapter lo lee al arranque y puebla nebula ANTES del primer render. -->
   <script type="application/json" id="hydration-snapshot">
 {
   "entities": {
@@ -166,7 +166,7 @@
   </div>
 
   <script type="module">
-    import { createGraphlet } from '../src/graphlet.js';
+    import { createnebula } from '../src/nebula.js';
     import { createHydrationAdapter } from '../src/adapters/hydration-adapter.js';
 
     // ============================================================
@@ -175,12 +175,12 @@
     const t0 = performance.now();
 
     // ============================================================
-    // Setup: Graphlet vacío, snapshot desde <script type="application/json">
+    // Setup: nebula vacío, snapshot desde <script type="application/json">
     // ============================================================
-    const graphlet = createGraphlet();
+    const nebula = createnebula();
 
-    // Verificación explícita: antes del adapter, Graphlet está vacío.
-    const idsBeforeHydration = graphlet.allIds();
+    // Verificación explícita: antes del adapter, nebula está vacío.
+    const idsBeforeHydration = nebula.allIds();
 
     // Leer el snapshot del DOM
     const snapshotEl = document.getElementById('hydration-snapshot');
@@ -189,22 +189,22 @@
 
     // Instanciar el adapter — hidratación SÍNCRONA aquí
     const t1 = performance.now();
-    createHydrationAdapter({ graphlet }, { snapshot });
+    createHydrationAdapter({ nebula }, { snapshot });
     const t2 = performance.now();
 
-    // Verificación explícita: inmediatamente después, Graphlet está poblado.
-    const idsAfterHydration = graphlet.allIds();
+    // Verificación explícita: inmediatamente después, nebula está poblado.
+    const idsAfterHydration = nebula.allIds();
 
     // ============================================================
     // Renderizado (vanilla, sin Chunklet)
     // ============================================================
-    // Consulta Graphlet directamente. El estado ya está listo desde
+    // Consulta nebula directamente. El estado ya está listo desde
     // ANTES de esta línea, por sincronía del adapter.
     // ============================================================
 
     function render() {
       const teamsContainer = document.getElementById('teams-container');
-      const teamIds = graphlet.query((id) => id.startsWith('team:'));
+      const teamIds = nebula.query((id) => id.startsWith('team:'));
 
       if (teamIds.length === 0) {
         teamsContainer.innerHTML = '<div style="color: #888;">— sin teams —</div>';
@@ -212,13 +212,13 @@
       }
 
       teamsContainer.innerHTML = teamIds.map(teamId => {
-        const team = graphlet.get(teamId);
+        const team = nebula.get(teamId);
         const memberIds = team.links.members || [];
-        // Consulta secundaria contra Graphlet — patrón "normalized state":
+        // Consulta secundaria contra nebula — patrón "normalized state":
         // el adapter no expandió los miembros, los guardó como IDs.
         // El widget los resuelve al renderizar.
         const membersHtml = memberIds.map(uid => {
-          const user = graphlet.get(uid);
+          const user = nebula.get(uid);
           if (!user) return `<div class="member">⚠️ ${uid} no encontrado</div>`;
           return `
             <div class="member">
@@ -251,7 +251,7 @@
     // Timing y verdict
     // ============================================================
     document.getElementById('timing').innerHTML = `
-      ⏱ Setup (createGraphlet): ${(t1 - t0).toFixed(2)}ms &nbsp;·&nbsp;
+      ⏱ Setup (createnebula): ${(t1 - t0).toFixed(2)}ms &nbsp;·&nbsp;
       Hydration: ${(t2 - t1).toFixed(2)}ms &nbsp;·&nbsp;
       Render: ${(t3 - t2).toFixed(2)}ms &nbsp;·&nbsp;
       <strong>Total: ${(t3 - t0).toFixed(2)}ms</strong>
@@ -282,13 +282,13 @@
       verdictEl.className = 'verdict ok';
       verdictEl.innerHTML = `
         ✅ <strong>Hidratación empíricamente validada</strong><br>
-        · Graphlet vacío antes del adapter (0 IDs)
+        · nebula vacío antes del adapter (0 IDs)
           <span class="marker ok">antes: ${idsBefore}</span><br>
-        · Graphlet poblado inmediatamente después (${expectedCount} entidades del snapshot)
+        · nebula poblado inmediatamente después (${expectedCount} entidades del snapshot)
           <span class="marker ok">después: ${idsAfter}</span><br>
         · Todos los teams renderizados
           <span class="marker ok">${teamsRendered}/${expectedTeams}</span><br>
-        · Todos los miembros resueltos vía consulta secundaria a Graphlet
+        · Todos los miembros resueltos vía consulta secundaria a nebula
           <span class="marker ok">${membersRendered}/${expectedMembers}</span><br>
         · Patrón "normalized state" funciona: el adapter guarda links como IDs,
           el widget los resuelve al renderizar (no hay duplicación de datos).
@@ -305,12 +305,12 @@
     }
 
     // Exponer al window para exploración manual
-    window.__widget = { graphlet, snapshot };
+    window.__widget = { nebula, snapshot };
     console.log('Widget listo. Objetos expuestos en window.__widget');
     console.log('Prueba manual desde consola:');
-    console.log('  __widget.graphlet.allIds()');
-    console.log('  __widget.graphlet.get("team:eng")');
-    console.log('  __widget.graphlet.get("user:alice")');
+    console.log('  __widget.nebula.allIds()');
+    console.log('  __widget.nebula.get("team:eng")');
+    console.log('  __widget.nebula.get("user:alice")');
   </script>
 </body>
 </html>

@@ -198,7 +198,7 @@
   </div>
 
   <div class="panel">
-    <div class="panel-title">Estado local del Graphlet (esta ventana)</div>
+    <div class="panel-title">Estado local del nebula (esta ventana)</div>
     <ul class="entity-list" id="entity-list"></ul>
   </div>
 
@@ -225,8 +225,8 @@
       Ninguna mutación local se te reenvió como remota.
     </div>
     <div class="warning-box">
-      <strong>Limitaciones documentadas de v0.1.0.</strong> Este widget renderiza desde Graphlet directamente y
-      escucha el canal para triggerear re-render. En una app con Bridge (Graphlet→Pulsar), las mutaciones
+      <strong>Limitaciones documentadas de v0.1.0.</strong> Este widget renderiza desde nebula directamente y
+      escucha el canal para triggerear re-render. En una app con Bridge (nebula→Pulsar), las mutaciones
       remotas <strong>no re-proyectan a Pulsar</strong> automáticamente. Con Persistence, las mutaciones
       remotas <strong>no persisten</strong> en el tab receptor. Ambas limitaciones son deuda técnica
       registrada en <code>PHASE_0_DEFERRED.md</code> (12-BRIDGE-INTEGRATION, 12-PERSISTENCE-INTEGRATION).
@@ -234,7 +234,7 @@
   </div>
 
   <script type="module">
-    import { createGraphlet } from '../src/graphlet.js';
+    import { createnebula } from '../src/nebula.js';
     import { createExternalEventAdapter } from '../src/adapters/external-event-adapter.js';
 
     const CHANNEL_NAME = 'widget-sync-demo';
@@ -242,9 +242,9 @@
     // ============================================================
     // Setup
     // ============================================================
-    const graphlet = createGraphlet();
+    const nebula = createnebula();
     const adapter = createExternalEventAdapter(
-      { graphlet },
+      { nebula },
       { channelName: CHANNEL_NAME }
     );
 
@@ -255,7 +255,7 @@
     // Segundo canal SOLO para triggerear re-render en el tab receptor
     // ============================================================
     // Este es el workaround documentado en la mini-spec §4.2 y en el warning
-    // del panel. El adapter aplica mutaciones remotas al Graphlet vía los
+    // del panel. El adapter aplica mutaciones remotas al nebula vía los
     // originales, pero no notifica a nadie. Para que la UI se actualice al
     // recibir eventos remotos, escuchamos el mismo canal desde fuera del
     // adapter y llamamos render(). Coalescencia sencilla: un solo render
@@ -265,7 +265,7 @@
     let renderPending = false;
     listenerChannel.addEventListener('message', (event) => {
       // Solo procesamos eventos del adapter (mismo tipo). Otros mensajes se ignoran.
-      if (!event.data || event.data.type !== 'graphlet-mutation') return;
+      if (!event.data || event.data.type !== 'nebula-mutation') return;
 
       // Anti-eco a nivel del listener también: si es nuestro propio evento,
       // no contamos como "remoto" y no re-renderizamos (nuestro handler local
@@ -303,13 +303,13 @@
     const listEl = document.getElementById('entity-list');
 
     function render() {
-      const ids = graphlet.allIds();
+      const ids = nebula.allIds();
       if (ids.length === 0) {
         listEl.innerHTML = '<li class="empty-state">— sin entidades —</li>';
         return;
       }
       listEl.innerHTML = ids.map(id => {
-        const entity = graphlet.get(id);
+        const entity = nebula.get(id);
         const highlightClass = (id === lastMutatedId)
           ? (lastMutationOrigin === 'local' ? 'recent-local' : 'recent-remote')
           : '';
@@ -395,37 +395,37 @@
         label: `Item ${nextId - 1}`,
         value: Math.floor(Math.random() * 100),
       };
-      graphlet.put(id, props);
+      nebula.put(id, props);
       trackLocal('put', [id, props]);
     });
 
     document.getElementById('btn-modify').addEventListener('click', () => {
-      const ids = graphlet.allIds();
+      const ids = nebula.allIds();
       if (ids.length === 0) {
         alert('No hay entidades. Añade alguna primero.');
         return;
       }
       const target = ids[Math.floor(Math.random() * ids.length)];
       const newValue = Math.floor(Math.random() * 100);
-      graphlet.update(target, { value: newValue });
+      nebula.update(target, { value: newValue });
       trackLocal('update', [target, { value: newValue }]);
     });
 
     document.getElementById('btn-delete').addEventListener('click', () => {
-      const ids = graphlet.allIds();
+      const ids = nebula.allIds();
       if (ids.length === 0) {
         alert('No hay entidades. Añade alguna primero.');
         return;
       }
       const target = ids[Math.floor(Math.random() * ids.length)];
-      graphlet.delete(target);
+      nebula.delete(target);
       trackLocal('delete', [target]);
     });
 
     document.getElementById('btn-clear').addEventListener('click', () => {
-      const ids = graphlet.allIds();
+      const ids = nebula.allIds();
       for (const id of ids) {
-        graphlet.delete(id);
+        nebula.delete(id);
         trackLocal('delete', [id]);
       }
     });
@@ -437,10 +437,10 @@
     updateCounters();
 
     // Exponer al window para exploración
-    window.__widget = { graphlet, adapter, origin: adapter.origin };
+    window.__widget = { nebula, adapter, origin: adapter.origin };
     console.log('Widget listo. Origin de este tab:', adapter.origin);
     console.log('Objetos expuestos en window.__widget');
-    console.log('Prueba: __widget.graphlet.put("manual:1", { label: "Manual" })');
+    console.log('Prueba: __widget.nebula.put("manual:1", { label: "Manual" })');
   </script>
 </body>
 </html>

@@ -112,7 +112,7 @@
     Atributos clave:
     - data-chunk="tab-panel": Vincula cada elemento con la fábrica de comportamiento 'tab-panel'.
     - data-tab-panel: Clave del panel para sincronizar visibilidad con la ruta actual.
-    - data-entity: Referencia semántica a la entidad alojada en el grafo de Graphlet (ej. 'tab:overview').
+    - data-entity: Referencia semántica a la entidad alojada en el grafo de nebula (ej. 'tab:overview').
     - data-field: Marcador de posición donde se insertarán dinámicamente las propiedades de la entidad.
   -->
   <main>
@@ -158,14 +158,14 @@
       // ----------------------------------------------------------------------
       // Chunklet.setup() inicializa internamente la tríada:
       // - Pulsar: Manejador de estado reactivo.
-      // - Graphlet: Modelo de datos semántico (entidades y relaciones).
+      // - nebula: Modelo de datos semántico (entidades y relaciones).
       // - Voyajer: Router sincronizador de URL.
       const stack = Chunklet.setup({
         // Configuración de Pulsar (Estado inicial global)
         pulsar: { initialState: { ui: {} } },
         
-        // Al pasar 'undefined', Chunklet crea automáticamente una instancia limpia de Graphlet
-        graphlet: undefined,
+        // Al pasar 'undefined', Chunklet crea automáticamente una instancia limpia de nebula
+        nebula: undefined,
 
         // Configuración de Voyajer (Enrutamiento mediante hash URL #)
         voyajer: {
@@ -193,19 +193,19 @@
       });
 
       // ----------------------------------------------------------------------
-      // 2. POBLADO DE DATOS SEMÁNTICOS (GRAPHLET)
+      // 2. POBLADO DE DATOS SEMÁNTICOS (nebula)
       // ----------------------------------------------------------------------
       // Se registran las entidades en el almacén semántico, separando totalmente 
       // los datos del marcado HTML y la lógica de visualización.
-      stack.graphlet.put('tab:overview', {
+      stack.nebula.put('tab:overview', {
         title: 'Overview Content',
         body: 'This is a clean, minimal UI pattern perfect for layout structure.'
       });
-      stack.graphlet.put('tab:features', {
+      stack.nebula.put('tab:features', {
         title: 'Features Content',
         body: 'Zero dependencies, lightweight footprint, fully responsive behavior.'
       });
-      stack.graphlet.put('tab:settings', {
+      stack.nebula.put('tab:settings', {
         title: 'Settings Content',
         body: 'Customize the accent properties directly in the CSS variables block.'
       });
@@ -250,7 +250,7 @@
         const titleEl = panel.querySelector('[data-field="title"]');
         const bodyEl = panel.querySelector('[data-field="body"]');
 
-        // Consulta y renderizado de la entidad desde Graphlet
+        // Consulta y renderizado de la entidad desde nebula
         // Obtiene el ID de la entidad del atributo `data-entity`
         const entity = ctx.entity(panel.dataset.entity);
         if (entity) {

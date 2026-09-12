@@ -75,39 +75,39 @@ console.log('\n  Identificadores');
 
 console.log('\n  Modelo — escritura');
 {
-  const { graphlet } = crearPrimitivas();
-  const id = modelo.crearConversacion(graphlet, { titulo: 'Primera' });
-  const e = graphlet.get(id);
+  const { nebula } = crearPrimitivas();
+  const id = modelo.crearConversacion(nebula, { titulo: 'Primera' });
+  const e = nebula.get(id);
   eq('la conversación existe tras crearla', e !== null, true);
   eq('conserva el título dado', e.properties.titulo, 'Primera');
   ok('registra creadaEn y actualizadaEn',
     typeof e.properties.creadaEn === 'number' && typeof e.properties.actualizadaEn === 'number');
 
-  const sinTitulo = modelo.crearConversacion(graphlet);
+  const sinTitulo = modelo.crearConversacion(nebula);
   ok('genera un título por defecto',
-    graphlet.get(sinTitulo).properties.titulo.startsWith('Conversación'),
-    graphlet.get(sinTitulo).properties.titulo);
+    nebula.get(sinTitulo).properties.titulo.startsWith('Conversación'),
+    nebula.get(sinTitulo).properties.titulo);
 }
 {
-  const { graphlet } = crearPrimitivas();
-  const id = modelo.crearConversacion(graphlet, { titulo: 'Antes' });
-  const creadaEn = graphlet.get(id).properties.creadaEn;
+  const { nebula } = crearPrimitivas();
+  const id = modelo.crearConversacion(nebula, { titulo: 'Antes' });
+  const creadaEn = nebula.get(id).properties.creadaEn;
 
-  modelo.renombrarConversacion(graphlet, id, 'Después');
-  const e = graphlet.get(id);
+  modelo.renombrarConversacion(nebula, id, 'Después');
+  const e = nebula.get(id);
   eq('renombrar cambia el título', e.properties.titulo, 'Después');
   eq('renombrar NO borra creadaEn', e.properties.creadaEn, creadaEn);
 
   lanza('renombrar algo inexistente lanza',
-    () => modelo.renombrarConversacion(graphlet, 'conversation:fantasma', 'x'));
+    () => modelo.renombrarConversacion(nebula, 'conversation:fantasma', 'x'));
 }
 {
-  const { graphlet } = crearPrimitivas();
-  const id = modelo.crearConversacion(graphlet);
-  modelo.eliminarConversacion(graphlet, id);
-  eq('eliminar quita la entidad', graphlet.get(id), null);
-  modelo.eliminarConversacion(graphlet, id);
-  eq('eliminar dos veces no lanza', graphlet.allIds(), []);
+  const { nebula } = crearPrimitivas();
+  const id = modelo.crearConversacion(nebula);
+  modelo.eliminarConversacion(nebula, id);
+  eq('eliminar quita la entidad', nebula.get(id), null);
+  modelo.eliminarConversacion(nebula, id);
+  eq('eliminar dos veces no lanza', nebula.allIds(), []);
 }
 
 console.log('\n  Modelo — derivación de la lista');
@@ -177,13 +177,13 @@ const HTML = `
   document.body.innerHTML = HTML;
   const raiz = document.getElementById('raiz');
 
-  const { graphlet, pulsar } = crearPrimitivas();
+  const { nebula, pulsar } = crearPrimitivas();
   const storage = storageMock();
-  const datos = arrancarDatos({ graphlet, pulsar, storage, clave: 'nexus.test' });
+  const datos = arrancarDatos({ nebula, pulsar, storage, clave: 'nexus.test' });
 
   // Se usa la ruta real de arranque en vez de armar el stack a mano: así la
   // prueba ejercita lo mismo que index.html, incluido Voyajer.
-  montarInterfaz({ graphlet, pulsar, raiz, modoRuta: 'hash' });
+  montarInterfaz({ nebula, pulsar, raiz, modoRuta: 'hash' });
 
   const lista = raiz.querySelector('[data-zona="lista"]');
   const vacio = raiz.querySelector('[data-zona="vacio"]');
@@ -194,14 +194,14 @@ const HTML = `
   eq('el aviso de lista vacía está visible', vacio.hidden, false);
 
   // --- crear por mutación directa del modelo ---
-  const id1 = modelo.crearConversacion(graphlet, { titulo: 'Uno' });
+  const id1 = modelo.crearConversacion(nebula, { titulo: 'Uno' });
   eq('una conversación nueva pinta una fila', lista.children.length, 1);
   eq('la fila lleva el id del modelo', lista.children[0].dataset.entity, id1);
   eq('la fila muestra el título',
     lista.children[0].querySelector('[data-zona="titulo"]').textContent, 'Uno');
   eq('el aviso de vacío se oculta', vacio.hidden, true);
 
-  const id2 = modelo.crearConversacion(graphlet, { titulo: 'Dos' });
+  const id2 = modelo.crearConversacion(nebula, { titulo: 'Dos' });
   eq('dos conversaciones pintan dos filas', lista.children.length, 2);
   eq('la más reciente va primero', lista.children[0].dataset.entity, id2);
 
@@ -222,7 +222,7 @@ const HTML = `
   eq('la recién creada encabeza la lista', lista.children[0].dataset.entity, idNuevo);
 
   // --- renombrar repinta ---
-  modelo.renombrarConversacion(graphlet, id1, 'Uno renombrado');
+  modelo.renombrarConversacion(nebula, id1, 'Uno renombrado');
   const fila1 = [...lista.children].find((f) => f.dataset.entity === id1);
   eq('renombrar repinta el título de la fila',
     fila1.querySelector('[data-zona="titulo"]').textContent, 'Uno renombrado');
@@ -238,7 +238,7 @@ const HTML = `
     fila1.getAttribute('aria-selected'), 'false');
 
   // --- eliminar ---
-  modelo.eliminarConversacion(graphlet, id2);
+  modelo.eliminarConversacion(nebula, id2);
   eq('eliminar quita la fila', lista.children.length, 2);
   ok('la fila eliminada ya no está',
     ![...lista.children].some((f) => f.dataset.entity === id2));
@@ -248,9 +248,9 @@ const HTML = `
   const observador = new w.MutationObserver(() => { repintados++; });
   if (observador.observe) observador.observe(lista, { childList: true });
 
-  graphlet.put('message:1', { texto: 'un mensaje, no una conversación' });
-  graphlet.put('message:2', { texto: 'otro' });
-  graphlet.update('message:1', { texto: 'editado' });
+  nebula.put('message:1', { texto: 'un mensaje, no una conversación' });
+  nebula.put('message:2', { texto: 'otro' });
+  nebula.update('message:1', { texto: 'editado' });
 
   eq('mutar entidades ajenas no altera la lista', lista.children.length, 2);
   eq('las conversaciones siguen siendo las mismas',
@@ -262,7 +262,7 @@ const HTML = `
   eq('desmontar vacía la lista', lista.children.length, 0);
 
   const antes = pulsar.getState().ui.activeConversation;
-  modelo.crearConversacion(graphlet, { titulo: 'Tras desmontar' });
+  modelo.crearConversacion(nebula, { titulo: 'Tras desmontar' });
   eq('tras desmontar, el DOM ya no reacciona', lista.children.length, 0);
   eq('tras desmontar, la selección no cambia sola',
     pulsar.getState().ui.activeConversation, antes);

@@ -4,15 +4,15 @@
  * Escena 1.2 — Fase 1.
  *
  * Este módulo concentra dos cosas que conviene no dispersar por los widgets:
- * las operaciones de dominio sobre Graphlet, y la derivación de la lista que
+ * las operaciones de dominio sobre nebula, y la derivación de la lista que
  * la interfaz consume desde la proyección de Pulsar.
  *
  * La separación importa porque son lados opuestos del Bridge:
  *
- *   escritura  ->  Graphlet  ->  [Bridge]  ->  Pulsar  ->  lectura
+ *   escritura  ->  nebula  ->  [Bridge]  ->  Pulsar  ->  lectura
  *
- * Las funciones de escritura reciben `graphlet` y mutan el modelo.
- * Las de lectura reciben el `entities` proyectado y no tocan Graphlet.
+ * Las funciones de escritura reciben `nebula` y mutan el modelo.
+ * Las de lectura reciben el `entities` proyectado y no tocan nebula.
  * Ningún widget debería mezclar ambos lados.
  */
 
@@ -44,7 +44,7 @@ export function ahora() {
 export const TIPO_CONVERSACION = 'conversation';
 
 // ==================================================================
-// Escritura — operaciones de dominio sobre Graphlet
+// Escritura — operaciones de dominio sobre nebula
 // ==================================================================
 
 /**
@@ -56,11 +56,11 @@ export const TIPO_CONVERSACION = 'conversation';
  *
  * @returns {string} el id de la conversación creada.
  */
-export function crearConversacion(graphlet, { titulo } = {}) {
+export function crearConversacion(nebula, { titulo } = {}) {
   const id = generarId(TIPO_CONVERSACION);
   const marca = ahora();
 
-  graphlet.put(id, {
+  nebula.put(id, {
     titulo: titulo || tituloPorDefecto(marca),
     creadaEn: marca,
     actualizadaEn: marca,
@@ -75,18 +75,18 @@ export function crearConversacion(graphlet, { titulo } = {}) {
  * Usa `update` y no `put`: `put` reemplazaría las propiedades enteras y
  * borraría `creadaEn`. Y usa `update` y no `upsert` porque renombrar algo
  * que no existe es un error de la aplicación, no un caso a tolerar — que
- * lance es la conducta correcta (Graphlet Contract §4.1).
+ * lance es la conducta correcta (nebula Contract §4.1).
  */
-export function renombrarConversacion(graphlet, id, titulo) {
-  graphlet.update(id, { titulo, actualizadaEn: ahora() });
+export function renombrarConversacion(nebula, id, titulo) {
+  nebula.update(id, { titulo, actualizadaEn: ahora() });
 }
 
 /**
  * Marca una conversación como tocada, para que suba en el orden.
  * Escena 1.3 la llamará al añadir mensajes.
  */
-export function tocarConversacion(graphlet, id) {
-  graphlet.update(id, { actualizadaEn: ahora() });
+export function tocarConversacion(nebula, id) {
+  nebula.update(id, { actualizadaEn: ahora() });
 }
 
 /**
@@ -95,8 +95,8 @@ export function tocarConversacion(graphlet, id) {
  * Guarda contra ausencia porque `delete` lanza si el id no existe, y borrar
  * algo ya borrado es idempotente desde el punto de vista de la interfaz.
  */
-export function eliminarConversacion(graphlet, id) {
-  if (graphlet.get(id)) graphlet.delete(id);
+export function eliminarConversacion(nebula, id) {
+  if (nebula.get(id)) nebula.delete(id);
 }
 
 function tituloPorDefecto(marca) {

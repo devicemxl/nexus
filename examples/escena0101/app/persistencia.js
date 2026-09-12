@@ -8,7 +8,7 @@
  * Escena 1.1 — Fase 1.
  */
 
-import { createGraphlet } from '../../../src/graphlet.js';
+import { createnebula } from '../../../src/nebula.js';
 import { createHydrationAdapter } from '../../../src/adapters/hydration-adapter.js';
 
 /**
@@ -70,7 +70,7 @@ function _problemaDeForma(datos) {
 function _ensayarHidratacion(snapshot) {
   try {
     createHydrationAdapter(
-      { graphlet: createGraphlet() },
+      { nebula: createnebula() },
       { snapshot, onMissingTarget: 'skip' }
     );
     return null;

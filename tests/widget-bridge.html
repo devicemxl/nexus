@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Widget: Bridge Graphlet↔Pulsar - Validación empírica</title>
+  <title>Widget: Bridge nebula↔Pulsar - Validación empírica</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -94,7 +94,7 @@
   </style>
 </head>
 <body>
-  <h1>🔗 Widget: Bridge Graphlet↔Pulsar</h1>
+  <h1>🔗 Widget: Bridge nebula↔Pulsar</h1>
   <div class="subtitle">
     Validación empírica del adapter v0.1.0. Renderiza lista reactiva de <code>state.entities.*</code>
     y mide ruido reactivo del snapshot version.
@@ -128,7 +128,7 @@
       <span class="counter-value" id="watched-real-count">0</span>
     </div>
     <div class="counter-note">
-      Con snapshot version del Bridge, cada mutación en Graphlet produce nuevo objeto para
+      Con snapshot version del Bridge, cada mutación en nebula produce nuevo objeto para
       TODAS las entidades. El listener de 'watched' se dispara aunque haya cambiado otra
       entidad. La diferencia entre los dos contadores es el ruido reactivo cuantificado.
     </div>
@@ -137,19 +137,19 @@
 
   <script type="module">
     import { createStatePulsar } from '../src/pulsar.js';
-    import { createGraphlet } from '../src/graphlet.js';
-    import { createGraphletPulsarBridge } from '../src/adapters/graphlet-pulsar-bridge.js';
+    import { createnebula } from '../src/nebula.js';
+    import { createnebulaPulsarBridge } from '../src/adapters/nebula-pulsar-bridge.js';
 
     // ============================================================
     // Setup del stack mínimo
     // ============================================================
-    const graphlet = createGraphlet();
+    const nebula = createnebula();
     const pulsar = createStatePulsar({});
-    createGraphletPulsarBridge({ graphlet, pulsar });
+    createnebulaPulsarBridge({ nebula, pulsar });
 
     // Sembrado inicial: dos entidades. 'watched' es la que el contador observará.
-    graphlet.put('user:watched', { name: 'Watched User', role: 'observed' });
-    graphlet.put('user:1', { name: 'User 1', role: 'ignored' });
+    nebula.put('user:watched', { name: 'Watched User', role: 'observed' });
+    nebula.put('user:1', { name: 'User 1', role: 'ignored' });
 
     // ============================================================
     // Renderizado de la lista (subscribe al mapa completo)
@@ -266,42 +266,42 @@
 
     document.getElementById('btn-add').addEventListener('click', () => {
       const id = `user:${nextId++}`;
-      graphlet.put(id, { name: `User ${nextId - 1}`, role: 'ignored' });
+      nebula.put(id, { name: `User ${nextId - 1}`, role: 'ignored' });
     });
 
     document.getElementById('btn-update').addEventListener('click', () => {
       // Muta 'watched' — debería producir notificación Y real change.
-      const w = graphlet.get('user:watched');
+      const w = nebula.get('user:watched');
       const currentName = w ? w.properties.name : 'Watched';
       const suffix = Math.floor(Math.random() * 1000);
-      graphlet.update('user:watched', { name: `Watched ${suffix}` });
+      nebula.update('user:watched', { name: `Watched ${suffix}` });
     });
 
     document.getElementById('btn-update-other').addEventListener('click', () => {
       // Muta OTRA entidad — con snapshot version, esto también notifica
       // al listener de 'watched' aunque 'watched' no haya cambiado. Ruido.
-      const ids = graphlet.allIds().filter(id => id !== 'user:watched');
+      const ids = nebula.allIds().filter(id => id !== 'user:watched');
       if (ids.length === 0) {
         alert('No hay otras entidades para modificar. Añade alguna primero.');
         return;
       }
       const target = ids[Math.floor(Math.random() * ids.length)];
       const suffix = Math.floor(Math.random() * 1000);
-      graphlet.update(target, { name: `Renamed ${suffix}` });
+      nebula.update(target, { name: `Renamed ${suffix}` });
     });
 
     document.getElementById('btn-add-link').addEventListener('click', () => {
       // link() con G-0 es idempotente: si el triple ya existe, es no-op
       // y el Bridge NO re-proyecta. Verificable observando que el contador
       // no incrementa en clicks consecutivos.
-      const ids = graphlet.allIds().filter(id => id !== 'user:watched');
+      const ids = nebula.allIds().filter(id => id !== 'user:watched');
       if (ids.length === 0) {
         alert('No hay otras entidades. Añade alguna primero.');
         return;
       }
       const target = ids[0];
       try {
-        graphlet.link('user:watched', 'knows', target);
+        nebula.link('user:watched', 'knows', target);
       } catch (e) {
         alert('Error: ' + e.message);
       }
@@ -309,13 +309,13 @@
 
     document.getElementById('btn-remove').addEventListener('click', () => {
       // Borra la última añadida (que no sea watched)
-      const ids = graphlet.allIds().filter(id => id !== 'user:watched');
+      const ids = nebula.allIds().filter(id => id !== 'user:watched');
       if (ids.length === 0) {
         alert('No hay otras entidades. Añade alguna primero.');
         return;
       }
       const last = ids[ids.length - 1];
-      graphlet.delete(last);
+      nebula.delete(last);
     });
 
     document.getElementById('btn-reset').addEventListener('click', () => {
@@ -326,10 +326,10 @@
     });
 
     // Exponer al window para exploración manual desde DevTools
-    window.__widget = { graphlet, pulsar };
+    window.__widget = { nebula, pulsar };
     console.log('Widget listo. Objetos expuestos en window.__widget');
     console.log('Prueba manual desde consola:');
-    console.log('  __widget.graphlet.put("test:1", { name: "Test" })');
+    console.log('  __widget.nebula.put("test:1", { name: "Test" })');
     console.log('  __widget.pulsar.getState().entities');
   </script>
 </body>

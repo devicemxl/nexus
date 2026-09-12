@@ -18,7 +18,7 @@
   <div id="output"></div>
 
   <script type="module">
-    import { createGraphlet } from '../src/graphlet.js';
+    import { createnebula } from '../src/nebula.js';
     import { createHydrationAdapter } from '../src/adapters/hydration-adapter.js';
     import { createPersistenceAdapter } from '../src/adapters/persistence-adapter.js';
 
@@ -107,10 +107,10 @@
     section('TEST 1: Modo eager escribe síncronamente tras cada mutación');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         { key: 'test1', mode: 'eager', storage }
       );
 
@@ -135,10 +135,10 @@
     section('TEST 2: Modo debounced coalesce mutaciones rápidas');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         { key: 'test2', mode: 'debounced', debounceMs: 50, storage }
       );
 
@@ -166,10 +166,10 @@
     section('TEST 3: Debounced trailing — cada mutación resetea el timer');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         { key: 'test3', mode: 'debounced', debounceMs: 50, storage }
       );
 
@@ -190,15 +190,15 @@
     // ============================================================
     // TEST 4: writeOnInit escribe al instanciar
     // ============================================================
-    section('TEST 4: writeOnInit=true escribe el estado inicial de Graphlet');
+    section('TEST 4: writeOnInit=true escribe el estado inicial de nebula');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       g.put('preexistente:1', { name: 'Preexistente' });
 
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         { key: 'test4', mode: 'eager', storage, writeOnInit: true }
       );
 
@@ -219,11 +219,11 @@
     section('TEST 5: writeOnInit por defecto es false');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       g.put('x:1', {});
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         { key: 'test5', mode: 'eager', storage }
       );
       assert(storage._state.writeCount === 0,
@@ -237,10 +237,10 @@
     section('TEST 6: flush() escribe ya y cancela timer pendiente');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         { key: 'test6', mode: 'debounced', debounceMs: 1000, storage }
       );
 
@@ -266,10 +266,10 @@
     section('TEST 7: flush() es seguro llamar sin pendiente');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         { key: 'test7', mode: 'debounced', debounceMs: 50, storage }
       );
 
@@ -294,10 +294,10 @@
     section('TEST 8: destroy() no hace flush implícito');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         { key: 'test8', mode: 'debounced', debounceMs: 1000, storage }
       );
 
@@ -316,10 +316,10 @@
     section('TEST 9: destroy() cancela el timer debounced pendiente');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         { key: 'test9', mode: 'debounced', debounceMs: 50, storage }
       );
 
@@ -331,17 +331,17 @@
     }
 
     // ============================================================
-    // TEST 10: destroy() restaura los métodos originales de Graphlet
+    // TEST 10: destroy() restaura los métodos originales de nebula
     // ============================================================
     section('TEST 10: destroy() restaura los métodos originales');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const originalPut = g.put;
 
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         { key: 'test10', mode: 'eager', storage }
       );
 
@@ -363,10 +363,10 @@
     section('TEST 11: destroy() es idempotente');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         { key: 'test11', mode: 'eager', storage }
       );
 
@@ -384,13 +384,13 @@
     section('TEST 12: Set semantics (G-0): link duplicado no produce escritura');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       g.put('a', {});
       g.put('b', {});
 
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         { key: 'test12', mode: 'eager', storage }
       );
 
@@ -400,7 +400,7 @@
 
       g.link('a', 'rel', 'b');  // No-op (G-0)
       assert(storage._state.writeCount === 1,
-        'Segundo link idéntico (no-op de Graphlet): NO produce nueva escritura');
+        'Segundo link idéntico (no-op de nebula): NO produce nueva escritura');
 
       g.link('a', 'rel', 'b');  // No-op
       g.link('a', 'rel', 'b');  // No-op
@@ -416,14 +416,14 @@
     section('TEST 13: Set semantics: unlink sobre triple inexistente no produce escritura');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       g.put('a', {});
       g.put('b', {});
       g.link('a', 'rel', 'b');
 
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         { key: 'test13', mode: 'eager', storage }
       );
 
@@ -452,10 +452,10 @@
 
     {
       // Fase 1: sembrar y persistir
-      const g1 = createGraphlet();
+      const g1 = createnebula();
       const storage = createMockStorage();
       const p = createPersistenceAdapter(
-        { graphlet: g1 },
+        { nebula: g1 },
         { key: 'roundtrip', mode: 'eager', storage }
       );
 
@@ -466,12 +466,12 @@
       const snapshotWritten = storage._state.lastWrittenValue;
       p.destroy();
 
-      // Fase 2: nueva Graphlet vacía, hidratar desde el snapshot
-      const g2 = createGraphlet();
+      // Fase 2: nueva nebula vacía, hidratar desde el snapshot
+      const g2 = createnebula();
       assert(g2.allIds().length === 0, 'g2 empieza vacía');
 
       const parsed = JSON.parse(snapshotWritten);
-      createHydrationAdapter({ graphlet: g2 }, { snapshot: parsed });
+      createHydrationAdapter({ nebula: g2 }, { snapshot: parsed });
 
       assert(g2.allIds().length === 2,
         'g2 tras hydration: 2 entidades');
@@ -490,11 +490,11 @@
     section('TEST 15: onError se invoca en fallo de write, sin propagar');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const storage = createMockStorage();
       const errors = [];
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         {
           key: 'test15',
           mode: 'eager',
@@ -527,11 +527,11 @@
     section('TEST 16: onError se invoca en fallo de serialize (referencia circular)');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const storage = createMockStorage();
       const errors = [];
       const adapter = createPersistenceAdapter(
-        { graphlet: g },
+        { nebula: g },
         {
           key: 'test16',
           mode: 'eager',
@@ -541,7 +541,7 @@
       );
 
       // Construir un objeto circular y meterlo como property.
-      // Graphlet no valida circularidad (solo pide plain object top-level),
+      // nebula no valida circularidad (solo pide plain object top-level),
       // pero JSON.stringify sí lo rechaza.
       const circular = { a: 1 };
       circular.self = circular;
@@ -567,17 +567,17 @@
     {
       const dummyStorage = createMockStorage();
 
-      // 17.1: context sin graphlet
+      // 17.1: context sin nebula
       let t = false;
       try { createPersistenceAdapter({}, { key: 'k', storage: dummyStorage }); }
       catch (e) { t = true; }
-      assert(t, '17.1: context sin graphlet lanza TypeError');
+      assert(t, '17.1: context sin nebula lanza TypeError');
 
       // 17.2: falta key
       t = false;
       try {
         createPersistenceAdapter(
-          { graphlet: createGraphlet() },
+          { nebula: createnebula() },
           { storage: dummyStorage }
         );
       } catch (e) { t = true; }
@@ -587,7 +587,7 @@
       t = false;
       try {
         createPersistenceAdapter(
-          { graphlet: createGraphlet() },
+          { nebula: createnebula() },
           { key: '   ', storage: dummyStorage }
         );
       } catch (e) { t = true; }
@@ -597,7 +597,7 @@
       t = false;
       try {
         createPersistenceAdapter(
-          { graphlet: createGraphlet() },
+          { nebula: createnebula() },
           { key: 'k', mode: 'nope', storage: dummyStorage }
         );
       } catch (e) { t = true; }
@@ -607,7 +607,7 @@
       t = false;
       try {
         createPersistenceAdapter(
-          { graphlet: createGraphlet() },
+          { nebula: createnebula() },
           { key: 'k', debounceMs: -1, storage: dummyStorage }
         );
       } catch (e) { t = true; }
@@ -617,7 +617,7 @@
       t = false;
       try {
         createPersistenceAdapter(
-          { graphlet: createGraphlet() },
+          { nebula: createnebula() },
           { key: 'k', storage: { foo: 'bar' } }
         );
       } catch (e) { t = true; }

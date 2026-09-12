@@ -192,7 +192,7 @@
   </div>
 
   <script type="module">
-    import { createGraphlet } from '../src/graphlet.js';
+    import { createnebula } from '../src/nebula.js';
     import { createHydrationAdapter } from '../src/adapters/hydration-adapter.js';
     import { createPersistenceAdapter } from '../src/adapters/persistence-adapter.js';
 
@@ -216,9 +216,9 @@
     };
 
     // ============================================================
-    // Setup del stack (Graphlet + Hydration + Persistence)
+    // Setup del stack (nebula + Hydration + Persistence)
     // ============================================================
-    const graphlet = createGraphlet();
+    const nebula = createnebula();
 
     // Fase 1: Hydration
     // Intentar leer desde localStorage; si no hay nada, hidratar el default.
@@ -227,14 +227,14 @@
     if (rawSaved) {
       try {
         const parsed = JSON.parse(rawSaved);
-        createHydrationAdapter({ graphlet }, { snapshot: parsed });
+        createHydrationAdapter({ nebula }, { snapshot: parsed });
         hydratedFromStorage = true;
       } catch (e) {
         console.warn('[Widget] localStorage corrupto, cayendo a default:', e);
-        createHydrationAdapter({ graphlet }, { snapshot: DEFAULT_STATE });
+        createHydrationAdapter({ nebula }, { snapshot: DEFAULT_STATE });
       }
     } else {
-      createHydrationAdapter({ graphlet }, { snapshot: DEFAULT_STATE });
+      createHydrationAdapter({ nebula }, { snapshot: DEFAULT_STATE });
     }
 
     // Fase 2: Persistence
@@ -256,15 +256,15 @@
     };
 
     createPersistenceAdapter(
-      { graphlet },
+      { nebula },
       { key: STORAGE_KEY, mode: 'debounced', debounceMs: DEBOUNCE_MS }
     );
 
     // ============================================================
-    // Renderizado vanilla desde Graphlet
+    // Renderizado vanilla desde nebula
     // ============================================================
     function currentSettings() {
-      const s = graphlet.get('settings:toolbar');
+      const s = nebula.get('settings:toolbar');
       // Fallback defensivo. En la práctica siempre existe porque hidratamos.
       return s ? s.properties : DEFAULT_STATE.entities['settings:toolbar'].properties;
     }
@@ -333,7 +333,7 @@
 
     function mutate(patch) {
       mutationsCount++;
-      graphlet.update('settings:toolbar', patch);
+      nebula.update('settings:toolbar', patch);
       render();
     }
 
@@ -376,10 +376,10 @@
     render();
 
     // Exponer al window para exploración manual
-    window.__widget = { graphlet, storageKey: STORAGE_KEY };
+    window.__widget = { nebula, storageKey: STORAGE_KEY };
     console.log('Widget listo. Objetos expuestos en window.__widget');
     console.log('Prueba manual desde consola:');
-    console.log('  __widget.graphlet.get("settings:toolbar")');
+    console.log('  __widget.nebula.get("settings:toolbar")');
     console.log('  localStorage.getItem(__widget.storageKey)');
   </script>
 </body>

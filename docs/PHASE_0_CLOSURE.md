@@ -14,7 +14,7 @@ Este documento **declara** el estado. Para la narrativa y el reasoning, consulta
 | Primitiva | Versión código | Versión contract | Estado |
 |---|---|---|---|
 | PulsarJS | 0.2.1 | 0.2.0 | Estable, harness verde |
-| GraphletJS | 0.3.0 | 0.3.0 | Estable, harness verde, G-0 (set semantics) aplicado |
+| nebulaJS | 0.3.0 | 0.3.0 | Estable, harness verde, G-0 (set semantics) aplicado |
 | VoyajerJS | 0.2.1 | 0.2.1 | Estable, harness verde |
 | ChunkletJS | 0.4.0 | 0.4.0 | Estable, harness verde, `configure()` y C-2 aplicados |
 
@@ -24,7 +24,7 @@ Todas ejecutan sin bundlers, sin Node.js runtime, importables por ES module desd
 
 | Capa | Adapter | Versión | Harness | Widget canónico |
 |---|---|---|---|---|
-| 9 | Bridge Graphlet↔Pulsar | 0.1.0 | 50/50 | `widget-bridge.html` |
+| 9 | Bridge nebula↔Pulsar | 0.1.0 | 50/50 | `widget-bridge.html` |
 | 10 | Hydration | 0.1.0 | 41/41 | `widget-hydration.html` |
 | 11 | Persistence | 0.1.0 | 50/50 | `widget-persistence.html` |
 | 12 | External Event (BroadcastChannel) | 0.1.0 | 42/42 | `widget-external-event.html` |
@@ -41,10 +41,10 @@ Capa 12 se declara **cerrada en lo que resuelve** con deuda cross-adapter formal
 | `Nexus_Contract_Specification.md` | 0.3.1 | Alineado con implementaciones |
 | `Nexus_Adapter_Contract_Specification.md` | 0.3.0 | Catálogo de 5 adapters, todos con mini-spec |
 | `PulsarJS_Contract_Specification.md` | 0.2.0 | Status actualizado, alineado |
-| `GraphletJS_Contract_Specification.md` | 0.3.0 | Alineado con G-0 |
+| `nebulaJS_Contract_Specification.md` | 0.3.0 | Alineado con G-0 |
 | `VoyajerJS_Contract_Specification.md` | 0.2.1 | Status actualizado, alineado |
 | `ChunkletJS_Contract_Specification.md` | 0.4.0 | Alineado con `configure` y C-2 |
-| `graphlet-pulsar-bridge.spec.md` | 0.1.0 | Estable |
+| `nebula-pulsar-bridge.spec.md` | 0.1.0 | Estable |
 | `hydration-adapter.spec.md` | 0.1.0 | Estable |
 | `persistence-adapter.spec.md` | 0.1.0 | Estable |
 | `external-event-adapter.spec.md` | 0.1.0 | Estable |
@@ -94,7 +94,7 @@ Fase 1 tiene por objetivo **construir la widget factory** como reemplazo funcion
 - Contratos documentados y alineados con implementaciones.
 - Ciclo de desarrollo probado: mini-spec → código → harness → widget canónico.
 - Deuda técnica registrada con resolution path, no oculta.
-- Métricas de rendimiento benchmarkeadas en harness (Voyajer 11ms, Pulsar 86ms, Graphlet 108ms, Chunklet 46ms, Bridge 50ms, harness de adapters entre 2.2 y 486ms según naturaleza síncrona/asíncrona).
+- Métricas de rendimiento benchmarkeadas en harness (Voyajer 11ms, Pulsar 86ms, nebula 108ms, Chunklet 46ms, Bridge 50ms, harness de adapters entre 2.2 y 486ms según naturaleza síncrona/asíncrona).
 
 ### 4.2 Restricciones heredadas de Fase 0 que Fase 1 debe respetar
 
@@ -102,7 +102,7 @@ Fase 1 tiene por objetivo **construir la widget factory** como reemplazo funcion
 - Ninguna dependencia sobre bundlers, transpilers, o Node.js runtime en producción.
 - Convención de namespacing de estado (`route.*`, `entities.*`, `ui.*`, `net.*`).
 - Jerarquía de dependencias del Nexus Contract (Levels 0-4).
-- Set semantics de Graphlet (G-0).
+- Set semantics de nebula (G-0).
 - Anti-eco de External Event.
 - Contrato genérico de adapters (destroy idempotente, no crear primitivas, no handlers globales).
 

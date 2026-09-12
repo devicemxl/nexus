@@ -41,7 +41,7 @@ type AdapterFactory<Options> = (
 
 interface AdapterContext {
   // The primitives the adapter needs. Which ones depends on the adapter.
-  // Example fields: pulsar, graphlet, voyajer, storage, socket.
+  // Example fields: pulsar, nebula, voyajer, storage, socket.
   [key: string]: unknown;
 }
 
@@ -71,7 +71,7 @@ Every adapter must:
 - **Return `destroy()`.** No exceptions. The application must always be able to release the adapter's resources.
 - **Release all resources on `destroy`.** Event listeners, subscriptions, timers, observers, network connections — everything acquired must be released.
 - **Be safe against double-destroy.** Calling `destroy()` twice must not throw and must not attempt to release resources a second time.
-- **Not modify the public API of consumed primitives.** An adapter that wraps `Graphlet.link` internally does so on a captured reference, not by mutating the exported method.
+- **Not modify the public API of consumed primitives.** An adapter that wraps `nebula.link` internally does so on a captured reference, not by mutating the exported method.
 - **Not create primitives.** All primitives passed via `context` must be pre-existing instances created by the application.
 
 ### 3.4 Forbidden Behaviors
@@ -92,11 +92,11 @@ Adapters that write to Pulsar must respect the state tree namespacing convention
 
 Adapters that read from Pulsar should use `subscribeSelector` with the narrowest possible selector to avoid re-notifying on unrelated state changes.
 
-### 4.2 With GraphletJS
+### 4.2 With nebulaJS
 
-Adapters that observe Graphlet mutations do so by wrapping the eight mutation methods (`put`, `upsert`, `update`, `delete`, `link`, `unlink`, `unlinkAll`, and additionally `query` if the adapter needs to react to reads). Wrapping is done in the adapter's factory by capturing the original methods and installing wrappers that call through and then produce side effects.
+Adapters that observe nebula mutations do so by wrapping the eight mutation methods (`put`, `upsert`, `update`, `delete`, `link`, `unlink`, `unlinkAll`, and additionally `query` if the adapter needs to react to reads). Wrapping is done in the adapter's factory by capturing the original methods and installing wrappers that call through and then produce side effects.
 
-Adapters must respect set semantics for links (Graphlet Contract §2.3) — an adapter that emits change events on `link` must emit on the first insertion of a triple, not on subsequent no-op calls.
+Adapters must respect set semantics for links (nebula Contract §2.3) — an adapter that emits change events on `link` must emit on the first insertion of a triple, not on subsequent no-op calls.
 
 ### 4.3 With VoyajerJS
 
@@ -116,17 +116,17 @@ When both approaches would work for a given task, prefer the one whose lifecycle
 
 The following adapters are identified as necessary for the first real application (browser-side diagram editor). Each will receive its own mini-specification when implemented in Phase 0 Point 5. They are listed here in order of dependency (earlier ones are prerequisites for later ones in some scenarios).
 
-**1. Graphlet ↔ Pulsar Bridge**
-Projects Graphlet entities into a Pulsar state slice (default: `entities.*`) so that Chunklet behaviors can subscribe reactively. This is the core adapter — the reason Chunklet can render entities without polling Graphlet.
+**1. nebula ↔ Pulsar Bridge**
+Projects nebula entities into a Pulsar state slice (default: `entities.*`) so that Chunklet behaviors can subscribe reactively. This is the core adapter — the reason Chunklet can render entities without polling nebula.
 
 **2. Hydration Adapter**
-Reads persisted data from a storage backend (localStorage, IndexedDB, or a URL-encoded snapshot) and populates Graphlet at application startup, before Chunklet mounts behaviors. Ensures the first render sees populated state.
+Reads persisted data from a storage backend (localStorage, IndexedDB, or a URL-encoded snapshot) and populates nebula at application startup, before Chunklet mounts behaviors. Ensures the first render sees populated state.
 
 **3. Persistence Adapter**
-The complementary write-side of Hydration. Observes Graphlet mutations and persists to a storage backend, either eagerly (on every mutation), throttled (batched), or on explicit save.
+The complementary write-side of Hydration. Observes nebula mutations and persists to a storage backend, either eagerly (on every mutation), throttled (batched), or on explicit save.
 
 **4. External Event Adapter**
-Translates events from external sources (WebSocket, `postMessage`, SSE) into Graphlet mutations and Pulsar state updates. Enables real-time synchronization with servers or cross-tab coordination.
+Translates events from external sources (WebSocket, `postMessage`, SSE) into nebula mutations and Pulsar state updates. Enables real-time synchronization with servers or cross-tab coordination.
 
 **5. Logging / Observability Adapter**
 Observes primitive mutations and emits them to a sink (console, remote logger, DevTools) for debugging or production observability. Read-only with respect to the primitives.
@@ -142,11 +142,11 @@ Each adapter in the catalog will have its own mini-specification produced at the
 
 Producing the mini-specs alongside the implementations, rather than in advance, respects the principle of evidence-first design (Article I). A pre-emptive specification of an adapter that has not been built is likely to specify something that turns out to be wrong.
 
-### 5.2 Note on the Graphlet ↔ Pulsar Bridge
+### 5.2 Note on the nebula ↔ Pulsar Bridge
 
-The generic bridge described in item 1 above will initially be implemented as a **snapshot-based projection**: any Graphlet mutation triggers a full re-projection of the affected entity type into Pulsar. This is the version that will be produced in Punto 5.
+The generic bridge described in item 1 above will initially be implemented as a **snapshot-based projection**: any nebula mutation triggers a full re-projection of the affected entity type into Pulsar. This is the version that will be produced in Punto 5.
 
-The **correct long-term implementation** projects reactively per entity: only the specific entity's slice in Pulsar is updated when its Graphlet record changes. This requires either additional observability primitives in Graphlet (an opt-in change notification API) or an intermediate change-detection layer built into the bridge itself.
+The **correct long-term implementation** projects reactively per entity: only the specific entity's slice in Pulsar is updated when its nebula record changes. This requires either additional observability primitives in nebula (an opt-in change notification API) or an intermediate change-detection layer built into the bridge itself.
 
 The initial snapshot-based version is sufficient for early applications where the entity set is small, but it does not scale. The mini-specification of the bridge will describe the correct behavior; the first implementation will document its own limitations and the path to the reactive version.
 

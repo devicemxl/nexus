@@ -5,13 +5,13 @@
  * Cambios respecto a v0.4.0 (solo documentación, sin cambio de conducta):
  *   - Se documenta que `_enabledUnsubscribe` no lo libera ningún camino
  *     de código y por qué es deliberado.
- *   - Se documenta el contrato entre `configure({ graphlet })` y los
+ *   - Se documenta el contrato entre `configure({ nebula })` y los
  *     adapters ya conectados: no se recablean, la aplicación debe
  *     destruirlos y reinstanciarlos.
  *
  * Dependencias explícitas:
  *   - PulsarJS   → estado reactivo
- *   - GraphletJS → modelo semántico (entidades, relaciones)
+ *   - nebulaJS → modelo semántico (entidades, relaciones)
  *   - VoyajerJS  → sincronización de URL (opcional)
  *
  * Decisiones de diseño:
@@ -19,7 +19,7 @@
  *   - Auto-create con override: setup crea instancias si no se le pasan.
  *   - Voyajer opcional: ctx.voyajer === undefined si no se configura.
  *   - Enable/disable keyed por data-entity del DOM, nunca por IDs generados.
- *   - Chunklet declara explícitamente su dependencia de Pulsar y Graphlet.
+ *   - Chunklet declara explícitamente su dependencia de Pulsar y nebula.
  *   - Configuración diferida: `configure()` permite añadir Voyajer después del setup.
  *   - Los ctx acceden al stack mediante getters, por lo que una configuración
  *     posterior afecta también a comportamientos ya montados.
@@ -41,14 +41,14 @@
  */
 
 import { createStatePulsar } from './pulsar.js';
-import { createGraphlet } from './graphlet.js';
+import { createnebula } from './nebula.js';
 import { createVoyajer } from './voyajer.js';
 
 // ============================================
 // ESTADO INTERNO DEL MÓDULO (SINGLETON)
 // ============================================
 
-let _stack = null;               // { pulsar, graphlet, voyajer }
+let _stack = null;               // { pulsar, nebula, voyajer }
 let _config = null;              // { entityAttr, enabledPath }
 
 const _behaviors = new Map();    // name -> factory
@@ -90,7 +90,7 @@ function _isPulsarInstance(value) {
   );
 }
 
-function _isGraphletInstance(value) {
+function _isnebulaInstance(value) {
   return (
     value !== null &&
     typeof value === 'object' &&
@@ -183,15 +183,15 @@ function _resolvePulsarOption(pulsarOption) {
   );
 }
 
-function _resolveGraphletOption(graphletOption) {
-  if (graphletOption === undefined) {
-    return createGraphlet();
+function _resolvenebulaOption(nebulaOption) {
+  if (nebulaOption === undefined) {
+    return createnebula();
   }
-  if (_isGraphletInstance(graphletOption)) {
-    return graphletOption;
+  if (_isnebulaInstance(nebulaOption)) {
+    return nebulaOption;
   }
   throw new TypeError(
-    '[Chunklet] setup: graphlet debe ser una instancia de Graphlet o undefined.'
+    '[Chunklet] setup: nebula debe ser una instancia de nebula o undefined.'
   );
 }
 
@@ -225,7 +225,7 @@ export function setup(options = {}) {
 
   const {
     pulsar: pulsarOption,
-    graphlet: graphletOption,
+    nebula: nebulaOption,
     voyajer: voyajerOption,
     entityAttr = 'data-entity',
     enabledPath,
@@ -239,12 +239,12 @@ export function setup(options = {}) {
   }
 
   const pulsarInstance = _resolvePulsarOption(pulsarOption);
-  const graphletInstance = _resolveGraphletOption(graphletOption);
+  const nebulaInstance = _resolvenebulaOption(nebulaOption);
   const voyajerInstance = _resolveVoyajerOption(voyajerOption, pulsarInstance);
 
   _stack = {
     pulsar: pulsarInstance,
-    graphlet: graphletInstance,
+    nebula: nebulaInstance,
     voyajer: voyajerInstance,
   };
 
@@ -262,7 +262,7 @@ export function setup(options = {}) {
 
   return {
     pulsar: pulsarInstance,
-    graphlet: graphletInstance,
+    nebula: nebulaInstance,
     voyajer: voyajerInstance,
   };
 }
@@ -272,26 +272,26 @@ export function setup(options = {}) {
 // ============================================
 
 /**
- * Ajusta el stack después del setup. Solo `graphlet` y `voyajer` son
+ * Ajusta el stack después del setup. Solo `nebula` y `voyajer` son
  * reconfigurables; `pulsar` se mantiene fijo porque los ctx ya montados
  * y la suscripción a `enabledPath` dependen de esa instancia.
  *
  * AVISO SOBRE ADAPTERS. Los adapters del catálogo Nexus (Bridge,
- * Persistence, External Event, Logging) observan Graphlet envolviendo
+ * Persistence, External Event, Logging) observan nebula envolviendo
  * sus métodos de mutación sobre la instancia concreta que recibieron.
- * Sustituir el graphlet con `configure({ graphlet })` NO los recablea:
+ * Sustituir el nebula con `configure({ nebula })` NO los recablea:
  * quedan envolviendo la instancia anterior, y la nueva queda sin
  * observar. Silenciosamente deja de haber proyección a Pulsar,
  * persistencia, broadcast y logging.
  *
- * La aplicación que reemplace el graphlet es responsable de destruir
+ * La aplicación que reemplace el nebula es responsable de destruir
  * los adapters vivos y reinstanciarlos contra la nueva instancia:
  *
  *   bridge.destroy();
  *   persistence.flush(); persistence.destroy();
- *   Chunklet.configure({ graphlet: nuevoGraphlet });
- *   bridge = createGraphletPulsarBridge({ graphlet: nuevoGraphlet, pulsar });
- *   persistence = createPersistenceAdapter({ graphlet: nuevoGraphlet }, { key });
+ *   Chunklet.configure({ nebula: nuevonebula });
+ *   bridge = createnebulaPulsarBridge({ nebula: nuevonebula, pulsar });
+ *   persistence = createPersistenceAdapter({ nebula: nuevonebula }, { key });
  *
  * Chunklet no puede resolverlo por sí mismo: no conoce a los adapters
  * (Nexus Adapter Contract §2 — ninguna primitiva referencia a un
@@ -303,10 +303,10 @@ export function configure(options = {}) {
     throw new TypeError('[Chunklet] configure: options debe ser un objeto plano.');
   }
 
-  // Solo se permiten cambios en graphlet y voyajer; pulsar se mantiene fijo.
-  if (options.graphlet !== undefined) {
-    const resolvedGraphlet = _resolveGraphletOption(options.graphlet);
-    _stack.graphlet = resolvedGraphlet;
+  // Solo se permiten cambios en nebula y voyajer; pulsar se mantiene fijo.
+  if (options.nebula !== undefined) {
+    const resolvednebula = _resolvenebulaOption(options.nebula);
+    _stack.nebula = resolvednebula;
   }
 
   if (options.voyajer !== undefined) {
@@ -319,7 +319,7 @@ export function configure(options = {}) {
 
   return {
     pulsar: _stack.pulsar,
-    graphlet: _stack.graphlet,
+    nebula: _stack.nebula,
     voyajer: _stack.voyajer,
   };
 }
@@ -364,7 +364,7 @@ function _createContext(element) {
   const ctx = {
     // Getters para que una configuración posterior sea visible
     get pulsar() { return _stack ? _stack.pulsar : undefined; },
-    get graphlet() { return _stack ? _stack.graphlet : undefined; },
+    get nebula() { return _stack ? _stack.nebula : undefined; },
     get voyajer() { return _stack ? _stack.voyajer : undefined; },
 
     // --- Registro de recursos ---
@@ -429,19 +429,19 @@ function _createContext(element) {
     },
 
     entity(id) {
-      return _stack.graphlet.get(id);
+      return _stack.nebula.get(id);
     },
 
     upsertEntity(id, props) {
-      return _stack.graphlet.upsert(id, props);
+      return _stack.nebula.upsert(id, props);
     },
 
     updateEntity(id, patch) {
-      return _stack.graphlet.update(id, patch);
+      return _stack.nebula.update(id, patch);
     },
 
     deleteEntity(id) {
-      return _stack.graphlet.delete(id);
+      return _stack.nebula.delete(id);
     },
 
     navigate(state) {

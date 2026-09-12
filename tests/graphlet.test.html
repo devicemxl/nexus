@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>GraphletJS - Tests de Contrato v0.3.0</title>
+  <title>nebulaJS - Tests de Contrato v0.3.0</title>
   <style>
     body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
     .pass { color: #4ec9b0; }
@@ -13,11 +13,11 @@
   </style>
 </head>
 <body>
-  <h1>🧪 GraphletJS Contract Tests v0.3.0</h1>
+  <h1>🧪 nebulaJS Contract Tests v0.3.0</h1>
   <div id="output"></div>
 
   <script type="module">
-    import { createGraphlet } from '../src/graphlet.js';
+    import { createnebula } from '../src/nebula.js';
 
     const output = document.getElementById('output');
     let passed = 0;
@@ -48,7 +48,7 @@
     // CONFIGURACIÓN: Crear una instancia limpia para cada grupo
     // ------------------------------------------------------------
     function freshGraph() {
-      return createGraphlet();
+      return createnebula();
     }
 
     // ============================================================
@@ -417,7 +417,7 @@
 
     section('G-T4: query con predicate que lanza propaga el error');
     // Contrato v0.3.0 §4 y Definición: "If the predicate throws, the
-    // error propagates to the caller. Graphlet does not capture, log,
+    // error propagates to the caller. nebula does not capture, log,
     // or continue with the remaining entities. Iteration stops at the
     // point of the throw."
     const gT4 = freshGraph();
@@ -457,7 +457,7 @@
 
     // Contra-test: si el consumidor quiere tolerancia, debe envolver
     // su predicate en try/catch. Esto es guía documentada, no
-    // implementada por Graphlet.
+    // implementada por nebula.
     const gT4b = freshGraph();
     gT4b.put('x', { safe: true });
     gT4b.put('y', { safe: false });

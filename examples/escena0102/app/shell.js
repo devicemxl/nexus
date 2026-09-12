@@ -16,7 +16,7 @@ export function appShell(elemento, ctx) {
   // introduce la navegación y será ella quien lo requiera.
   const faltantes = [];
   if (!ctx.pulsar) faltantes.push('pulsar');
-  if (!ctx.graphlet) faltantes.push('graphlet');
+  if (!ctx.nebula) faltantes.push('nebula');
 
   if (faltantes.length > 0) {
     throw new Error(

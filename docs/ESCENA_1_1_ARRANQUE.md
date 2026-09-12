@@ -15,36 +15,36 @@ funcionalidad de chat, cero LLM, cero behaviors con lógica.
 El entregable parece trivial. No lo es: fija el orden de instanciación, y ese
 orden tiene una decisión con consecuencia medible que Fase 0 nunca forzó,
 porque cada widget canónico validaba un adapter aislado. Esta es la primera vez
-que Hydration, Bridge y Persistence conviven sobre el mismo Graphlet.
+que Hydration, Bridge y Persistence conviven sobre el mismo nebula.
 
 
 ## 2. La secuencia
 
 ```javascript
 // 1. Primitivas crudas. Ningún wrapper instalado todavía.
-const graphlet = createGraphlet();
+const nebula = createnebula();
 const pulsar   = createStatePulsar({ ui: {}, entities: {}, route: {}, net: {} });
 
 // 2. Hidratar ANTES de montar adapters. Ver §3.
 const guardado = localStorage.getItem(CLAVE);
 if (guardado) {
-  createHydrationAdapter({ graphlet }, { snapshot: JSON.parse(guardado) });
+  createHydrationAdapter({ nebula }, { snapshot: JSON.parse(guardado) });
 }
 
 // 3. Bridge. Una sola proyección inicial de todo lo hidratado.
-const bridge = createGraphletPulsarBridge(
-  { graphlet, pulsar },
+const bridge = createnebulaPulsarBridge(
+  { nebula, pulsar },
   { path: 'entities' }            // skipInitialSync: false (default)
 );
 
 // 4. Persistence. writeOnInit: false — acabamos de leer de ahí.
 const persistence = createPersistenceAdapter(
-  { graphlet },
+  { nebula },
   { key: CLAVE, mode: 'debounced', debounceMs: 300, writeOnInit: false }
 );
 
 // 5. Stack de Chunklet sobre las instancias ya preparadas.
-const stack = Chunklet.setup({ pulsar, graphlet, voyajer: { mode: 'hash' } });
+const stack = Chunklet.setup({ pulsar, nebula, voyajer: { mode: 'hash' } });
 
 // 6. Definir behaviors y montar.
 Chunklet.define('app-shell', appShellFactory);
@@ -112,7 +112,7 @@ cuesta 0.8 ms y nadie lo nota. La degradación es silenciosa y aparece cuando la
 aplicación ya creció, lejos en el tiempo del commit que la introdujo, y sin
 ningún síntoma que apunte al orden de instanciación.
 
-Para Fase 1 en concreto: si cada mensaje del chat es una entidad Graphlet, una
+Para Fase 1 en concreto: si cada mensaje del chat es una entidad nebula, una
 conversación larga llega a cientos de entidades sin esfuerzo. A 800 mensajes,
 orden B cuesta medio segundo de hilo principal bloqueado **en cada arranque**,
 contra 1.2 ms del orden A. Es exactamente el rango donde vive la aplicación que
@@ -139,7 +139,7 @@ tanto, el orden es la única defensa.
 
 ## 6. Invariante que esta escena establece
 
-> **Toda carga masiva de datos al Graphlet ocurre antes de que ningún adapter
+> **Toda carga masiva de datos al nebula ocurre antes de que ningún adapter
 > envuelva sus métodos de mutación, o con los adapters explícitamente
 > destruidos durante la carga.**
 
@@ -150,7 +150,7 @@ El patrón para el caso posterior ya está descrito en
 cargar, reinstanciar.
 
 Nótese que esto se compone con el aviso que documentamos en `chunklet.js`
-v0.4.1 sobre `configure({ graphlet })`: sustituir el grafo no recablea los
+v0.4.1 sobre `configure({ nebula })`: sustituir el grafo no recablea los
 adapters. Ambas cosas son la misma disciplina — los adapters envuelven una
 instancia concreta, y cualquier operación que cambie la instancia o la cargue
 en masa tiene que coordinarse con ellos explícitamente.

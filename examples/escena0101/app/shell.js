@@ -26,7 +26,7 @@ export function appShell(elemento, ctx) {
   // ----------------------------------------------------------------
   const faltantes = [];
   if (!ctx.pulsar) faltantes.push('pulsar');
-  if (!ctx.graphlet) faltantes.push('graphlet');
+  if (!ctx.nebula) faltantes.push('nebula');
   if (!ctx.voyajer) faltantes.push('voyajer');
 
   if (faltantes.length > 0) {

@@ -16,10 +16,10 @@
  * `arrancar()` orquesta ambas y es lo que usa la aplicación.
  */
 
-import { createGraphlet } from '../../../src/graphlet.js';
+import { createnebula } from '../../../src/nebula.js';
 import { createStatePulsar } from '../../../src/pulsar.js';
 import { createHydrationAdapter } from '../../../src/adapters/hydration-adapter.js';
-import { createGraphletPulsarBridge } from '../../../src/adapters/graphlet-pulsar-bridge.js';
+import { createnebulaPulsarBridge } from '../../../src/adapters/nebula-pulsar-bridge.js';
 import { createPersistenceAdapter } from '../../../src/adapters/persistence-adapter.js';
 import Chunklet from '../../../src/chunklet.js';
 
@@ -46,7 +46,7 @@ export function estadoInicial() {
  */
 export function crearPrimitivas() {
   return {
-    graphlet: createGraphlet(),
+    nebula: createnebula(),
     pulsar: createStatePulsar(estadoInicial()),
   };
 }
@@ -60,7 +60,7 @@ export function crearPrimitivas() {
  * invariante de §6 de la mini-spec.
  *
  * @param {object} opciones
- * @param {GraphletInstance} opciones.graphlet
+ * @param {nebulaInstance} opciones.nebula
  * @param {PulsarInstance} opciones.pulsar
  * @param {Storage} [opciones.storage] - Inyectable. Por defecto localStorage.
  * @param {string} [opciones.clave] - Clave de snapshot.
@@ -68,9 +68,9 @@ export function crearPrimitivas() {
  * @returns {{bridge, persistence, hidratacion, destruir}}
  */
 export function arrancarDatos(opciones = {}) {
-  const { graphlet, pulsar } = opciones;
-  if (!graphlet || !pulsar) {
-    throw new TypeError('[boot] arrancarDatos requiere graphlet y pulsar');
+  const { nebula, pulsar } = opciones;
+  if (!nebula || !pulsar) {
+    throw new TypeError('[boot] arrancarDatos requiere nebula y pulsar');
   }
 
   const storage = resolverStorage(opciones.storage);
@@ -94,7 +94,7 @@ export function arrancarDatos(opciones = {}) {
 
   if (hidratacion.estado === 'ok') {
     createHydrationAdapter(
-      { graphlet },
+      { nebula },
       { snapshot: hidratacion.snapshot, mode: 'merge', onMissingTarget: 'skip' }
     );
   }
@@ -103,8 +103,8 @@ export function arrancarDatos(opciones = {}) {
   // 2. Bridge. `skipInitialSync` queda en su default (false), de modo que
   //    todo lo hidratado se proyecta en UNA sola pasada.
   // ----------------------------------------------------------------
-  const bridge = createGraphletPulsarBridge(
-    { graphlet, pulsar },
+  const bridge = createnebulaPulsarBridge(
+    { nebula, pulsar },
     { path: 'entities' }
   );
 
@@ -115,7 +115,7 @@ export function arrancarDatos(opciones = {}) {
   //    por mutación.
   // ----------------------------------------------------------------
   const persistence = createPersistenceAdapter(
-    { graphlet },
+    { nebula },
     { key: clave, mode: 'debounced', debounceMs, writeOnInit: false, storage }
   );
 
@@ -142,7 +142,7 @@ export function arrancarDatos(opciones = {}) {
  * esta función no se puede ejecutar dos veces en la misma página.
  */
 export function montarInterfaz(opciones = {}) {
-  const { graphlet, pulsar } = opciones;
+  const { nebula, pulsar } = opciones;
   const raiz = opciones.raiz || document.body;
   const modoRuta = opciones.modoRuta || 'hash';
 
@@ -154,7 +154,7 @@ export function montarInterfaz(opciones = {}) {
   // sirva en ambos modos: cambiar de opinión es esta línea.
   const stack = Chunklet.setup({
     pulsar,
-    graphlet,
+    nebula,
     voyajer: { mode: modoRuta },
   });
 
@@ -175,13 +175,13 @@ export function montarInterfaz(opciones = {}) {
  *   de desarrollo. Encenderlo a voluntad, nunca por costumbre.
  */
 export function arrancar(opciones = {}) {
-  const { graphlet, pulsar } = crearPrimitivas();
+  const { nebula, pulsar } = crearPrimitivas();
 
-  const datos = arrancarDatos({ graphlet, pulsar, ...opciones });
-  const stack = montarInterfaz({ graphlet, pulsar, ...opciones });
+  const datos = arrancarDatos({ nebula, pulsar, ...opciones });
+  const stack = montarInterfaz({ nebula, pulsar, ...opciones });
 
   const nexus = {
-    graphlet: stack.graphlet,
+    nebula: stack.nebula,
     pulsar: stack.pulsar,
     voyajer: stack.voyajer,
     bridge: datos.bridge,

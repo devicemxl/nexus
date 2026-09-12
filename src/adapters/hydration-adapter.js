@@ -4,7 +4,7 @@
  * Contrato: adapters/hydration-adapter.spec.md v0.1.0
  * Implementation version: 0.1.0
  *
- * Popula un Graphlet a partir de un snapshot, en el arranque de la
+ * Popula un nebula a partir de un snapshot, en el arranque de la
  * aplicación, para que el primer ciclo de mount de Chunklet vea
  * estado ya cargado.
  *
@@ -14,10 +14,10 @@
  * Uso:
  *   import { createHydrationAdapter } from './adapters/hydration-adapter.js';
  *   const adapter = createHydrationAdapter(
- *     { graphlet },
+ *     { nebula },
  *     { snapshot, mode: 'merge', onMissingTarget: 'throw' }
  *   );
- *   // El graphlet ya está poblado. `adapter.destroy()` es opcional
+ *   // El nebula ya está poblado. `adapter.destroy()` es opcional
  *   // (no hay recursos vivos) pero se expone por contrato genérico.
  */
 
@@ -32,7 +32,7 @@ function _isPlainObject(value) {
   return proto === Object.prototype || proto === null;
 }
 
-function _isGraphletInstance(value) {
+function _isnebulaInstance(value) {
   return (
     value !== null &&
     typeof value === 'object' &&
@@ -50,7 +50,7 @@ function _isGraphletInstance(value) {
  * Crea un Hydration Adapter y ejecuta la hidratación síncronamente.
  *
  * @param {Object} context
- * @param {GraphletInstance} context.graphlet - Graphlet a poblar.
+ * @param {nebulaInstance} context.nebula - nebula a poblar.
  * @param {Object} options
  * @param {*} options.snapshot - Datos a hidratar. En forma canónica
  *   (ver §3.1 de la mini-spec) o cualquier forma que `parse`
@@ -68,9 +68,9 @@ export function createHydrationAdapter(context, options = {}) {
   if (!context || typeof context !== 'object') {
     throw new TypeError('[HydrationAdapter] context debe ser un objeto');
   }
-  if (!_isGraphletInstance(context.graphlet)) {
+  if (!_isnebulaInstance(context.nebula)) {
     throw new TypeError(
-      '[HydrationAdapter] context.graphlet debe ser una instancia de Graphlet'
+      '[HydrationAdapter] context.nebula debe ser una instancia de nebula'
     );
   }
 
@@ -100,7 +100,7 @@ export function createHydrationAdapter(context, options = {}) {
     );
   }
 
-  const { graphlet } = context;
+  const { nebula } = context;
   const writeMethod = mode === 'replace' ? 'put' : 'upsert';
 
   // ============================================
@@ -129,7 +129,7 @@ export function createHydrationAdapter(context, options = {}) {
   //
   // Se crean todas las entidades ANTES de crear cualquier link, para
   // garantizar que ambos endpoints de cada link existan cuando se
-  // llame a graphlet.link (mini-spec §3.3).
+  // llame a nebula.link (mini-spec §3.3).
   for (const [id, entry] of entries) {
     if (!_isPlainObject(entry)) {
       throw new TypeError(
@@ -137,16 +137,16 @@ export function createHydrationAdapter(context, options = {}) {
       );
     }
     const props = entry.properties !== undefined ? entry.properties : {};
-    // La validación de que `props` sea objeto plano se delega a Graphlet,
+    // La validación de que `props` sea objeto plano se delega a nebula,
     // que lanza TypeError con mensaje consistente si no lo es.
-    graphlet[writeMethod](id, props);
+    nebula[writeMethod](id, props);
   }
 
   // ---------- Paso 3, pasada 2: crear links ----------
   //
   // Se aplica dedup defensiva por relación antes de llamar a link,
   // para protegerse de snapshots serializados por sistemas que no
-  // respetaron set semantics (Graphlet v0.3.0 §2.3 / G-0).
+  // respetaron set semantics (nebula v0.3.0 §2.3 / G-0).
   for (const [sourceId, entry] of entries) {
     if (entry.links === undefined) continue;
 
@@ -168,7 +168,7 @@ export function createHydrationAdapter(context, options = {}) {
 
       for (const target of uniqueTargets) {
         try {
-          graphlet.link(sourceId, relation, target);
+          nebula.link(sourceId, relation, target);
         } catch (error) {
           if (onMissingTarget === 'skip') {
             console.warn(
@@ -176,7 +176,7 @@ export function createHydrationAdapter(context, options = {}) {
             );
             continue;
           }
-          // Por defecto, propagar. Graphlet queda en estado parcial.
+          // Por defecto, propagar. nebula queda en estado parcial.
           throw error;
         }
       }

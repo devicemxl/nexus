@@ -1,4 +1,4 @@
-# SESS-002 — Implementación del Framework Nexus: PulsarJS, GraphletJS, ChunkletJS, BinderJS y VoyajerJS
+# SESS-002 — Implementación del Framework Nexus: PulsarJS, nebulaJS, ChunkletJS, BinderJS y VoyajerJS
 
 | clave               | valor                                                                                                |
 |---------------------|------------------------------------------------------------------------------------------------------|
@@ -11,12 +11,12 @@
 | **depende\_de**     | `SESS-001` (Reestructuración, Optimización de Imports y Limpieza de Dependencias)                    |
 | **habilita**        | `L-002` (Logbook de Implementación del Framework Nexus)                                              |
 | **gobierna**        | `Estructura del framework Nexus, módulos core, adapters y ejemplos`                                  |
-| **rag\_tags**       | `sesión, framework, pulsar, graphlet, chunklet, binder, voyajer, reactivo, routing, DOM, validación` |
+| **rag\_tags**       | `sesión, framework, pulsar, nebula, chunklet, binder, voyajer, reactivo, routing, DOM, validación` |
 
 ## 1. Participantes y Contexto[](#1-participantes-y-contexto)
 
 - **Participantes:** Equipo de desarrollo (sesión asíncrona, documentada con el asistente).
-- **Contexto:** Tras la reestructuración del proyecto (SESS-001), se identificó la necesidad de crear un framework front-end ligero y modular que permitiera construir aplicaciones reactivas sin dependencias externas. Se diseñó e implementó el framework **Nexus** con cinco módulos core: PulsarJS (estado reactivo), GraphletJS (modelo semántico), ChunkletJS (DOM behaviors), BinderJS (form binding) y VoyajerJS (URL routing).
+- **Contexto:** Tras la reestructuración del proyecto (SESS-001), se identificó la necesidad de crear un framework front-end ligero y modular que permitiera construir aplicaciones reactivas sin dependencias externas. Se diseñó e implementó el framework **Nexus** con cinco módulos core: PulsarJS (estado reactivo), nebulaJS (modelo semántico), ChunkletJS (DOM behaviors), BinderJS (form binding) y VoyajerJS (URL routing).
 
 ## 2. Problema u Oportunidad Detectada[](#2-problema-u-oportunidad-detectada)
 
@@ -31,9 +31,9 @@
 
 | Decisión                                | Detalle                                                                                                                             | Justificación                                                                    |
 |-----------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------|
-| **1. Crear framework Nexus modular**    | Se diseñó un framework con 5 módulos independientes pero integrables: PulsarJS, GraphletJS, ChunkletJS, BinderJS y VoyajerJS.       | Permite usar solo los módulos necesarios, manteniendo el bundle pequeño.         |
+| **1. Crear framework Nexus modular**    | Se diseñó un framework con 5 módulos independientes pero integrables: PulsarJS, nebulaJS, ChunkletJS, BinderJS y VoyajerJS.       | Permite usar solo los módulos necesarios, manteniendo el bundle pequeño.         |
 | **2. PulsarJS para estado reactivo**    | Se implementó un sistema de estado con suscripciones, computados, historial (undo/redo) y persistencia opcional en localStorage.    | Cubre las necesidades de reactividad sin depender de librerías externas.         |
-| **3. GraphletJS para modelo semántico** | Se creó un sistema de grafos con nodos, aristas, consultas y algoritmos (BFS, subgrafos).                                           | Proporciona la base para el editor visual y futuras funcionalidades de análisis. |
+| **3. nebulaJS para modelo semántico** | Se creó un sistema de grafos con nodos, aristas, consultas y algoritmos (BFS, subgrafos).                                           | Proporciona la base para el editor visual y futuras funcionalidades de análisis. |
 | **4. ChunkletJS para DOM behaviors**    | Se implementó un sistema de componentes con manejo de eventos, estilos, animaciones y comportamientos reutilizables.                | Facilita la creación de UI interactiva sin frameworks pesados.                   |
 | **5. BinderJS para form binding**       | Se desarrolló un sistema de enlace bidireccional con validación, transformación de valores y soporte para múltiples tipos de input. | Simplifica la gestión de formularios complejos.                                  |
 | **6. VoyajerJS para routing**           | Se implementó un router SPA con soporte para hash y history API, middlewares, hooks y navegación programática.                      | Permite crear aplicaciones de una sola página con navegación fluida.             |
@@ -48,13 +48,13 @@ nexus/
 ├── index.html                    # Página principal / Demo
 ├── src/
 │   ├── pulsar.js                 # PulsarJS - Estado reactivo
-│   ├── graphlet.js               # GraphletJS - Modelo semántico
+│   ├── nebula.js               # nebulaJS - Modelo semántico
 │   ├── chunklet.js               # ChunkletJS - DOM behaviors
 │   ├── binder.js                 # BinderJS - Form binding
 │   ├── voyajer.js                # VoyajerJS - URL routing
 │   └── adapters/
 │       ├── index.js              # Exportaciones de adapters
-│       ├── graphlet-sync.js      # Adapter Graphlet→Pulsar
+│       ├── nebula-sync.js      # Adapter nebula→Pulsar
 │       ├── hydration.js          # Adapter de hidratación
 │       ├── persistence.js        # Adapter de persistencia
 │       ├── event-bridge.js       # Adapter de eventos externos
@@ -94,7 +94,7 @@ nexus/
     ├── harness.js
     ├── assert.js
     ├── pulsar.test.js
-    ├── graphlet.test.js
+    ├── nebula.test.js
     ├── chunklet.test.js
     ├── binder.test.js
     ├── voyajer.test.js
@@ -126,7 +126,7 @@ state.subscribe('count', (value) => console.log('Count:', value));
 state.set('count', 5);
 ```
 
-### 5.2 GraphletJS (`src/graphlet.js`)[](#5-2-graphlet-js-src-graphlet-js)
+### 5.2 nebulaJS (`src/nebula.js`)[](#5-2-nebula-js-src-nebula-js)
 
 **Modelo semántico con:**
 
@@ -134,15 +134,15 @@ state.set('count', 5);
 - Operaciones CRUD para nodos y aristas
 - Consultas avanzadas (vecinos, hijos, padres)
 - Algoritmos (BFS, camino más corto)
-- `GraphletUtils` para combinar grafos y subgrafos
+- `nebulaUtils` para combinar grafos y subgrafos
 
 **Ejemplo de uso:**
 
 ```javascript
 
-import { Graphlet } from './src/graphlet.js';
+import { nebula } from './src/nebula.js';
 
-const graph = new Graphlet();
+const graph = new nebula();
 const node1 = graph.addNode({ type: 'input', data: { label: 'Entrada' } });
 const node2 = graph.addNode({ type: 'output', data: { label: 'Salida' } });
 graph.addEdge({ source: node1.id, target: node2.id });
@@ -219,7 +219,7 @@ router.start();
 
 | Adapter          | Archivo                         | Función                                     |
 |------------------|---------------------------------|---------------------------------------------|
-| **GraphletSync** | `src/adapters/graphlet-sync.js` | Sincroniza el estado de Graphlet con Pulsar |
+| **nebulaSync** | `src/adapters/nebula-sync.js` | Sincroniza el estado de nebula con Pulsar |
 | **Hydration**    | `src/adapters/hydration.js`     | Hidrata el estado desde datos externos      |
 | **Persistence**  | `src/adapters/persistence.js`   | Persistencia automática en localStorage     |
 | **EventBridge**  | `src/adapters/event-bridge.js`  | Puente de eventos entre módulos             |
@@ -244,7 +244,7 @@ router.start();
 
 ### 7.3 Editor de Diagramas (`examples/editor/`)[](#7-3-editor-de-diagramas-examples-editor)
 
-- Editor visual con GraphletJS
+- Editor visual con nebulaJS
 - Paleta de nodos
 - Comandos y acciones
 - Persistencia de diagramas
@@ -259,8 +259,8 @@ router.start();
 
 | Métrica                      | Valor                                                           |
 |------------------------------|-----------------------------------------------------------------|
-| **Módulos core**             | 5 (Pulsar, Graphlet, Chunklet, Binder, Voyajer)                 |
-| **Adapters**                 | 5 (GraphletSync, Hydration, Persistence, EventBridge, UndoRedo) |
+| **Módulos core**             | 5 (Pulsar, nebula, Chunklet, Binder, Voyajer)                 |
+| **Adapters**                 | 5 (nebulaSync, Hydration, Persistence, EventBridge, UndoRedo) |
 | **Ejemplos**                 | 4 (Basic, FormBinding, Editor, MultiBehavior)                   |
 | **Tests**                    | 8 archivos de test                                              |
 | **Dependencias externas**    | 0 (100% autónomo)                                               |
@@ -275,7 +275,7 @@ router.start();
 - **Evaluar la integración con RiotJS** para componentes más complejos.
 - **Optimizar el rendimiento** de los módulos core.
 - **Añadir más behaviors** a ChunkletJS (drag &amp; drop, resize, etc.).
-- **Implementar más algoritmos** en GraphletJS (Dijkstra, Floyd-Warshall, etc.).
+- **Implementar más algoritmos** en nebulaJS (Dijkstra, Floyd-Warshall, etc.).
 - **Crear ejemplos más avanzados** que demuestren la integración completa.
 
 ## 10. Referencias[](#10-referencias)

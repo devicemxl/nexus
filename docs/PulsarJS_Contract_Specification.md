@@ -260,11 +260,11 @@ Ordering convention: outer plug-ins wrap inner ones. The innermost plug-in (`wit
 
 ## 7. Recommended State Tree Convention
 
-Pulsar itself imposes no structure on the state tree, but the **Nexus Contract Specification** defines a namespacing convention for applications that combine multiple producers (Voyajer, Binder, Graphlet adapters, application code). Consumers of Pulsar in Nexus applications are strongly encouraged to follow that convention:
+Pulsar itself imposes no structure on the state tree, but the **Nexus Contract Specification** defines a namespacing convention for applications that combine multiple producers (Voyajer, Binder, nebula adapters, application code). Consumers of Pulsar in Nexus applications are strongly encouraged to follow that convention:
 
 - `route.*` — VoyajerJS
 - `form.*` — BinderJS
-- `entities.*` — Graphlet-to-Pulsar adapter projections
+- `entities.*` — nebula-to-Pulsar adapter projections
 - `ui.*` — application-owned UI state
 - `net.*` — network request states
 

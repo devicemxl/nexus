@@ -1,8 +1,8 @@
 # Nexus Contract Specification
 
 **Version:** 0.3.2
-**Status:** Design Contract (aligned with implementations: Pulsar 0.2.2, Graphlet 0.3.0, Voyajer 0.2.1, Chunklet 0.4.1)
-**Scope:** Defines the collaboration, boundaries, and integration rules for the Nexus ecosystem: GraphletJS, PulsarJS, VoyajerJS, and ChunkletJS.
+**Status:** Design Contract (aligned with implementations: Pulsar 0.2.2, nebula 0.3.0, Voyajer 0.2.1, Chunklet 0.4.1)
+**Scope:** Defines the collaboration, boundaries, and integration rules for the Nexus ecosystem: nebulaJS, PulsarJS, VoyajerJS, and ChunkletJS.
 
 **Changes from v0.3.1 (patch, non-breaking):**
 - §1 gains a new §1.1 (**Motivation and target environments**) documenting the
@@ -99,7 +99,7 @@ use case remain viable, not that the first be discouraged.
 
 ## 2. Component Definitions
 
-### 2.1 GraphletJS
+### 2.1 nebulaJS
 **Role:** Semantic model and identity.
 **Owns:** Entities, properties, relationships, and queries.
 **Core Methods:** `put`, `upsert`, `get`, `update`, `delete`, `link`, `unlink`, `unlinkAll`, `query`, `allIds`.
@@ -109,7 +109,7 @@ use case remain viable, not that the first be discouraged.
 **Role:** Reactive application state.
 **Owns:** Transient state, subscriptions, notifications, and state transitions.
 **Core Methods:** `createStatePulsar`, `getState`, `setState`, `subscribe`, `subscribeSelector`.
-**Constraint:** No DOM references. No knowledge of GraphletJS, VoyajerJS, or ChunkletJS. No knowledge of entity identity.
+**Constraint:** No DOM references. No knowledge of nebulaJS, VoyajerJS, or ChunkletJS. No knowledge of entity identity.
 
 ### 2.3 VoyajerJS
 **Role:** URL synchronization.
@@ -121,7 +121,7 @@ use case remain viable, not that the first be discouraged.
 **Role:** DOM behavior orchestration over the Nexus stack.
 **Owns:** DOM event listeners, resource acquisition, mount/destroy lifecycle, behavior discovery, and per-element behavior enablement.
 **Core Methods:** `setup`, `configure`, `define`, `mount`, `unmount`, `observe`, `disconnect`, `enable`, `disable`, and the `ctx` resource registry and stack accessor.
-**Constraint:** Depends on PulsarJS and GraphletJS. Optionally depends on VoyajerJS. Does not own or persist state; state lives in Pulsar, model in Graphlet, navigation in Voyajer. Does not generate DOM nodes.
+**Constraint:** Depends on PulsarJS and nebulaJS. Optionally depends on VoyajerJS. Does not own or persist state; state lives in Pulsar, model in nebula, navigation in Voyajer. Does not generate DOM nodes.
 
 
 ## 3. Dependency Direction (The Law of Hierarchy)
@@ -129,22 +129,22 @@ use case remain viable, not that the first be discouraged.
 The following dependency hierarchy is **mandatory**. It prevents architectural leaks and ensures each primitive remains replaceable at its level.
 
 ```text
-LEVEL 0: GraphletJS
+LEVEL 0: nebulaJS
    - Depends on: Nothing.
    - Knows: Nothing about the DOM, Pulsar, Voyajer, or Chunklet.
 
 LEVEL 1: PulsarJS
    - Depends on: Nothing (zero runtime dependencies).
-   - Knows: Nothing about the DOM, Graphlet, Voyajer, or Chunklet.
+   - Knows: Nothing about the DOM, nebula, Voyajer, or Chunklet.
 
 LEVEL 2: VoyajerJS
    - Depends on: PulsarJS (to write navigation state).
    - Knows: The DOM (for reading window.location and window.history) and Pulsar.
-   - Does NOT know: GraphletJS or ChunkletJS.
+   - Does NOT know: nebulaJS or ChunkletJS.
 
 LEVEL 3: ChunkletJS
-   - Depends on: PulsarJS and GraphletJS. Optionally on VoyajerJS.
-   - Knows: The DOM (by definition), Pulsar, Graphlet, and Voyajer when configured.
+   - Depends on: PulsarJS and nebulaJS. Optionally on VoyajerJS.
+   - Knows: The DOM (by definition), Pulsar, nebula, and Voyajer when configured.
    - Role: Orchestrates the stack for DOM decoration. Provides a lifecycle-managed
      context (ctx) that exposes the primitives to behavior factories.
 
@@ -155,20 +155,20 @@ LEVEL 4: Application
      primitives that is not part of the primitives themselves.
 ```
 
-**Note on levels 0 and 1.** GraphletJS and PulsarJS are both independent (neither depends on anything). They are numbered separately for exposition order, not because one is architecturally above the other. Either can be used without the other; the levels above are the ones with real ordering.
+**Note on levels 0 and 1.** nebulaJS and PulsarJS are both independent (neither depends on anything). They are numbered separately for exposition order, not because one is architecturally above the other. Either can be used without the other; the levels above are the ones with real ordering.
 
 **Enforcement Rules:**
-- GraphletJS core must never import or reference PulsarJS, VoyajerJS, or ChunkletJS.
-- PulsarJS core must never import or reference the DOM, GraphletJS, VoyajerJS, or ChunkletJS.
-- VoyajerJS must never import or reference GraphletJS or ChunkletJS.
-- ChunkletJS is the only primitive permitted to import from lower levels. Its imports are limited to PulsarJS, GraphletJS, and VoyajerJS.
+- nebulaJS core must never import or reference PulsarJS, VoyajerJS, or ChunkletJS.
+- PulsarJS core must never import or reference the DOM, nebulaJS, VoyajerJS, or ChunkletJS.
+- VoyajerJS must never import or reference nebulaJS or ChunkletJS.
+- ChunkletJS is the only primitive permitted to import from lower levels. Its imports are limited to PulsarJS, nebulaJS, and VoyajerJS.
 
-The dependencies of ChunkletJS on the lower primitives are not architectural leaks. They are the explicit basis on which Chunklet provides an orchestration surface. Applications that require Pulsar, Graphlet, or Voyajer without Chunklet can use them directly at their own level.
+The dependencies of ChunkletJS on the lower primitives are not architectural leaks. They are the explicit basis on which Chunklet provides an orchestration surface. Applications that require Pulsar, nebula, or Voyajer without Chunklet can use them directly at their own level.
 
 
 ## 4. The Adapter Layer
 
-Adapters are optional utility functions that automate the flow between GraphletJS and PulsarJS, or between the primitives and external systems.
+Adapters are optional utility functions that automate the flow between nebulaJS and PulsarJS, or between the primitives and external systems.
 
 ### 4.1 Definition
 An adapter is a function that observes or intercepts mutations in one primitive and translates them into updates for another, or that bridges the primitives with external systems (storage, network, external events).
@@ -188,10 +188,10 @@ type Adapter = (context: object, options?: object) => { destroy: () => void };
 
 The authoritative catalog of first-generation adapters (with concrete mini-specifications, dependencies, and implementation status) is maintained in **`Nexus_Adapter_Contract_Specification.md` §5**. This section summarizes the categories for orientation only; when in doubt, the adapter contract prevails.
 
-- **Graphlet ↔ Pulsar Bridge.** Projects Graphlet entities into a Pulsar state slice (default: `entities.*`) so that Chunklet behaviors can subscribe reactively.
-- **Hydration Adapter.** Populates Graphlet from a snapshot at application startup, before Chunklet mounts behaviors.
-- **Persistence Adapter.** Observes Graphlet mutations and persists to a storage backend (localStorage, IndexedDB, or custom).
-- **External Event Adapter.** Translates events from external sources (WebSocket, `postMessage`, SSE) into Graphlet and Pulsar updates.
+- **nebula ↔ Pulsar Bridge.** Projects nebula entities into a Pulsar state slice (default: `entities.*`) so that Chunklet behaviors can subscribe reactively.
+- **Hydration Adapter.** Populates nebula from a snapshot at application startup, before Chunklet mounts behaviors.
+- **Persistence Adapter.** Observes nebula mutations and persists to a storage backend (localStorage, IndexedDB, or custom).
+- **External Event Adapter.** Translates events from external sources (WebSocket, `postMessage`, SSE) into nebula and Pulsar updates.
 - **Logging / Observability Adapter.** Observes primitive mutations and emits them to a sink (console, remote logger, DevTools) for debugging or production observability.
 
 Concrete signatures, options, and behavioral guarantees are defined per adapter in the adapter contract and its associated mini-specifications.
@@ -208,7 +208,7 @@ This convention is **documented guidance, not enforced by the core**. Applicatio
 | Key | Owner | Purpose |
 | :--- | :--- | :--- |
 | `route` | VoyajerJS | Current navigation state parsed from the URL. |
-| `entities` | Graphlet-to-Pulsar adapters | Projections of Graphlet entities into reactive slices. |
+| `entities` | nebula-to-Pulsar adapters | Projections of nebula entities into reactive slices. |
 | `ui` | Application code | Transient UI state: selection, active tool, viewport, panel visibility, toast messages, per-entity behavior enablement (see ChunkletJS `enabledPath`). |
 | `net` | Application code | Network request states: pending, success, error, timestamps. |
 
@@ -225,10 +225,10 @@ Without namespacing, Pulsar's state tree accumulates keys from multiple producer
 
 ### 6.1 User Interaction (UI → Model)
 
-A Chunklet behavior receives a DOM event, updates the domain via Graphlet (through `ctx.updateEntity`, `ctx.upsertEntity`, or direct Graphlet access via `ctx.graphlet`), and optionally updates transient UI state through `ctx.setState`. If a Graphlet-to-Pulsar adapter is installed, entity mutations are projected into `entities.*` automatically; other Chunklet behaviors subscribed to that projection re-render.
+A Chunklet behavior receives a DOM event, updates the domain via nebula (through `ctx.updateEntity`, `ctx.upsertEntity`, or direct nebula access via `ctx.nebula`), and optionally updates transient UI state through `ctx.setState`. If a nebula-to-Pulsar adapter is installed, entity mutations are projected into `entities.*` automatically; other Chunklet behaviors subscribed to that projection re-render.
 
 ```text
-DOM Event → Chunklet behavior (ctx) → Graphlet [+ Pulsar via adapter]
+DOM Event → Chunklet behavior (ctx) → nebula [+ Pulsar via adapter]
          → Chunklet subscribers → DOM
 ```
 
@@ -236,10 +236,10 @@ Behaviors may inline the orchestration in the factory, or delegate to a named fu
 
 ### 6.2 External Event (System → UI)
 
-External sources (WebSocket, `fetch`, timer, `postMessage`) update Graphlet and Pulsar through application code, typically wired through an External Event Adapter. As with user interaction, the projection through the Bridge adapter (if present) delivers changes to the DOM via subscribed Chunklet behaviors.
+External sources (WebSocket, `fetch`, timer, `postMessage`) update nebula and Pulsar through application code, typically wired through an External Event Adapter. As with user interaction, the projection through the Bridge adapter (if present) delivers changes to the DOM via subscribed Chunklet behaviors.
 
 ```text
-External Event → External Event Adapter → Graphlet [+ Pulsar via Bridge]
+External Event → External Event Adapter → nebula [+ Pulsar via Bridge]
               → Chunklet subscribers → DOM
 ```
 
@@ -253,10 +253,10 @@ URL Change → Voyajer → Pulsar (route) → Chunklet subscribers → DOM
 
 ### 6.4 Startup Hydration (Storage → Model)
 
-The application invokes a Hydration Adapter that reads persisted data from IndexedDB or `localStorage`, inserts it into Graphlet via `put` or `upsert`, and establishes projections into Pulsar through the Bridge adapter. `Chunklet.mount(document.body)` is called last, so the first render sees a populated store.
+The application invokes a Hydration Adapter that reads persisted data from IndexedDB or `localStorage`, inserts it into nebula via `put` or `upsert`, and establishes projections into Pulsar through the Bridge adapter. `Chunklet.mount(document.body)` is called last, so the first render sees a populated store.
 
 ```text
-Storage → Hydration Adapter → Graphlet [+ Pulsar via Bridge]
+Storage → Hydration Adapter → nebula [+ Pulsar via Bridge]
        → Chunklet.mount → DOM
 ```
 
@@ -267,7 +267,7 @@ The canonical startup sequence is documented in the ChunkletJS Contract Specific
 
 ### 7.1 Chunklet Lifecycle
 - **Setup:** `Chunklet.setup(options)` initializes the stack once per module load.
-- **Configure (optional):** `Chunklet.configure(options)` may be invoked after Setup any number of times to refine `graphlet` or `voyajer` without discarding `pulsar` or the module singleton. See ChunkletJS Contract §3.2.
+- **Configure (optional):** `Chunklet.configure(options)` may be invoked after Setup any number of times to refine `nebula` or `voyajer` without discarding `pulsar` or the module singleton. See ChunkletJS Contract §3.2.
 - **Mount:** Behaviors acquire resources (listeners, subscriptions, timers) via `ctx`.
 - **Running:** Behaviors are active.
 - **Destroy:** All resources registered in `ctx` are automatically released. Custom `destroy` functions returned by factories are invoked in LIFO order.
@@ -281,7 +281,7 @@ The canonical startup sequence is documented in the ChunkletJS Contract Specific
 - `createVoyajer` attaches event listeners to `window`.
 - `destroy()` removes all event listeners.
 
-### 7.4 Graphlet and Pulsar Lifecycle
+### 7.4 nebula and Pulsar Lifecycle
 - Both are in-memory objects with no external resources. They require no explicit destruction.
 
 **Resource Ownership Rule:**
@@ -292,11 +292,11 @@ The canonical startup sequence is documented in the ChunkletJS Contract Specific
 
 | Guarantee | Description |
 | :--- | :--- |
-| **Primitive Independence at Levels 0-2** | Graphlet, Pulsar, and Voyajer can be used in isolation without the others (Voyajer requires Pulsar). Chunklet requires Pulsar and Graphlet by design; this is stated explicitly in §3. |
-| **Synchronous Core** | Graphlet, Pulsar, and Chunklet core operations are synchronous. Asynchronous behavior is delegated to adapters or application code. |
-| **No Implicit Reactivity** | Graphlet does not emit events by default. Reactivity must be added via adapters or explicit application code. |
-| **Set-Idempotent Relationships (G-0)** | GraphletJS `link` is a silent no-op on already-existing triples; the `(source, relation)` target list is a set, not a multiset. Adapters may rely on this to skip re-projection or side effects on Graphlet no-ops. See Graphlet Contract §2.3 and the Bridge mini-spec §5. |
-| **Single Source of Truth** | Graphlet is the sole source of truth for domain data (the document/model). Pulsar is the sole source of truth for transient UI state. The DOM is a representation, never a source of truth. |
+| **Primitive Independence at Levels 0-2** | nebula, Pulsar, and Voyajer can be used in isolation without the others (Voyajer requires Pulsar). Chunklet requires Pulsar and nebula by design; this is stated explicitly in §3. |
+| **Synchronous Core** | nebula, Pulsar, and Chunklet core operations are synchronous. Asynchronous behavior is delegated to adapters or application code. |
+| **No Implicit Reactivity** | nebula does not emit events by default. Reactivity must be added via adapters or explicit application code. |
+| **Set-Idempotent Relationships (G-0)** | nebulaJS `link` is a silent no-op on already-existing triples; the `(source, relation)` target list is a set, not a multiset. Adapters may rely on this to skip re-projection or side effects on nebula no-ops. See nebula Contract §2.3 and the Bridge mini-spec §5. |
+| **Single Source of Truth** | nebula is the sole source of truth for domain data (the document/model). Pulsar is the sole source of truth for transient UI state. The DOM is a representation, never a source of truth. |
 | **Explicit Navigation** | Voyajer does not subscribe to Pulsar. Navigation must be triggered via `push` or `replace`. This prevents infinite loops. |
 | **Deterministic Teardown** | All primitives that acquire resources provide a mechanism to release them (destroy, unmount). |
 | **Zero Build Requirement** | All primitives are distributed as ES modules. They can be imported directly from CDN without bundlers, transpilers, or build steps. |
@@ -329,12 +329,12 @@ The current invariants have been formulated in reference to a concrete applicati
 
 **Corrective (all non-breaking):**
 - Header: `Status` updated from "pre-implementation" to a status line naming the four primitive versions with which this contract is aligned. Article II — the state of the system is what it is.
-- §3: added a short note on the co-equal nature of levels 0 and 1 (Graphlet and Pulsar are peers, not stacked), to prevent misreading the exposition order as an ordering.
+- §3: added a short note on the co-equal nature of levels 0 and 1 (nebula and Pulsar are peers, not stacked), to prevent misreading the exposition order as an ordering.
 - §4.4: rewritten from a self-contained list to a summary aligned with the authoritative catalog in `Nexus_Adapter_Contract_Specification.md` §5. Adds Logging/Observability (was missing here), removes Collection Sync (was here but not in the adapter catalog), and renames patterns to match the adapter contract's vocabulary.
 - §6.2: data flow updated to name the External Event Adapter explicitly rather than "application handler", reflecting that the adapter catalog now includes this pattern.
 - §6.4: cross-reference to Chunklet spec corrected from §3.1 to §3.3, matching the current Chunklet Contract structure where §3.1 is Setup, §3.2 is Configure, and §3.3 is Canonical Startup Sequence.
 - §7.1: added "Configure (optional)" lifecycle step reflecting Chunklet v0.4.0's `configure()` API.
-- §8: new row "Set-Idempotent Relationships (G-0)" documenting the Graphlet v0.3.0 contract property that adapters may rely on.
+- §8: new row "Set-Idempotent Relationships (G-0)" documenting the nebula v0.3.0 contract property that adapters may rely on.
 
 **Not changed:**
 - Section structure and section numbering.

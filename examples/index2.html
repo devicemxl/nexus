@@ -92,20 +92,20 @@
     // ========== 1. SETUP CASI VACÍO ==========
     const stack = Chunklet.setup({
       pulsar: { initialState: { ui: {} } }
-      // Graphlet se auto-crea
+      // nebula se auto-crea
       // Voyajer NO se configura todavía
     });
 
-    // ========== 2. CONTENIDO EN GRAPHLET ==========
-    stack.graphlet.put('tab:overview', {
+    // ========== 2. CONTENIDO EN nebula ==========
+    stack.nebula.put('tab:overview', {
       title: 'Overview Content',
       body: 'This is a clean, minimal UI pattern perfect for layout structure.'
     });
-    stack.graphlet.put('tab:features', {
+    stack.nebula.put('tab:features', {
       title: 'Features Content',
       body: 'Zero dependencies, lightweight footprint, fully responsive behavior.'
     });
-    stack.graphlet.put('tab:settings', {
+    stack.nebula.put('tab:settings', {
       title: 'Settings Content',
       body: 'Customize the accent properties directly in the CSS variables block.'
     });

@@ -1,5 +1,5 @@
 /**
- * GraphletJS - Modelo semántico (Contrato v0.3.0, código v0.3.0)
+ * nebulaJS - Modelo semántico (Contrato v0.3.0, código v0.3.0)
  * Implementación pura, sin reactividad, sin dependencias.
  *
  * Cambios respecto a v0.2.1 (breaking):
@@ -10,7 +10,7 @@
  *   duplicados posibles, la operación es inequívoca.
  * - Se documenta explícitamente la política de errores en `query`:
  *   los errores lanzados por el predicate se propagan al llamador;
- *   Graphlet no los captura.
+ *   nebula no los captura.
  *
  * Cambios respecto a v0.2.0:
  * - Fix en `query`: los arrays dentro de `links` se clonan antes de
@@ -26,7 +26,7 @@
 // FACTORY FUNCTION
 // ============================================
 
-export function createGraphlet() {
+export function createnebula() {
   const _entities = new Map();
 
   // ============================================
@@ -42,18 +42,18 @@ export function createGraphlet() {
 
   function _getRecord(id) {
     if (typeof id !== 'string' || id.trim() === '') {
-      throw new Error('[Graphlet] El ID debe ser un string no vacío');
+      throw new Error('[nebula] El ID debe ser un string no vacío');
     }
     const record = _entities.get(id);
     if (!record) {
-      throw new Error(`[Graphlet] La entidad "${id}" no existe`);
+      throw new Error(`[nebula] La entidad "${id}" no existe`);
     }
     return record;
   }
 
   function _validatePlainObject(value, paramName = 'properties') {
     if (!_isPlainObject(value)) {
-      throw new TypeError(`[Graphlet] ${paramName} debe ser un objeto plano`);
+      throw new TypeError(`[nebula] ${paramName} debe ser un objeto plano`);
     }
   }
 
@@ -93,7 +93,7 @@ export function createGraphlet() {
   // ---------- Escritura Base ----------
   function put(id, properties = {}) {
     if (typeof id !== 'string' || id.trim() === '') {
-      throw new Error('[Graphlet] put: El ID debe ser un string no vacío');
+      throw new Error('[nebula] put: El ID debe ser un string no vacío');
     }
     _validatePlainObject(properties, 'properties');
 
@@ -110,7 +110,7 @@ export function createGraphlet() {
 
   function upsert(id, properties = {}) {
     if (typeof id !== 'string' || id.trim() === '') {
-      throw new Error('[Graphlet] upsert: El ID debe ser un string no vacío');
+      throw new Error('[nebula] upsert: El ID debe ser un string no vacío');
     }
     _validatePlainObject(properties, 'properties');
 
@@ -128,7 +128,7 @@ export function createGraphlet() {
   // ---------- Escritura Estricta / Eliminación ----------
   function update(id, patch) {
     if (typeof id !== 'string' || id.trim() === '') {
-      throw new Error('[Graphlet] update: El ID debe ser un string no vacío');
+      throw new Error('[nebula] update: El ID debe ser un string no vacío');
     }
     _validatePlainObject(patch, 'patch');
 
@@ -138,7 +138,7 @@ export function createGraphlet() {
 
   function deleteEntity(id) {
     if (typeof id !== 'string' || id.trim() === '') {
-      throw new Error('[Graphlet] delete: El ID debe ser un string no vacío');
+      throw new Error('[nebula] delete: El ID debe ser un string no vacío');
     }
 
     const record = _getRecord(id);
@@ -174,13 +174,13 @@ export function createGraphlet() {
    */
   function link(sourceId, relation, targetId) {
     if (typeof sourceId !== 'string' || sourceId.trim() === '') {
-      throw new Error('[Graphlet] link: sourceId debe ser un string no vacío');
+      throw new Error('[nebula] link: sourceId debe ser un string no vacío');
     }
     if (typeof relation !== 'string' || relation.trim() === '') {
-      throw new Error('[Graphlet] link: relation debe ser un string no vacío');
+      throw new Error('[nebula] link: relation debe ser un string no vacío');
     }
     if (typeof targetId !== 'string' || targetId.trim() === '') {
-      throw new Error('[Graphlet] link: targetId debe ser un string no vacío');
+      throw new Error('[nebula] link: targetId debe ser un string no vacío');
     }
 
     const sourceRecord = _getRecord(sourceId);
@@ -205,13 +205,13 @@ export function createGraphlet() {
    */
   function unlink(sourceId, relation, targetId) {
     if (typeof sourceId !== 'string' || sourceId.trim() === '') {
-      throw new Error('[Graphlet] unlink: sourceId debe ser un string no vacío');
+      throw new Error('[nebula] unlink: sourceId debe ser un string no vacío');
     }
     if (typeof relation !== 'string' || relation.trim() === '') {
-      throw new Error('[Graphlet] unlink: relation debe ser un string no vacío');
+      throw new Error('[nebula] unlink: relation debe ser un string no vacío');
     }
     if (typeof targetId !== 'string' || targetId.trim() === '') {
-      throw new Error('[Graphlet] unlink: targetId debe ser un string no vacío');
+      throw new Error('[nebula] unlink: targetId debe ser un string no vacío');
     }
 
     const record = _entities.get(sourceId);
@@ -231,10 +231,10 @@ export function createGraphlet() {
 
   function unlinkAll(sourceId, relation) {
     if (typeof sourceId !== 'string' || sourceId.trim() === '') {
-      throw new Error('[Graphlet] unlinkAll: sourceId debe ser un string no vacío');
+      throw new Error('[nebula] unlinkAll: sourceId debe ser un string no vacío');
     }
     if (typeof relation !== 'string' || relation.trim() === '') {
-      throw new Error('[Graphlet] unlinkAll: relation debe ser un string no vacío');
+      throw new Error('[nebula] unlinkAll: relation debe ser un string no vacío');
     }
 
     const record = _entities.get(sourceId);
@@ -252,7 +252,7 @@ export function createGraphlet() {
    *
    * Política de errores (documentada en el Contract v0.3.0 §4):
    *   Si el predicate lanza, el error se propaga al llamador.
-   *   Graphlet no captura, no loguea, no continúa con las entidades
+   *   nebula no captura, no loguea, no continúa con las entidades
    *   restantes. La iteración se detiene en el punto del throw.
    *
    * Las propiedades y los arrays de links se clonan antes de pasarse
@@ -261,7 +261,7 @@ export function createGraphlet() {
    */
   function query(predicate) {
     if (typeof predicate !== 'function') {
-      throw new TypeError('[Graphlet] query: predicate debe ser una función');
+      throw new TypeError('[nebula] query: predicate debe ser una función');
     }
 
     const results = [];
@@ -297,4 +297,4 @@ export function createGraphlet() {
 // EXPORTACIÓN POR DEFECTO (Opcional)
 // ============================================
 
-export default createGraphlet;
+export default createnebula;

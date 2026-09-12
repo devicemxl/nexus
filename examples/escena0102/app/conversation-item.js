@@ -7,7 +7,7 @@
  * Es el primer sitio donde se ve la forma que WIDGET-COMPOSITION querrá
  * resolver: la fila necesita la entidad que le corresponde y además reaccionar
  * a estado de interfaz sobre esa misma entidad. Hoy son dos accesos distintos
- * — `ctx.entity(id)` contra Graphlet y `subscribeSelector` contra Pulsar — y
+ * — `ctx.entity(id)` contra nebula y `subscribeSelector` contra Pulsar — y
  * el widget los cose a mano.
  */
 
@@ -24,7 +24,7 @@ export function conversationItem(elemento, ctx) {
 
   const zonaTitulo = elemento.querySelector('[data-zona="titulo"]');
 
-  // Lectura del modelo. Graphlet no es reactivo por contrato, así que esto
+  // Lectura del modelo. nebula no es reactivo por contrato, así que esto
   // es una foto del momento del montaje. Cuando el título cambia, quien
   // repinta es `conversation-list`, que sí está suscrito a la proyección.
   const entidad = ctx.entity(id);

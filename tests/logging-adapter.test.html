@@ -18,7 +18,7 @@
   <div id="output"></div>
 
   <script type="module">
-    import { createGraphlet } from '../src/graphlet.js';
+    import { createnebula } from '../src/nebula.js';
     import { createStatePulsar } from '../src/pulsar.js';
     import { createLoggingAdapter } from '../src/adapters/logging-adapter.js';
 
@@ -56,14 +56,14 @@
     }
 
     // ============================================================
-    // TEST 1: Solo Graphlet — mutaciones producen eventos
+    // TEST 1: Solo nebula — mutaciones producen eventos
     // ============================================================
-    section('TEST 1: Observando solo Graphlet');
+    section('TEST 1: Observando solo nebula');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const { sink, events } = makeCapturingSink();
-      const adapter = createLoggingAdapter({ graphlet: g }, { sink });
+      const adapter = createLoggingAdapter({ nebula: g }, { sink });
 
       g.put('user:1', { name: 'Alice' });
       g.upsert('user:1', { age: 30 });
@@ -71,8 +71,8 @@
       g.delete('user:1');
 
       assert(events.length === 4, `4 mutaciones → 4 eventos (recibidos: ${events.length})`);
-      assert(events[0].source === 'graphlet' && events[0].op === 'put',
-        'primer evento: source=graphlet, op=put');
+      assert(events[0].source === 'nebula' && events[0].op === 'put',
+        'primer evento: source=nebula, op=put');
       assert(events[0].args[0] === 'user:1',
         'evento put lleva args correctos');
       assert(events[1].op === 'upsert', 'segundo evento: op=upsert');
@@ -112,10 +112,10 @@
     section('TEST 3: Observando ambos, eventos entrelazados');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const p = createStatePulsar({});
       const { sink, events } = makeCapturingSink();
-      const adapter = createLoggingAdapter({ graphlet: g, pulsar: p }, { sink });
+      const adapter = createLoggingAdapter({ nebula: g, pulsar: p }, { sink });
 
       g.put('x:1', {});
       p.setState({ a: 1 });
@@ -123,9 +123,9 @@
       p.setState({ b: 2 });
 
       assert(events.length === 4, '4 eventos totales');
-      assert(events[0].source === 'graphlet', 'orden preservado: primero graphlet');
+      assert(events[0].source === 'nebula', 'orden preservado: primero nebula');
       assert(events[1].source === 'pulsar', 'segundo: pulsar');
-      assert(events[2].source === 'graphlet', 'tercero: graphlet');
+      assert(events[2].source === 'nebula', 'tercero: nebula');
       assert(events[3].source === 'pulsar', 'cuarto: pulsar');
 
       adapter.destroy();
@@ -137,16 +137,16 @@
     section('TEST 4: Los eventos tienen la estructura del contrato');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const { sink, events } = makeCapturingSink();
-      const adapter = createLoggingAdapter({ graphlet: g }, { sink });
+      const adapter = createLoggingAdapter({ nebula: g }, { sink });
 
       g.put('x:1', { name: 'test' });
 
       const ev = events[0];
       assert(typeof ev.ts === 'number', 'ts es number (performance.now)');
       assert(ev.ts > 0, 'ts es positivo');
-      assert(ev.source === 'graphlet', 'source es "graphlet"');
+      assert(ev.source === 'nebula', 'source es "nebula"');
       assert(ev.op === 'put', 'op es "put"');
       assert(Array.isArray(ev.args), 'args es array');
       assert(ev.args.length === 2, 'args tiene 2 elementos');
@@ -162,9 +162,9 @@
     section('TEST 5: ts es monotónico creciente');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const { sink, events } = makeCapturingSink();
-      const adapter = createLoggingAdapter({ graphlet: g }, { sink });
+      const adapter = createLoggingAdapter({ nebula: g }, { sink });
 
       for (let i = 0; i < 5; i++) g.put(`x:${i}`, {});
 
@@ -183,10 +183,10 @@
     section('TEST 6: filter descarta eventos correctamente');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const { sink, events } = makeCapturingSink();
       const adapter = createLoggingAdapter(
-        { graphlet: g },
+        { nebula: g },
         {
           sink,
           filter: (event) => event.op !== 'delete',  // ignora deletes
@@ -211,7 +211,7 @@
     section('TEST 7: filter que lanza no propaga, evento descartado');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const { sink, events } = makeCapturingSink();
 
       // Capturar console.warn para verificar que se avisó
@@ -220,7 +220,7 @@
       console.warn = (...args) => warns.push(args.join(' '));
 
       const adapter = createLoggingAdapter(
-        { graphlet: g },
+        { nebula: g },
         {
           sink,
           filter: () => { throw new Error('filter fail'); },
@@ -248,13 +248,13 @@
     section('TEST 8: sink que lanza no propaga, mutación sigue funcionando');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const warns = [];
       const originalWarn = console.warn;
       console.warn = (...args) => warns.push(args.join(' '));
 
       const adapter = createLoggingAdapter(
-        { graphlet: g },
+        { nebula: g },
         { sink: () => { throw new Error('sink fail'); } }
       );
 
@@ -281,17 +281,17 @@
     section('TEST 9: si el original lanza, el evento NO se emite');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const { sink, events } = makeCapturingSink();
-      const adapter = createLoggingAdapter({ graphlet: g }, { sink });
+      const adapter = createLoggingAdapter({ nebula: g }, { sink });
 
-      // g.update sobre entidad inexistente lanza (Graphlet fail-fast)
+      // g.update sobre entidad inexistente lanza (nebula fail-fast)
       let threw = false;
       try {
         g.update('nonexistent', { name: 'foo' });
       } catch (e) { threw = true; }
 
-      assert(threw, 'update sobre entidad inexistente lanzó (como Graphlet manda)');
+      assert(threw, 'update sobre entidad inexistente lanzó (como nebula manda)');
       assert(events.length === 0,
         'NO se emitió evento para la operación fallida');
 
@@ -304,12 +304,12 @@
     section('TEST 10: Set semantics: link idempotente no emite');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       g.put('a', {});
       g.put('b', {});
 
       const { sink, events } = makeCapturingSink();
-      const adapter = createLoggingAdapter({ graphlet: g }, { sink });
+      const adapter = createLoggingAdapter({ nebula: g }, { sink });
 
       g.link('a', 'rel', 'b');              // real
       g.link('a', 'rel', 'b');              // no-op
@@ -327,13 +327,13 @@
     section('TEST 11: Set semantics: unlink de triple ausente no emite');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       g.put('a', {});
       g.put('b', {});
       g.link('a', 'rel', 'b');
 
       const { sink, events } = makeCapturingSink();
-      const adapter = createLoggingAdapter({ graphlet: g }, { sink });
+      const adapter = createLoggingAdapter({ nebula: g }, { sink });
 
       g.unlink('a', 'rel', 'ghost');        // no-op (target no está)
       const unlinkEventsAfterNoop = events.filter(e => e.op === 'unlink');
@@ -354,16 +354,16 @@
     }
 
     // ============================================================
-    // TEST 12: destroy() restaura originales de Graphlet
+    // TEST 12: destroy() restaura originales de nebula
     // ============================================================
-    section('TEST 12: destroy() restaura métodos originales de Graphlet');
+    section('TEST 12: destroy() restaura métodos originales de nebula');
 
     {
-      const g = createGraphlet();
+      const g = createnebula();
       const originalPut = g.put;
 
       const { sink, events } = makeCapturingSink();
-      const adapter = createLoggingAdapter({ graphlet: g }, { sink });
+      const adapter = createLoggingAdapter({ nebula: g }, { sink });
 
       assert(g.put !== originalPut, 'put está wrappeado tras instanciar');
       adapter.destroy();
@@ -404,8 +404,8 @@
     section('TEST 14: destroy() idempotente');
 
     {
-      const g = createGraphlet();
-      const adapter = createLoggingAdapter({ graphlet: g });
+      const g = createnebula();
+      const adapter = createLoggingAdapter({ nebula: g });
 
       let first = false, second = false;
       try { adapter.destroy(); } catch { first = true; }
@@ -421,20 +421,20 @@
     section('TEST 15: Validación de context y options');
 
     {
-      // 15.1: context vacío (sin graphlet ni pulsar)
+      // 15.1: context vacío (sin nebula ni pulsar)
       let t = false;
       try { createLoggingAdapter({}); } catch { t = true; }
-      assert(t, '15.1: context sin graphlet ni pulsar lanza TypeError');
+      assert(t, '15.1: context sin nebula ni pulsar lanza TypeError');
 
       // 15.2: context null
       t = false;
       try { createLoggingAdapter(null, {}); } catch { t = true; }
       assert(t, '15.2: context null lanza TypeError');
 
-      // 15.3: graphlet inválido
+      // 15.3: nebula inválido
       t = false;
-      try { createLoggingAdapter({ graphlet: 'not a graphlet' }); } catch { t = true; }
-      assert(t, '15.3: graphlet no-instancia lanza TypeError');
+      try { createLoggingAdapter({ nebula: 'not a nebula' }); } catch { t = true; }
+      assert(t, '15.3: nebula no-instancia lanza TypeError');
 
       // 15.4: pulsar inválido
       t = false;
@@ -444,14 +444,14 @@
       // 15.5: sink no función
       t = false;
       try {
-        createLoggingAdapter({ graphlet: createGraphlet() }, { sink: 'nope' });
+        createLoggingAdapter({ nebula: createnebula() }, { sink: 'nope' });
       } catch { t = true; }
       assert(t, '15.5: sink no-función lanza TypeError');
 
       // 15.6: filter no función
       t = false;
       try {
-        createLoggingAdapter({ graphlet: createGraphlet() }, { filter: 42 });
+        createLoggingAdapter({ nebula: createnebula() }, { filter: 42 });
       } catch { t = true; }
       assert(t, '15.6: filter no-función lanza TypeError');
     }
@@ -463,7 +463,7 @@
 
     {
       // Sin adapter
-      const g1 = createGraphlet();
+      const g1 = createnebula();
       g1.put('user:1', { name: 'Alice' });
       g1.put('user:2', { name: 'Bob' });
       g1.link('user:1', 'knows', 'user:2');
@@ -474,8 +474,8 @@
       };
 
       // Con adapter
-      const g2 = createGraphlet();
-      const adapter = createLoggingAdapter({ graphlet: g2 }, { sink: () => {} });
+      const g2 = createnebula();
+      const adapter = createLoggingAdapter({ nebula: g2 }, { sink: () => {} });
       g2.put('user:1', { name: 'Alice' });
       g2.put('user:2', { name: 'Bob' });
       g2.link('user:1', 'knows', 'user:2');
@@ -500,8 +500,8 @@
     section('TEST 17: Sink default emite a console sin lanzar');
 
     {
-      const g = createGraphlet();
-      const adapter = createLoggingAdapter({ graphlet: g });
+      const g = createnebula();
+      const adapter = createLoggingAdapter({ nebula: g });
       // Sin sink custom, usa el default (console.log)
 
       let mutationThrew = false;

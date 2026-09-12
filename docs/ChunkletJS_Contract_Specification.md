@@ -6,7 +6,7 @@
 
 **Changes from v0.3.0 (breaking):**
 - **C-2 (symmetry of `enable`/`disable`).** Both operations now produce an explicit entry in the enabled map even when no previous entry existed for the target entity. When no entry exists, the DOM is consulted (via the `data-entity` attribute and the `data-chunk` values on matching elements) to materialize the base list of declared behaviors, and then the union (`enable`) or difference (`disable`) is applied and written back. The prior semantics — where `enable` on an absent entity was a silent no-op — are removed. See §7.3.
-- **New public API: `configure()`.** A deferred configuration step is added, allowing `graphlet` and `voyajer` (but not `pulsar`) to be replaced after `setup()`. This closes the gap where an application needs to instantiate the stack before it has all its dependencies (e.g., Voyajer configured with mode/base derived from runtime information). See §3.2 and §4.
+- **New public API: `configure()`.** A deferred configuration step is added, allowing `nebula` and `voyajer` (but not `pulsar`) to be replaced after `setup()`. This closes the gap where an application needs to instantiate the stack before it has all its dependencies (e.g., Voyajer configured with mode/base derived from runtime information). See §3.2 and §4.
 - **Consumer impact.** Applications that relied on `enable(entity, name)` being a no-op when `entity` had no prior entry must adapt. The new behavior writes an entry that reflects the DOM's declared behaviors plus the enabled name; downstream observers of `enabledPath` will see the entry appear where previously they saw nothing. Applications that wrote directly to the map at `enabledPath` continue to work unchanged.
 
 **Non-breaking refactor (C-1):** Internal helpers for reading the enabled map are unified into a single `_readEnabledMap` with a single validation criterion (`_isPlainObject`). This is not observable through the public API but is noted for changelog completeness.
@@ -16,13 +16,13 @@
 
 - ES Module only (`type: "module"`).
 - Browser-first: runs without bundlers, toolchains, or Node.js-specific APIs.
-- Depends on PulsarJS and GraphletJS. Optionally depends on VoyajerJS. No other dependencies.
+- Depends on PulsarJS and nebulaJS. Optionally depends on VoyajerJS. No other dependencies.
 - The DOM is the source of structure. Chunklet decorates existing DOM fragments with behavior; it does not replace, clone, or generate DOM nodes.
 - HTML may be static, server-rendered, or produced dynamically at runtime by application code. Chunklet supports all three uniformly.
 - Every behavior has an explicit, deterministic lifecycle: `mount` → `running` → `destroy`.
 - Every resource acquired during `mount` is released during `destroy`.
 - A single DOM element may host multiple independent behaviors, each with its own lifecycle and context.
-- No state management of its own. Reactive state lives in Pulsar; domain data lives in Graphlet; navigation state lives in Voyajer (when present). Chunklet consumes them but does not own them.
+- No state management of its own. Reactive state lives in Pulsar; domain data lives in nebula; navigation state lives in Voyajer (when present). Chunklet consumes them but does not own them.
 - No templating engine, no expression parsing inside attributes, no virtual DOM.
 
 The move from zero-dependency primitive to stack orchestrator is a deliberate architectural choice: reinventing state, identity, or navigation inside Chunklet would duplicate what the three base primitives already resolve. Chunklet's value is not in being independent from them but in providing a coherent, ergonomic surface for using them together to decorate the DOM.
@@ -35,23 +35,23 @@ The move from zero-dependency primitive to stack orchestrator is a deliberate ar
 Chunklet operates over a stack of three primitives:
 
 - **PulsarJS** provides reactive state.
-- **GraphletJS** provides the domain model (entities, properties, relationships).
+- **nebulaJS** provides the domain model (entities, properties, relationships).
 - **VoyajerJS** provides URL synchronization. Optional.
 
-The application initializes the stack through `Chunklet.setup(options)` exactly once. Optionally, the application may later refine the stack through `Chunklet.configure(options)` (§3.2) to replace `graphlet` or `voyajer` without tearing down `pulsar` or the module singleton.
+The application initializes the stack through `Chunklet.setup(options)` exactly once. Optionally, the application may later refine the stack through `Chunklet.configure(options)` (§3.2) to replace `nebula` or `voyajer` without tearing down `pulsar` or the module singleton.
 
 After setup, all behaviors mounted through Chunklet have access to the primitives through the context passed to their factory. The context reads the current stack through getters, so a subsequent `configure()` call is visible to already-mounted behaviors as well.
 
 ### 2.2 Chunklet Definition
 
-A Chunklet is a named behavior factory that receives a DOM element and a lifecycle context. The factory is responsible for attaching event listeners, subscribing to Pulsar, reading from Graphlet, invoking navigation, and returning a cleanup function if additional teardown is required.
+A Chunklet is a named behavior factory that receives a DOM element and a lifecycle context. The factory is responsible for attaching event listeners, subscribing to Pulsar, reading from nebula, invoking navigation, and returning a cleanup function if additional teardown is required.
 
 ### 2.3 Chunklet Context
 
 The context is a resource registry and a stack accessor combined. It exposes:
 
 - Automatic resource cleanup helpers (`listen`, `subscribe`, `subscribeSelector`, `observe`, `timeout`, `interval`, `cleanup`), all of which release their resources when the Chunklet is destroyed.
-- Direct references to the stack (`ctx.pulsar`, `ctx.graphlet`, `ctx.voyajer`), implemented as getters so a `configure()` call is reflected immediately.
+- Direct references to the stack (`ctx.pulsar`, `ctx.nebula`, `ctx.voyajer`), implemented as getters so a `configure()` call is reflected immediately.
 - Convenience shortcuts to the most common operations (`ctx.getState`, `ctx.setState`, `ctx.entity`, `ctx.navigate`, and others).
 
 Each behavior on a multi-behavior element receives its own independent context.
@@ -72,7 +72,7 @@ Each named behavior is mounted independently with its own context. Their lifecyc
 
 ### 2.6 Entity Identity
 
-Elements that participate in the external enable/disable mechanism (see §7) declare their identity via the `data-entity` attribute. The value is an opaque string that typically matches a GraphletJS entity identifier (`node:42`, `port:xyz`), but Chunklet treats it as opaque.
+Elements that participate in the external enable/disable mechanism (see §7) declare their identity via the `data-entity` attribute. The value is an opaque string that typically matches a nebulaJS entity identifier (`node:42`, `port:xyz`), but Chunklet treats it as opaque.
 
 Chunklet **never generates identifiers**. If an element has no `data-entity`, it cannot be controlled by the enable/disable mechanism and always mounts all its declared behaviors.
 
@@ -94,7 +94,7 @@ Initializes the stack. Must be called exactly once before any `mount`, `define`,
 | Name | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `pulsar` | `PulsarInstance` \| `{ initialState, options }` \| `undefined` | auto-create with `{}` | Existing Pulsar instance, factory configuration, or `undefined` to auto-create with defaults. |
-| `graphlet` | `GraphletInstance` \| `undefined` | auto-create empty | Existing Graphlet instance, or `undefined` to auto-create empty. |
+| `nebula` | `nebulaInstance` \| `undefined` | auto-create empty | Existing nebula instance, or `undefined` to auto-create empty. |
 | `voyajer` | `VoyajerInstance` \| `{ ...voyajerOptions }` \| `undefined` | not created | Existing Voyajer instance, factory options, or `undefined` to skip Voyajer entirely. |
 | `entityAttr` | `string` | `'data-entity'` | Attribute name that carries the entity identifier on controllable elements. |
 | `enabledPath` | `string` \| `undefined` | `undefined` | When set, Chunklet subscribes to this path in Pulsar and uses the value to determine which behaviors are active per element (see §7). When `undefined`, all declared behaviors mount unconditionally. |
@@ -102,7 +102,7 @@ Initializes the stack. Must be called exactly once before any `mount`, `define`,
 **Behavior**
 
 1. If `pulsar` is a Pulsar instance, use it. If it is a configuration object, call `createStatePulsar(initialState, options)`. If it is `undefined`, create `createStatePulsar({})`.
-2. If `graphlet` is a Graphlet instance, use it. Otherwise create an empty one via `createGraphlet()`.
+2. If `nebula` is a nebula instance, use it. Otherwise create an empty one via `createnebula()`.
 3. If `voyajer` is a Voyajer instance, use it. If it is an options object, call `createVoyajer(pulsar, options)` with the resolved Pulsar. If `undefined`, do not create Voyajer; `ctx.voyajer` will be `undefined` and navigation helpers will throw when invoked.
 4. Store the resolved instances internally as the module-scoped stack.
 5. If `enabledPath` is provided, subscribe to that path in Pulsar (via `subscribeSelector`) and remount affected elements when the value changes.
@@ -111,50 +111,50 @@ Initializes the stack. Must be called exactly once before any `mount`, `define`,
 
 - Throws if called more than once.
 - Throws if `pulsar` is neither a Pulsar instance nor a plain object nor `undefined`.
-- Throws if `graphlet` is neither a Graphlet instance nor `undefined`.
+- Throws if `nebula` is neither a nebula instance nor `undefined`.
 - Throws if `voyajer` is provided but Voyajer cannot be instantiated (missing options, invalid mode, etc.).
 - Throws if `entityAttr` or `enabledPath` are provided but are not non-empty strings.
 
 **Returns**
 
-The resolved stack as `{ pulsar, graphlet, voyajer }`, so the application can hold references to the instances it did not create.
+The resolved stack as `{ pulsar, nebula, voyajer }`, so the application can hold references to the instances it did not create.
 
 
 ### 3.2 `Chunklet.configure(options)`
 
-Refines the stack after `setup()` has been called. Enables patterns where the application must instantiate Chunklet before it knows the full stack configuration (e.g., Voyajer requires a `base` derived from runtime information, or `graphlet` needs to be replaced with a hydrated instance loaded asynchronously).
+Refines the stack after `setup()` has been called. Enables patterns where the application must instantiate Chunklet before it knows the full stack configuration (e.g., Voyajer requires a `base` derived from runtime information, or `nebula` needs to be replaced with a hydrated instance loaded asynchronously).
 
 **Options**
 
 | Name | Type | Description |
 | :--- | :--- | :--- |
-| `graphlet` | `GraphletInstance` \| `undefined` | Replaces the current Graphlet instance if provided. Not modified if omitted. |
+| `nebula` | `nebulaInstance` \| `undefined` | Replaces the current nebula instance if provided. Not modified if omitted. |
 | `voyajer` | `VoyajerInstance` \| `{ ...voyajerOptions }` \| `undefined` | Replaces the current Voyajer instance if provided. If a previous Voyajer existed, its `destroy()` is called before replacement. Not modified if omitted. |
 
 **Not configurable via `configure`:** `pulsar`, `entityAttr`, `enabledPath`. These are fixed at `setup` time. To change any of them, the application must restart the module (currently requires a page reload; a `reset()` helper is deferred to future versions).
 
 **Behavior**
 
-1. If `graphlet` is provided, resolve it (must be an existing Graphlet instance) and assign to the stack. Already-mounted behaviors that access `ctx.graphlet` afterward will see the new instance (getters).
+1. If `nebula` is provided, resolve it (must be an existing nebula instance) and assign to the stack. Already-mounted behaviors that access `ctx.nebula` afterward will see the new instance (getters).
 2. If `voyajer` is provided:
    a. If a previous Voyajer existed and exposes `destroy`, call it. This detaches its event listeners and marks it inert.
    b. Resolve the new Voyajer (existing instance or options for a fresh one) and assign to the stack.
-3. Return the current stack `{ pulsar, graphlet, voyajer }`.
+3. Return the current stack `{ pulsar, nebula, voyajer }`.
 
 **Throws**
 
 - Throws if called before `setup()`.
 - Throws if `options` is not a plain object.
-- Throws if `graphlet` is provided but is not a Graphlet instance.
+- Throws if `nebula` is provided but is not a nebula instance.
 - Throws if `voyajer` is provided but cannot be resolved (neither an instance nor valid options).
 
 **Returns**
 
-The current stack `{ pulsar, graphlet, voyajer }` with any provided replacements applied.
+The current stack `{ pulsar, nebula, voyajer }` with any provided replacements applied.
 
 **Notes**
 
-- Because `ctx.pulsar`, `ctx.graphlet`, `ctx.voyajer` are getters into the stack, a `configure()` call is visible to already-mounted behaviors on their next access. Behaviors that captured `ctx.graphlet` into a local variable before the `configure()` call will still see the old instance through that local reference — code that needs to be robust against `configure()` should always access through `ctx` at use time.
+- Because `ctx.pulsar`, `ctx.nebula`, `ctx.voyajer` are getters into the stack, a `configure()` call is visible to already-mounted behaviors on their next access. Behaviors that captured `ctx.nebula` into a local variable before the `configure()` call will still see the old instance through that local reference — code that needs to be robust against `configure()` should always access through `ctx` at use time.
 - Behaviors that had subscriptions or listeners against the previous Voyajer's Pulsar path continue to function, since `pulsar` itself does not change; the URL side of the story simply becomes served by a different Voyajer.
 
 
@@ -164,15 +164,15 @@ The current stack `{ pulsar, graphlet, voyajer }` with any provided replacements
 import * as Chunklet from './chunklet.js';
 
 // 1. Setup: initialize the stack.
-const { pulsar, graphlet, voyajer } = Chunklet.setup({
+const { pulsar, nebula, voyajer } = Chunklet.setup({
   pulsar: { initialState: { ui: {}, entities: {} } },
   voyajer: { mode: 'hash' }
 });
 
-// 2. Optional hydration: load persisted data into graphlet/pulsar
+// 2. Optional hydration: load persisted data into nebula/pulsar
 //    BEFORE mounting behaviors, so the first render sees populated state.
 //    See adapters/hydration-adapter.spec.md.
-await hydrateFromStorage(graphlet, pulsar);
+await hydrateFromStorage(nebula, pulsar);
 
 // 3. Optional configure: refine stack pieces discovered after setup.
 //    Example: swap Voyajer once we know the runtime base path.
@@ -343,7 +343,7 @@ Implemented as getters into the module-scoped stack, so `configure()` (§3.2) is
 | Property | Type | Description |
 | :--- | :--- | :--- |
 | `ctx.pulsar` | `PulsarInstance` | The Pulsar instance. Always present. Not replaceable via `configure()`. |
-| `ctx.graphlet` | `GraphletInstance` | The current Graphlet instance. Replaceable via `configure()`. |
+| `ctx.nebula` | `nebulaInstance` | The current nebula instance. Replaceable via `configure()`. |
 | `ctx.voyajer` | `VoyajerInstance` \| `undefined` | The current Voyajer instance if configured, otherwise `undefined`. Can be introduced or replaced via `configure()`. |
 
 ### 5.2 Resource registry (auto-cleanup on destroy)
@@ -372,10 +372,10 @@ These do not register resources; they are pure delegates to the underlying primi
 | :--- | :--- |
 | `ctx.getState()` | `ctx.pulsar.getState()` |
 | `ctx.setState(partial)` | `ctx.pulsar.setState(partial)` |
-| `ctx.entity(id)` | `ctx.graphlet.get(id)` |
-| `ctx.upsertEntity(id, props)` | `ctx.graphlet.upsert(id, props)` |
-| `ctx.updateEntity(id, patch)` | `ctx.graphlet.update(id, patch)` |
-| `ctx.deleteEntity(id)` | `ctx.graphlet.delete(id)` |
+| `ctx.entity(id)` | `ctx.nebula.get(id)` |
+| `ctx.upsertEntity(id, props)` | `ctx.nebula.upsert(id, props)` |
+| `ctx.updateEntity(id, patch)` | `ctx.nebula.update(id, patch)` |
+| `ctx.deleteEntity(id)` | `ctx.nebula.delete(id)` |
 | `ctx.navigate(state)` | `ctx.voyajer.push(state)` — throws if Voyajer not configured |
 | `ctx.replace(state)` | `ctx.voyajer.replace(state)` — throws if Voyajer not configured |
 
@@ -408,7 +408,7 @@ Chunklet.define('node-card', (element, ctx) => {
 });
 ```
 
-Note that the factory does not import Pulsar, Graphlet, or Voyajer. Everything arrives through `ctx`.
+Note that the factory does not import Pulsar, nebula, or Voyajer. Everything arrives through `ctx`.
 
 
 ## 6. Discovery Rules
@@ -461,7 +461,7 @@ The symmetry established in §7.3 exists because downstream consumers of `enable
 
 ### 7.5 Identity discipline
 
-The keys in the map are entity identifiers read from `data-entity`. This ties the enable/disable state to the same identifiers used by Graphlet, making it stable across reloads (assuming the application hydrates Graphlet from persistent storage with the same identifiers). Under no circumstances does Chunklet generate synthetic identifiers.
+The keys in the map are entity identifiers read from `data-entity`. This ties the enable/disable state to the same identifiers used by nebula, making it stable across reloads (assuming the application hydrates nebula from persistent storage with the same identifiers). Under no circumstances does Chunklet generate synthetic identifiers.
 
 
 ## 8. Plug-in / Extension Contract
@@ -499,8 +499,8 @@ Chunklet.define('node-card', withLogging(nodeCardFactory));
 | Guarantee | Description |
 | :--- | :--- |
 | **Single setup** | `setup` must be called exactly once. Subsequent calls throw. |
-| **Deferred configuration** | `configure` may be called any number of times after `setup` to replace `graphlet` or `voyajer`. `pulsar` is fixed for the lifetime of the module. |
-| **Stack coherence** | All contexts created during a single Chunklet lifetime reference the same Pulsar instance. Access to `graphlet` and `voyajer` through `ctx` goes through getters, so `configure()` replacements are immediately visible. |
+| **Deferred configuration** | `configure` may be called any number of times after `setup` to replace `nebula` or `voyajer`. `pulsar` is fixed for the lifetime of the module. |
+| **Stack coherence** | All contexts created during a single Chunklet lifetime reference the same Pulsar instance. Access to `nebula` and `voyajer` through `ctx` goes through getters, so `configure()` replacements are immediately visible. |
 | **Resource isolation** | Every Chunklet context is independent. Destroying one Chunklet does not affect another, even on the same element. |
 | **Deterministic teardown** | All resources registered via the context are released during destroy. Custom cleanup via `cleanup()` is executed in LIFO order. |
 | **Independent multi-behavior lifecycles** | On a multi-behavior element, each behavior has its own context and can fail, be added, or be removed independently. |
@@ -514,15 +514,15 @@ Chunklet.define('node-card', withLogging(nodeCardFactory));
 
 ## 11. Relationship with the Base Primitives
 
-Chunklet depends on Pulsar and Graphlet. This is a deliberate design decision, discussed in §1 and formalized in the Nexus Contract (level 3 of the dependency hierarchy; level 4 is the application layer).
+Chunklet depends on Pulsar and nebula. This is a deliberate design decision, discussed in §1 and formalized in the Nexus Contract (level 3 of the dependency hierarchy; level 4 is the application layer).
 
-The base primitives remain independent of Chunklet and of each other. A consumer who wants only Pulsar, only Graphlet, or Pulsar+Voyajer without Chunklet can use them without ever loading Chunklet. This preserves the option that the base primitives be published, tested, and consumed independently.
+The base primitives remain independent of Chunklet and of each other. A consumer who wants only Pulsar, only nebula, or Pulsar+Voyajer without Chunklet can use them without ever loading Chunklet. This preserves the option that the base primitives be published, tested, and consumed independently.
 
 Chunklet's role is not to reimplement identity, reactivity, or navigation — those exist in the base primitives. Chunklet's role is to bind the DOM to them with a coherent lifecycle, a resource discipline, and an ergonomic surface. Any capability that could be implemented on top of the base primitives without touching the DOM belongs in an adapter or an application module — not in Chunklet.
 
 ### 11.1 What belongs in Chunklet vs. in Adapters
 
-An adapter observes primitives from outside and translates between them (Graphlet mutations to Pulsar projections, Pulsar changes to persistent storage, external events to primitive updates). Chunklet's factories operate inside the primitives, decorating DOM in response to their state. When you find yourself writing "on every Graphlet mutation, sync X", that is adapter work; when you find yourself writing "on every relevant state change, update this element's appearance", that is Chunklet work.
+An adapter observes primitives from outside and translates between them (nebula mutations to Pulsar projections, Pulsar changes to persistent storage, external events to primitive updates). Chunklet's factories operate inside the primitives, decorating DOM in response to their state. When you find yourself writing "on every nebula mutation, sync X", that is adapter work; when you find yourself writing "on every relevant state change, update this element's appearance", that is Chunklet work.
 
 ### 11.2 Emerging capability: composition helpers in `ctx`
 
@@ -533,13 +533,13 @@ The resolution — a Chunklet `ctx` helper that watches an entity together with 
 
 ## 12. Testing Considerations
 
-Chunklet's dependency on the DOM means unit tests require either a browser environment or a DOM shim. For consistency with the rest of the Nexus stack (browser-first, no Node runtime required for production), the recommended approach is a browser-native test harness analogous to those used for Pulsar, Graphlet, and Voyajer.
+Chunklet's dependency on the DOM means unit tests require either a browser environment or a DOM shim. For consistency with the rest of the Nexus stack (browser-first, no Node runtime required for production), the recommended approach is a browser-native test harness analogous to those used for Pulsar, nebula, and Voyajer.
 
 Testable factories should be structured so that their behavior can be verified by:
-1. Setting up Chunklet with an in-memory Pulsar and Graphlet.
+1. Setting up Chunklet with an in-memory Pulsar and nebula.
 2. Constructing a DOM fragment programmatically.
 3. Mounting the fragment.
-4. Asserting on the DOM state, Pulsar state, and Graphlet state after simulated events or state changes.
+4. Asserting on the DOM state, Pulsar state, and nebula state after simulated events or state changes.
 5. Unmounting and asserting that no resources leak (no leftover event listeners on the document, no active timers).
 
 An optional test-utility helper (`Chunklet.reset()`) is deferred to future versions to allow test files to reinitialize the stack between test cases without a full page reload.
@@ -575,9 +575,9 @@ Importing individual names is also supported for tree-shaking or terseness:
 import { setup, configure, define, mount } from '@dfc/chunklet';
 ```
 
-Chunklet internally imports Pulsar, Graphlet, and optionally Voyajer from their canonical entry points. The exact import specifiers depend on the distribution channel:
+Chunklet internally imports Pulsar, nebula, and optionally Voyajer from their canonical entry points. The exact import specifiers depend on the distribution channel:
 
-- On npm / CDN: `import { createStatePulsar } from '@dfc/pulsar'` (equivalent for Graphlet and Voyajer).
+- On npm / CDN: `import { createStatePulsar } from '@dfc/pulsar'` (equivalent for nebula and Voyajer).
 - In a self-contained project: relative paths (`./pulsar.js`, etc.).
 
 Chunklet does not bundle the base primitives. The consumer is responsible for ensuring they are resolvable at import time.
@@ -594,7 +594,7 @@ The following are considered part of the public API and cannot change without a 
 - The names and signatures of `setup`, `configure`, `define`, `mount`, `unmount`, `observe`, `disconnect`, `enable`, `disable`.
 - The names and signatures of context methods (`listen`, `subscribe`, `subscribeSelector`, `observe`, `timeout`, `interval`, `cleanup`).
 - The names and signatures of context shortcuts (`getState`, `setState`, `entity`, `upsertEntity`, `updateEntity`, `deleteEntity`, `navigate`, `replace`).
-- The set of stack accessors on `ctx` (`pulsar`, `graphlet`, `voyajer`) and their behavior as live getters.
+- The set of stack accessors on `ctx` (`pulsar`, `nebula`, `voyajer`) and their behavior as live getters.
 - The shape of the `enabledPath` value (§7.1) and the symmetry contract of `enable`/`disable` (§7.3).
 - The rule that identity comes from the DOM and Chunklet never generates identifiers.
 - Multi-behavior support via whitespace-separated `data-chunk` values.
@@ -606,7 +606,7 @@ The following are considered part of the public API and cannot change without a 
 
 **Breaking:**
 - §4 `enable` / `disable`: behavior changed to be symmetric. Both operations now always produce an explicit entry in the map at `enabledPath`, consulting the DOM to materialize the base list when no prior entry exists. See §7.3. Applications that relied on `enable` being a silent no-op on entities without prior entries must adapt.
-- §3.2, §4: new public API `configure()` added. Allows `graphlet` and `voyajer` (not `pulsar`) to be replaced after `setup`. Its introduction shifts the "single setup" guarantee: `setup` is still once-only, but the stack is no longer immutable after setup — it is refinable via `configure`. Consumers that assumed the stack was frozen after `setup` should audit for that assumption.
+- §3.2, §4: new public API `configure()` added. Allows `nebula` and `voyajer` (not `pulsar`) to be replaced after `setup`. Its introduction shifts the "single setup" guarantee: `setup` is still once-only, but the stack is no longer immutable after setup — it is refinable via `configure`. Consumers that assumed the stack was frozen after `setup` should audit for that assumption.
 
 **Additive/Clarifying:**
 - Header: changelog block documenting v0.3.0 → v0.4.0 breaking changes and their consumer impact. Note about the non-breaking C-1 helper unification.
@@ -620,7 +620,7 @@ The following are considered part of the public API and cannot change without a 
 - §5.1 (Stack accessors): rewritten as a table with note about getter semantics and which are replaceable via `configure`.
 - §5.3 (Convenience shortcuts): navigation helpers note updated to mention `configure` as an alternative path to enabling Voyajer.
 - §7 (Enable/Disable Mechanism): §7.3 rewritten as the formal symmetry contract with a "predictability corollary" for downstream consumers. §7.4 (Rationale) rewritten to explain why explicit entries matter for persistence/sync/undo. Old §7.4 (Identity discipline) renumbered to §7.5.
-- §10 (Behavioral Guarantees): new rows for "Deferred configuration" and "Symmetric enable/disable". "Stack coherence" row rewritten to distinguish `pulsar` (fixed) from `graphlet`/`voyajer` (refinable). "Voyajer opt-in" row updated to mention `configure` as an alternative introduction path.
+- §10 (Behavioral Guarantees): new rows for "Deferred configuration" and "Symmetric enable/disable". "Stack coherence" row rewritten to distinguish `pulsar` (fixed) from `nebula`/`voyajer` (refinable). "Voyajer opt-in" row updated to mention `configure` as an alternative introduction path.
 - §11.2 (Emerging capability): new subsection referencing the `PHASE_0_DEFERRED.md` item WIDGET-COMPOSITION.
 - §12 (Testing Considerations): note added on the dedicated harness pattern for enable/disable tests, cross-referencing the deferred items.
 - §13 (Export Contract): `configure` added to the exports list. Note added about the default export bundle.

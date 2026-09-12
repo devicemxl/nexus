@@ -33,7 +33,7 @@
 
 ### Punto 3: Cerrar observaciones sin deuda técnica
 
-**Roadmap pide:** cerrar ~25 ítems (Pulsar P-1/P-2/P-T1..T5, Graphlet G-0/G-T1..T4, Voyajer V-1/V-T0..T4, Chunklet C-1/C-2/C-3/C-T1..T9, meta M-1).
+**Roadmap pide:** cerrar ~25 ítems (Pulsar P-1/P-2/P-T1..T5, nebula G-0/G-T1..T4, Voyajer V-1/V-T0..T4, Chunklet C-1/C-2/C-3/C-T1..T9, meta M-1).
 
 **Estado:** ✅ **Cerrado en sesión anterior** con los 6 ítems restantes documentados como deferidos en `PHASE_0_DEFERRED.md`.
 
@@ -68,7 +68,7 @@
 
 | Adapter | Código | Harness | Widget |
 |---|---|---|---|
-| Bridge | `graphlet-pulsar-bridge.js` v0.1.0 | 50/50 (sesión anterior) | `widget-bridge.html` |
+| Bridge | `nebula-pulsar-bridge.js` v0.1.0 | 50/50 (sesión anterior) | `widget-bridge.html` |
 | Hydration | `hydration-adapter.js` v0.1.0 | 41/41 | `widget-hydration.html` |
 | Persistence | `persistence-adapter.js` v0.1.0 | 50/50 | `widget-persistence.html` |
 | External Event | `external-event-adapter.js` v0.1.0 | 42/42 | `widget-external-event.html` |
@@ -149,7 +149,7 @@
 | Documento | Versión actual | Notas |
 |---|---|---|
 | Pulsar Contract | 0.2.0 (implementación 0.2.1) | Sin cambios recientes |
-| Graphlet Contract | 0.3.0 | Actualizado con G-0 en sesión anterior |
+| nebula Contract | 0.3.0 | Actualizado con G-0 en sesión anterior |
 | Voyajer Contract | 0.2.1 | Sin cambios recientes |
 | Chunklet Contract | 0.4.0 | Actualizado con `configure` y C-2 en sesión anterior + fix menor (level 3) en esta |
 | Nexus Contract | 0.3.1 | Actualizado en esta sesión (patch) |
@@ -262,7 +262,7 @@ Consolidados en orden de importancia (ninguno crítico):
 | Componente | Aserciones (aprox., si se conocen) |
 |---|---|
 | Pulsar harness | 7+ (validado sesión anterior) |
-| Graphlet harness | ~25 (validado sesión anterior) |
+| nebula harness | ~25 (validado sesión anterior) |
 | Voyajer harness | 11 (validado sesión anterior) |
 | Chunklet harness | ~50 (validado sesión anterior) |
 | Bridge harness | 50 |

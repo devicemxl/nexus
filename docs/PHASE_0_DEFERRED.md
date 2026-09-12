@@ -2,7 +2,7 @@
 
 **Purpose:** Formal record of coverage items identified during Phase 0 that could not be closed in the current testing environment (browser-native harness + simple HTTP server) and that have been deferred with an explicit resolution path.
 
-**Nature of the debt:** This is **not** debt of the code or of the contracts. All primitives (Pulsar, Graphlet, Voyajer, Chunklet) satisfy their contracts at the level verifiable in the current environment. The items below are properties of the contracts that the current test harnesses cannot exercise without either (a) infrastructure that Phase 0 explicitly did not build, or (b) test-suite reorganization that was out of scope.
+**Nature of the debt:** This is **not** debt of the code or of the contracts. All primitives (Pulsar, nebula, Voyajer, Chunklet) satisfy their contracts at the level verifiable in the current environment. The items below are properties of the contracts that the current test harnesses cannot exercise without either (a) infrastructure that Phase 0 explicitly did not build, or (b) test-suite reorganization that was out of scope.
 
 **When to resolve:** No later than the establishment of the Playwright-based CI environment (roadmap Fase 3a, Escena 3a.2). Items that only require harness reorganization may be resolved earlier if the opportunity arises.
 
@@ -50,9 +50,9 @@
 **Resolution path.** Same as C-T7. Test can be a natural extension of the C-T7 tests in the dedicated harness.
 
 
-### BRIDGE-REACTIVE — Graphlet↔Pulsar Bridge: reactive per-entity version
+### BRIDGE-REACTIVE — nebula↔Pulsar Bridge: reactive per-entity version
 
-**What it resolves.** The current bridge implementation (v0.1.0) is snapshot-based: every Graphlet mutation re-projects all entities into Pulsar, producing new object references for every entity regardless of whether it changed. Consumers using `subscribeSelector('entities.X', ...)` with default `Object.is` equality are notified on every graph mutation, not only when entity X changes. See `adapters/graphlet-pulsar-bridge.spec.md` §7.2.
+**What it resolves.** The current bridge implementation (v0.1.0) is snapshot-based: every nebula mutation re-projects all entities into Pulsar, producing new object references for every entity regardless of whether it changed. Consumers using `subscribeSelector('entities.X', ...)` with default `Object.is` equality are notified on every graph mutation, not only when entity X changes. See `adapters/nebula-pulsar-bridge.spec.md` §7.2.
 
 The reactive version writes only the slice of the affected entity into Pulsar, preserving references for unaffected entities. Consumers then receive notifications only for entities that actually changed.
 
@@ -65,9 +65,9 @@ The theoretical asymptote is `(N-1)/N`: for N=8, expected ratio is ~87% ignored 
 **Resolution path.** Three implementation paths identified in the mini-spec §7.4:
 - **Camino 1:** Inverse index in the bridge. Adapter maintains `Map<targetId, Set<sourceId>>` updated on every link/unlink. Consulted on delete for cascade.
 - **Camino 2 (recommended):** Full-scan in delete. All mutation methods except delete are O(1) (they know their affected entity by argument); delete performs one O(N) scan to discover incoming links. Aceptable because deletes are rare in target use cases.
-- **Camino 3:** Opt-in observability API in Graphlet. Cleanest but requires reopening the Graphlet Definition, which currently prohibits reactive APIs. Not recommended unless a real application demonstrates Camino 2 is insufficient.
+- **Camino 3:** Opt-in observability API in nebula. Cleanest but requires reopening the nebula Definition, which currently prohibits reactive APIs. Not recommended unless a real application demonstrates Camino 2 is insufficient.
 
-TEST 13 in `graphlet-pulsar-bridge.test.html` documents the current snapshot limitation with asserts that expect reactive noise. When the reactive version lands, those asserts should invert; passing the inverted version is empirical evidence of the fix.
+TEST 13 in `nebula-pulsar-bridge.test.html` documents the current snapshot limitation with asserts that expect reactive noise. When the reactive version lands, those asserts should invert; passing the inverted version is empirical evidence of the fix.
 
 
 ### WIDGET-COMPOSITION — Chunklet ctx: helper for "entity + related entities"
@@ -114,9 +114,9 @@ Decision between A and B to be made when evidence demands it. Option A is curren
 
 ### 12-BRIDGE-INTEGRATION — External Event Adapter: remote mutations don't re-project via Bridge
 
-**What it resolves.** In v0.1.0 of the External Event Adapter, remote mutations arriving from a peer tab are applied to the local Graphlet via the **original** method (bypassing all wrappers). This is what makes anti-echo work by construction (see external-event-adapter.spec.md §3.3). But it has a consequence: if a Graphlet↔Pulsar Bridge is also mounted in the receiving tab, the Bridge wrapper is bypassed too. The result: Graphlet in the receiving tab reflects the remote mutation, **but Pulsar's `entities.*` projection does not**. Chunklet behaviors subscribed to `entities.*` in the receiving tab will not re-render until a local mutation triggers Bridge's wrapper.
+**What it resolves.** In v0.1.0 of the External Event Adapter, remote mutations arriving from a peer tab are applied to the local nebula via the **original** method (bypassing all wrappers). This is what makes anti-echo work by construction (see external-event-adapter.spec.md §3.3). But it has a consequence: if a nebula↔Pulsar Bridge is also mounted in the receiving tab, the Bridge wrapper is bypassed too. The result: nebula in the receiving tab reflects the remote mutation, **but Pulsar's `entities.*` projection does not**. Chunklet behaviors subscribed to `entities.*` in the receiving tab will not re-render until a local mutation triggers Bridge's wrapper.
 
-**Empirical evidence.** The widget `widget-external-event.html` (Phase 0 Punto 6, Capa 12) sidesteps this by renderizing from Graphlet directly and listening to the BroadcastChannel with a second consumer to trigger re-renders. This works for the widget but is a workaround, not the intended composition pattern for real applications that use Bridge + External Event together.
+**Empirical evidence.** The widget `widget-external-event.html` (Phase 0 Punto 6, Capa 12) sidesteps this by renderizing from nebula directly and listening to the BroadcastChannel with a second consumer to trigger re-renders. This works for the widget but is a workaround, not the intended composition pattern for real applications that use Bridge + External Event together.
 
 **Why deferred.** Resolving it requires coordinated behavior across two adapters. Options include: (a) an "apply remote via wrapped" flag in the External Event Adapter that lets Bridge re-project without re-emitting; (b) a shared `isRemoteContext` signal that Bridge honors to skip re-broadcast; (c) restructuring wrappers into a single dispatcher chain instead of independent monkey-patches. All three are v0.2.0 territory that requires more evidence of the pattern's cost in a real application.
 
@@ -137,21 +137,21 @@ Decision between A and B to be made when evidence demands it. Option A is curren
 
 ### ADAPTER-UTILS-DEDUP — Shared helper for the wrapper pattern across adapters
 
-**What it resolves.** Four of the five first-generation adapters (Bridge, Persistence, External Event, Logging) all wrap the seven mutation methods of Graphlet with the identical structural pattern: capture originals, install thin wrappers that call through and produce side effects, restore originals on destroy. Three of them additionally reimplement `_snapshotLinksOf` and `_sameShallowLinks` for set-semantics detection on `link`/`unlink`/`unlinkAll` (Logging also duplicates these). This is roughly 20-25 lines of near-identical code per adapter, totaling ~80 lines of pure duplication across the codebase.
+**What it resolves.** Four of the five first-generation adapters (Bridge, Persistence, External Event, Logging) all wrap the seven mutation methods of nebula with the identical structural pattern: capture originals, install thin wrappers that call through and produce side effects, restore originals on destroy. Three of them additionally reimplement `_snapshotLinksOf` and `_sameShallowLinks` for set-semantics detection on `link`/`unlink`/`unlinkAll` (Logging also duplicates these). This is roughly 20-25 lines of near-identical code per adapter, totaling ~80 lines of pure duplication across the codebase.
 
-**Empirical evidence.** Verified by direct inspection of the four adapters produced in Phase 0 Punto 5. The pattern is not incidental — it is structural to what "an adapter that observes Graphlet mutations" is. Any fifth or sixth adapter following this pattern will duplicate again.
+**Empirical evidence.** Verified by direct inspection of the four adapters produced in Phase 0 Punto 5. The pattern is not incidental — it is structural to what "an adapter that observes nebula mutations" is. Any fifth or sixth adapter following this pattern will duplicate again.
 
-**Why deferred.** Deduplication requires either (a) a new shared module (`src/adapter-utils.js` or similar) that adapters import, introducing a dependency chain adapters → utils, or (b) publishing the helpers as part of Graphlet itself under a stable "observability API" that inverts the current no-reactivity constraint of Graphlet. Both options are architectural decisions that benefit from a fifth or sixth adapter's evidence to inform the exact shape of the helper. Deduplicating with only four instances risks generalizing on incomplete evidence (Article I).
+**Why deferred.** Deduplication requires either (a) a new shared module (`src/adapter-utils.js` or similar) that adapters import, introducing a dependency chain adapters → utils, or (b) publishing the helpers as part of nebula itself under a stable "observability API" that inverts the current no-reactivity constraint of nebula. Both options are architectural decisions that benefit from a fifth or sixth adapter's evidence to inform the exact shape of the helper. Deduplicating with only four instances risks generalizing on incomplete evidence (Article I).
 
 **Resolution path.** When Fase 1 introduces additional adapters (or refactors existing ones for a v0.2.0), extract the pattern into a helper module. Recommended shape (subject to refinement by that evidence):
 
 ```javascript
 // Proposed shape, not committed
-import { wrapGraphletMutations } from './adapter-utils.js';
+import { wrapnebulaMutations } from './adapter-utils.js';
 
 export function createSomeAdapter(context, options) {
   const state = { /* adapter-specific */ };
-  const unwrap = wrapGraphletMutations(context.graphlet, {
+  const unwrap = wrapnebulaMutations(context.nebula, {
     onMutation: (op, args, wasNoOp) => {
       if (wasNoOp) return;
       // adapter-specific reaction here
@@ -175,7 +175,7 @@ The following observations were closed during Phase 0 and are recorded here only
 - **V-T1** (push/replace idempotence) — Covered by TESTS 8 and 9 of `voyajer.test.html`.
 - **V-T4** (hashchange reactivates Voyajer without manual sync) — Covered implicitly by CP3 since V-T0 removed all manual sync() calls.
 - **C-T1..C-T6, C-T8, C-T9** — Covered by TESTS 1-8, 12-13 of `chunklet.test.html`.
-- **All Pulsar and Graphlet observations** — Covered fully in their respective harnesses.
+- **All Pulsar and nebula observations** — Covered fully in their respective harnesses.
 - **12-CROSSTAB-SYNC** — Resolved by implementation of Capa 12 in Phase 0 Punto 5. Widget `widget-external-event.html` demonstrates working cross-tab bidirectional sync with anti-echo (evidence: 42/42 harness green, empirical widget test showed `out=N/in=0` on emitter, `out=0/in=N` on receiver as expected).
 
 

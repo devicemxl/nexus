@@ -122,7 +122,7 @@ por diff:
 
 - `_enabledUnsubscribe` se declara explícitamente como retenido a propósito para
   el futuro `Chunklet.reset()` del Contract §12, no como cabo suelto.
-- `configure({ graphlet })` documenta que no recablea los adapters vivos: siguen
+- `configure({ nebula })` documenta que no recablea los adapters vivos: siguen
   envolviendo la instancia anterior y la nueva queda sin observar. Chunklet no
   puede resolverlo solo porque, por el Adapter Contract §2, no conoce a los
   adapters ni puede enumerarlos. La aplicación es responsable de destruirlos y
