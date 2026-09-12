@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus — shell</title>
+<style>
+  /*
+    Escena 1.1: el shell está vacío a propósito. El diseño visual de la
+    interfaz de chat es Escena 1.4; lo de aquí sólo necesita ser legible y
+    no estorbar. Cualquier decisión estética tomada ahora sería adivinar.
+  */
+  :root {
+    --lateral:   #22282E;
+    --lateral-t: #96A1AC;
+    --principal: #FAFBFC;
+    --tinta:     #1C2126;
+    --tenue:     #6B757F;
+    --regla:     #E1E6EA;
+    --senal:     #3E7C74;
+    --sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    font-family: var(--sans);
+    color: var(--tinta);
+    background: var(--principal);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .marco {
+    display: grid;
+    grid-template-columns: 15rem 1fr;
+    height: 100%;
+  }
+
+  /* ---------- Lateral ---------- */
+  .lateral {
+    background: var(--lateral);
+    color: var(--lateral-t);
+    padding: 1.4rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+  }
+
+  .marca {
+    color: #EDF1F4;
+    font-weight: 600;
+    font-size: 0.95rem;
+    letter-spacing: -0.01em;
+  }
+
+  .marca span {
+    display: block;
+    font-weight: 400;
+    font-size: 0.78rem;
+    color: var(--lateral-t);
+    letter-spacing: 0;
+  }
+
+  .lateral .hueco {
+    flex: 1;
+    border: 1px dashed #3A434C;
+    border-radius: 4px;
+    display: grid;
+    place-items: center;
+    font-size: 0.8rem;
+    color: #59636D;
+  }
+
+  /* ---------- Principal ---------- */
+  .principal {
+    padding: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    overflow: auto;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 600;
+    letter-spacing: -0.011em;
+  }
+
+  .principal > p {
+    margin: 0;
+    color: var(--tenue);
+    max-width: 42rem;
+  }
+
+  .diagnostico {
+    border: 1px solid var(--regla);
+    border-radius: 5px;
+    padding: 1.1rem 1.3rem;
+    max-width: 42rem;
+  }
+
+  .diagnostico dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.45rem 1.1rem;
+    font-size: 0.9rem;
+  }
+
+  .diagnostico dt { color: var(--tenue); }
+
+  .diagnostico dd {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+  }
+
+  .diagnostico dd[data-listo="true"] { color: var(--senal); }
+
+  .area {
+    flex: 1;
+    min-height: 8rem;
+    border: 1px dashed var(--regla);
+    border-radius: 5px;
+    display: grid;
+    place-items: center;
+    color: var(--tenue);
+    font-size: 0.85rem;
+  }
+
+  @media (max-width: 42rem) {
+    .marco { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .lateral { flex-direction: row; align-items: center; }
+    .lateral .hueco { display: none; }
+    .principal { padding: 1.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="marco" data-chunk="app-shell">
+  <aside class="lateral">
+    <div class="marca">
+      Nexus
+      <span>Escena 1.1</span>
+    </div>
+    <div class="hueco">lateral vacío</div>
+  </aside>
+
+  <main class="principal">
+    <h1>Arranque del stack</h1>
+    <p>
+      Esta página no hace nada todavía. Existe para verificar que las cuatro
+      primitivas y los tres adapters se instancian en el orden correcto y que
+      Chunklet monta un behavior con el stack completo en su contexto.
+    </p>
+
+    <div class="diagnostico">
+      <dl>
+        <dt>Estado</dt>
+        <dd data-zona="estado">sin montar</dd>
+        <dt>Ruta</dt>
+        <dd data-zona="ruta">—</dd>
+        <dt>Modelo</dt>
+        <dd data-zona="entidades">—</dd>
+      </dl>
+    </div>
+
+    <div class="area">área principal vacía</div>
+  </main>
+</div>
+
+<script type="module">
+  import { arrancar } from './app/boot.js';
+
+  try {
+    const nexus = arrancar({
+      // Comodidad de desarrollo, no requisito: los behaviors reciben el
+      // stack por `ctx`. Apagar para comprobar que nada depende de esto.
+      exponerGlobal: true,
+    });
+
+    if (nexus.hidratacion.estado === 'corrupto') {
+      console.warn(
+        '[index] se arrancó con estado vacío por snapshot ilegible:',
+        nexus.hidratacion.motivo
+      );
+    }
+  } catch (error) {
+    console.error('[index] el arranque falló:', error);
+    const zona = document.querySelector('[data-zona="estado"]');
+    if (zona) zona.textContent = 'el arranque falló, ver consola';
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escena 1.1 — harness de arranque</title>
+<style>
+  :root {
+    --papel:   #F1F3EF;
+    --superf:  #FBFCFA;
+    --tinta:   #1A1F1C;
+    --tenue:   #5C6660;
+    --regla:   #CBD2CB;
+    --verde:   #3D7A4E;
+    --oxido:   #A8342A;
+    --pizarra: #43617F;
+    --sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 3rem 1.5rem 6rem;
+    background: var(--papel); color: var(--tinta);
+    font-family: var(--sans); font-size: 15px; line-height: 1.55;
+  }
+  main { max-width: 62rem; margin: 0 auto; }
+  h1 { font-size: 1.45rem; font-weight: 600; letter-spacing: -0.011em; margin: 0 0 0.4rem; }
+  .subtitulo { color: var(--tenue); max-width: 46rem; margin: 0 0 2rem; }
+  .subtitulo code { font-family: var(--mono); font-size: 0.88em; }
+
+  .barra {
+    display: flex; align-items: baseline; gap: 1.25rem; flex-wrap: wrap;
+    padding: 0.9rem 0; border-top: 1px solid var(--regla);
+    border-bottom: 1px solid var(--regla); margin-bottom: 2.5rem;
+  }
+  button {
+    font: inherit; font-weight: 500; color: var(--superf); background: var(--tinta);
+    border: none; border-radius: 3px; padding: 0.45rem 1.1rem; cursor: pointer;
+  }
+  button:hover { background: #2B332D; }
+  button[disabled] { opacity: 0.45; cursor: default; }
+  .marcador { font-family: var(--mono); font-size: 0.95rem; }
+  .marcador .cifra { font-weight: 600; }
+  .marcador.ok .cifra { color: var(--verde); }
+  .marcador.mal .cifra { color: var(--oxido); }
+  .reloj { font-family: var(--mono); color: var(--tenue); font-size: 0.9rem; }
+
+  .traza {
+    background: var(--superf); border: 1px solid var(--regla); border-radius: 4px;
+    padding: 1.4rem 1.5rem; margin-bottom: 2.5rem;
+  }
+  .traza h2 { font-size: 0.98rem; font-weight: 600; margin: 0 0 0.3rem; }
+  .traza p { margin: 0 0 1.2rem; color: var(--tenue); font-size: 0.9rem; max-width: 44rem; }
+  table.medicion { border-collapse: collapse; font-family: var(--mono); font-size: 0.87rem; }
+  table.medicion th {
+    text-align: right; font-weight: 500; color: var(--tenue);
+    font-family: var(--sans); font-size: 0.8rem; padding: 0.3rem 1.1rem 0.3rem 0;
+  }
+  table.medicion td { text-align: right; padding: 0.3rem 1.1rem 0.3rem 0; }
+  table.medicion td b { color: var(--pizarra); }
+  table.medicion tr + tr td { border-top: 1px dotted var(--regla); }
+
+  section.grupo { margin-bottom: 2.25rem; }
+  section.grupo > h2 { font-size: 0.98rem; font-weight: 600; margin: 0 0 0.15rem; }
+  section.grupo > .nota { color: var(--tenue); font-size: 0.88rem; margin: 0 0 0.8rem; max-width: 46rem; }
+  ul.asserts { list-style: none; margin: 0; padding: 0; }
+  ul.asserts li {
+    display: grid; grid-template-columns: 4.2rem 1fr; gap: 0.75rem;
+    align-items: baseline; padding: 0.32rem 0;
+    border-bottom: 1px solid rgba(203,210,203,0.5);
+  }
+  .veredicto { font-family: var(--mono); font-size: 0.76rem; letter-spacing: 0.02em; }
+  .veredicto.ok { color: var(--verde); }
+  .veredicto.mal { color: var(--oxido); font-weight: 600; }
+  .detalle {
+    grid-column: 2; font-family: var(--mono); font-size: 0.82rem; color: var(--oxido);
+    background: rgba(168,52,42,0.06); border-left: 2px solid var(--oxido);
+    padding: 0.4rem 0.7rem; margin-top: 0.35rem; white-space: pre-wrap;
+  }
+  #fixture { position: absolute; left: -9999px; top: 0; width: 40rem; }
+  @media (max-width: 34rem) {
+    ul.asserts li { grid-template-columns: 3.4rem 1fr; }
+    .detalle { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Escena 1.1 — harness de arranque</h1>
+  <p class="subtitulo">
+    Verifica la secuencia canónica de <code>boot.js</code>: hidratación sobre el
+    grafo crudo, proyección única del Bridge, persistencia sin reescritura
+    inicial, y montaje de Chunklet con el stack completo. La aserción central
+    es que <strong>el trabajo de arranque no crece con el tamaño del
+    snapshot</strong>. Invertir el orden en <code>arrancarDatos</code> la pone
+    en rojo.
+  </p>
+
+  <div class="barra">
+    <button id="correr">Correr el harness</button>
+    <span class="marcador" id="marcador">sin ejecutar</span>
+    <span class="reloj" id="reloj"></span>
+  </div>
+
+  <div class="traza">
+    <h2>Trabajo de arranque frente al tamaño del snapshot</h2>
+    <p>
+      Se arranca la capa de datos con snapshots de distinto tamaño, contando
+      las llamadas a <code>setState</code> que produce la secuencia completa.
+      En el orden correcto el conteo es constante: la hidratación ocurre antes
+      de que el Bridge envuelva nada, así que sólo queda su proyección inicial.
+      En el orden inverso sería <code>2N+1</code> y esta tabla crecería.
+    </p>
+    <table class="medicion" id="medicion">
+      <tr><td>pendiente de ejecución</td></tr>
+    </table>
+  </div>
+
+  <div id="resultados"></div>
+</main>
+
+<div id="fixture"></div>
+
+<script type="module">
+import { crearPrimitivas, arrancarDatos, montarInterfaz } from '../app/boot.js';
+import { PREFIJO_CORRUPTO } from '../app/persistencia.js';
+
+// ------------------------------------------------------------------
+// Runner
+// ------------------------------------------------------------------
+const grupos = [];
+let grupoActual = null;
+
+function grupo(titulo, nota) {
+  grupoActual = { titulo, nota, casos: [] };
+  grupos.push(grupoActual);
+}
+function eq(etiqueta, actual, esperado) {
+  const a = JSON.stringify(actual);
+  const e = JSON.stringify(esperado);
+  grupoActual.casos.push({ etiqueta, ok: a === e, actual: a, esperado: e });
+}
+function ok(etiqueta, condicion, detalle = '') {
+  grupoActual.casos.push({
+    etiqueta, ok: !!condicion,
+    actual: condicion ? 'true' : `false${detalle ? ' — ' + detalle : ''}`,
+    esperado: 'true',
+  });
+}
+function callado(fn) {
+  const w = console.warn, e = console.error;
+  console.warn = () => {}; console.error = () => {};
+  try { return fn(); } finally { console.warn = w; console.error = e; }
+}
+
+// ------------------------------------------------------------------
+// Utilidades de prueba
+// ------------------------------------------------------------------
+function storageMock() {
+  const datos = new Map();
+  const m = {
+    getItem: (k) => (datos.has(k) ? datos.get(k) : null),
+    setItem: (k, v) => { m.escrituras++; datos.set(k, String(v)); },
+    removeItem: (k) => datos.delete(k),
+    claves: () => [...datos.keys()],
+    escrituras: 0,
+  };
+  return m;
+}
+
+function snapshotDe(n) {
+  const entities = {};
+  for (let i = 0; i < n; i++) {
+    entities[`node:${i}`] = {
+      properties: { title: `Nodo ${i}`, orden: i },
+      links: i < n - 1 ? { next: [`node:${i + 1}`] } : {},
+    };
+  }
+  return { entities };
+}
+
+/** Arranca la capa de datos contando las llamadas a setState. */
+function arrancarContando(opciones = {}) {
+  const { graphlet, pulsar } = crearPrimitivas();
+  let setStateN = 0;
+  const original = pulsar.setState.bind(pulsar);
+  pulsar.setState = (p) => { setStateN++; return original(p); };
+
+  const t0 = performance.now();
+  const datos = arrancarDatos({ graphlet, pulsar, ...opciones });
+  const ms = performance.now() - t0;
+
+  return { graphlet, pulsar, datos, setStateN, ms };
+}
+
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ==================================================================
+// Ejecución de los casos
+// ==================================================================
+const medicion = [];
+
+async function ejecutarCasos() {
+  grupos.length = 0;
+  medicion.length = 0;
+
+  // ---------------------------------------------------------------
+  grupo('Orden de arranque',
+    'La aserción que protege el invariante de §6 de la mini-spec. El trabajo ' +
+    'de arranque debe ser independiente del tamaño del snapshot.');
+
+  {
+    const tamanos = [0, 10, 50, 200];
+    const conteos = [];
+
+    for (const n of tamanos) {
+      const storage = storageMock();
+      if (n > 0) storage.setItem('nexus.test', JSON.stringify(snapshotDe(n)));
+      storage.escrituras = 0;
+
+      const r = arrancarContando({ storage, clave: 'nexus.test' });
+      conteos.push(r.setStateN);
+      medicion.push({ n, setState: r.setStateN, ms: r.ms });
+      r.datos.destruir({ guardarPendiente: false });
+    }
+
+    const todosIguales = conteos.every((c) => c === conteos[0]);
+    ok('el conteo de setState no depende del tamaño del snapshot',
+      todosIguales, `conteos: ${conteos.join(', ')}`);
+
+    eq('el Bridge proyecta en una sola pasada', conteos[0], 1);
+    ok('un snapshot de 200 entidades no multiplica el trabajo',
+      conteos[3] === conteos[0], `0→${conteos[0]}, 200→${conteos[3]}`);
+  }
+
+  // ---------------------------------------------------------------
+  grupo('Hidratación',
+    'Estado vacío, estado sembrado, y proyección del modelo hidratado en Pulsar.');
+
+  {
+    const storage = storageMock();
+    const r = arrancarContando({ storage, clave: 'nexus.test' });
+    eq('sin snapshot previo, el modelo arranca vacío', r.pulsar.getState().entities, {});
+    eq('sin snapshot previo, el estado de hidratación es vacio', r.datos.hidratacion.estado, 'vacio');
+    r.datos.destruir({ guardarPendiente: false });
+  }
+
+  {
+    const storage = storageMock();
+    storage.setItem('nexus.test', JSON.stringify(snapshotDe(3)));
+    const r = arrancarContando({ storage, clave: 'nexus.test' });
+    const entidades = r.pulsar.getState().entities;
+
+    eq('las entidades del snapshot quedan proyectadas', Object.keys(entidades).sort(),
+      ['node:0', 'node:1', 'node:2']);
+    eq('las propiedades sobreviven a la hidratación',
+      entidades['node:1'].properties.title, 'Nodo 1');
+    eq('los links sobreviven a la hidratación',
+      entidades['node:0'].links.next, ['node:1']);
+    eq('el estado de hidratación es ok', r.datos.hidratacion.estado, 'ok');
+    r.datos.destruir({ guardarPendiente: false });
+  }
+
+  // ---------------------------------------------------------------
+  grupo('Snapshot ilegible',
+    'Un arranque nunca debe caerse por estado previo roto, y nunca debe ' +
+    'destruir en silencio lo que el usuario guardó.');
+
+  {
+    const storage = storageMock();
+    storage.setItem('nexus.test', '{esto no es json');
+    const r = callado(() => arrancarContando({ storage, clave: 'nexus.test' }));
+
+    eq('con JSON inválido se arranca vacío', r.pulsar.getState().entities, {});
+    eq('el estado de hidratación es corrupto', r.datos.hidratacion.estado, 'corrupto');
+    ok('el blob ilegible queda preservado',
+      storage.claves().some((k) => k.startsWith(PREFIJO_CORRUPTO)),
+      `claves: ${storage.claves().join(', ')}`);
+    r.datos.destruir({ guardarPendiente: false });
+  }
+
+  {
+    const storage = storageMock();
+    storage.setItem('nexus.test', JSON.stringify({ cosas: [1, 2, 3] }));
+    const r = callado(() => arrancarContando({ storage, clave: 'nexus.test' }));
+    eq('con forma inesperada se arranca vacío', r.pulsar.getState().entities, {});
+    eq('la forma inesperada se reporta como corrupta', r.datos.hidratacion.estado, 'corrupto');
+    r.datos.destruir({ guardarPendiente: false });
+  }
+
+  {
+    const storage = storageMock();
+    storage.setItem('nexus.test', JSON.stringify({
+      entities: { 'a:1': { properties: {}, links: { rel: 'no soy array' } } },
+    }));
+    const r = callado(() => arrancarContando({ storage, clave: 'nexus.test' }));
+    eq('links malformados se detectan antes de tocar el grafo real',
+      r.datos.hidratacion.estado, 'corrupto');
+    eq('el grafo real queda intacto', r.graphlet.allIds(), []);
+    r.datos.destruir({ guardarPendiente: false });
+  }
+
+  {
+    // Un link a una entidad ausente no invalida el snapshot: se omite.
+    const storage = storageMock();
+    storage.setItem('nexus.test', JSON.stringify({
+      entities: { 'a:1': { properties: { n: 1 }, links: { rel: ['fantasma:9'] } } },
+    }));
+    const r = callado(() => arrancarContando({ storage, clave: 'nexus.test' }));
+    eq('un link huérfano no invalida el snapshot', r.datos.hidratacion.estado, 'ok');
+    eq('la entidad se hidrata igualmente', r.graphlet.allIds(), ['a:1']);
+    r.datos.destruir({ guardarPendiente: false });
+  }
+
+  // ---------------------------------------------------------------
+  grupo('Persistencia',
+    'No reescribe al arrancar, agrupa las mutaciones en una escritura, y ' +
+    'materializa lo pendiente sólo cuando se le pide.');
+
+  {
+    const storage = storageMock();
+    storage.setItem('nexus.test', JSON.stringify(snapshotDe(3)));
+    storage.escrituras = 0;
+    const r = arrancarContando({ storage, clave: 'nexus.test', debounceMs: 30 });
+    eq('arrancar no reescribe lo que acaba de leer', storage.escrituras, 0);
+    r.datos.destruir({ guardarPendiente: false });
+  }
+
+  {
+    const storage = storageMock();
+    const r = arrancarContando({ storage, clave: 'nexus.test', debounceMs: 30 });
+    storage.escrituras = 0;
+
+    r.graphlet.put('msg:1', { texto: 'hola' });
+    r.graphlet.put('msg:2', { texto: 'qué tal' });
+    r.graphlet.put('msg:3', { texto: 'bien' });
+
+    eq('las mutaciones no escriben de inmediato', storage.escrituras, 0);
+    await esperar(80);
+    eq('la ráfaga se agrupa en una sola escritura', storage.escrituras, 1);
+
+    const guardado = JSON.parse(storage.getItem('nexus.test'));
+    eq('lo guardado contiene las tres entidades',
+      Object.keys(guardado.entities).sort(), ['msg:1', 'msg:2', 'msg:3']);
+
+    r.datos.destruir({ guardarPendiente: false });
+  }
+
+  {
+    const storage = storageMock();
+    const r = arrancarContando({ storage, clave: 'nexus.test', debounceMs: 5000 });
+    r.graphlet.put('msg:1', { texto: 'pendiente' });
+    storage.escrituras = 0;
+
+    r.datos.destruir({ guardarPendiente: true });
+    eq('destruir con guardado materializa lo pendiente', storage.escrituras, 1);
+  }
+
+  {
+    const storage = storageMock();
+    const r = arrancarContando({ storage, clave: 'nexus.test', debounceMs: 30 });
+    r.datos.destruir({ guardarPendiente: false });
+    storage.escrituras = 0;
+
+    const antes = JSON.stringify(r.pulsar.getState().entities);
+    r.graphlet.put('msg:9', { texto: 'después del destroy' });
+    await esperar(80);
+
+    eq('tras destruir, las mutaciones ya no se proyectan',
+      JSON.stringify(r.pulsar.getState().entities), antes);
+    eq('tras destruir, las mutaciones ya no se persisten', storage.escrituras, 0);
+    eq('el grafo sigue funcionando', r.graphlet.get('msg:9').properties.texto,
+      'después del destroy');
+  }
+
+  // ---------------------------------------------------------------
+  grupo('Montaje de Chunklet',
+    'Una sola vez por página: setup() es one-shot por módulo. Verifica que ' +
+    'el behavior recibe el stack completo y que el teardown libera recursos.');
+
+  {
+    const fixture = document.getElementById('fixture');
+    fixture.innerHTML = `
+      <div id="shell-prueba" data-chunk="app-shell">
+        <span data-zona="estado">sin montar</span>
+        <span data-zona="ruta">—</span>
+        <span data-zona="entidades">—</span>
+      </div>`;
+
+    const storage = storageMock();
+    storage.setItem('nexus.test', JSON.stringify(snapshotDe(2)));
+
+    const { graphlet, pulsar } = crearPrimitivas();
+    const datos = arrancarDatos({ graphlet, pulsar, storage, clave: 'nexus.test' });
+
+    let stack = null;
+    let fallo = null;
+    try {
+      stack = montarInterfaz({ graphlet, pulsar, raiz: fixture, modoRuta: 'hash' });
+    } catch (error) {
+      fallo = error.message;
+    }
+
+    ok('montarInterfaz no lanza', fallo === null, fallo || '');
+
+    if (stack) {
+      eq('el stack expone las tres primitivas',
+        [!!stack.pulsar, !!stack.graphlet, !!stack.voyajer], [true, true, true]);
+      eq('Voyajer escribió la ruta en Pulsar',
+        typeof pulsar.getState().route.path, 'string');
+    }
+
+    const zonaEstado = fixture.querySelector('[data-zona="estado"]');
+    const zonaEntidades = fixture.querySelector('[data-zona="entidades"]');
+
+    eq('el behavior montó y marcó su zona', zonaEstado.dataset.listo, 'true');
+    eq('el behavior escribió en ui.*', pulsar.getState().ui.shellMontado, true);
+    eq('el behavior leyó el modelo proyectado', zonaEntidades.textContent, '2 entidades hidratadas');
+
+    // --- Reactividad: una mutación del modelo llega al DOM ---
+    graphlet.put('node:99', { title: 'nuevo' });
+    eq('una mutación del modelo repinta la zona', zonaEntidades.textContent,
+      '3 entidades hidratadas');
+
+    // --- Teardown ---
+    const estadoAntes = zonaEntidades.textContent;
+    Chunklet_unmount(fixture);
+
+    eq('el cleanup del behavior corrió', zonaEstado.textContent, 'stack desmontado');
+    eq('el cleanup revirtió su marca en ui.*', pulsar.getState().ui.shellMontado, false);
+
+    graphlet.put('node:100', { title: 'tras desmontar' });
+    eq('tras desmontar, el DOM ya no reacciona', zonaEntidades.textContent, estadoAntes);
+
+    datos.destruir({ guardarPendiente: false });
+    fixture.innerHTML = '';
+  }
+}
+
+// Import diferido de unmount para no acoplar el harness al default export.
+let Chunklet_unmount;
+{
+  const mod = await import('../../../src/chunklet.js');
+  Chunklet_unmount = mod.unmount || mod.default.unmount;
+}
+
+// ------------------------------------------------------------------
+// Render
+// ------------------------------------------------------------------
+const $medicion = document.getElementById('medicion');
+const $resultados = document.getElementById('resultados');
+const $marcador = document.getElementById('marcador');
+const $reloj = document.getElementById('reloj');
+const $boton = document.getElementById('correr');
+
+function pintarMedicion() {
+  if (medicion.length === 0) {
+    $medicion.innerHTML = '<tr><td>sin datos</td></tr>';
+    return;
+  }
+  const cab = '<tr><th>entidades en el snapshot</th>' +
+    medicion.map((m) => `<td>${m.n}</td>`).join('') + '</tr>';
+  const fset = '<tr><th>llamadas a setState</th>' +
+    medicion.map((m) => `<td><b>${m.setState}</b></td>`).join('') + '</tr>';
+  const fms = '<tr><th>arranque</th>' +
+    medicion.map((m) => `<td>${m.ms.toFixed(2)} ms</td>`).join('') + '</tr>';
+  $medicion.innerHTML = cab + fset + fms;
+}
+
+function pintarResultados() {
+  let total = 0, fallos = 0;
+  $resultados.innerHTML = grupos.map((g) => {
+    const items = g.casos.map((c) => {
+      total++;
+      if (!c.ok) fallos++;
+      const detalle = c.ok ? '' :
+        `<div class="detalle">esperado  ${c.esperado}\nobtenido  ${c.actual}</div>`;
+      return `<li>
+        <span class="veredicto ${c.ok ? 'ok' : 'mal'}">${c.ok ? 'verde' : 'ROJO'}</span>
+        <span>${c.etiqueta}</span>${detalle}</li>`;
+    }).join('');
+    return `<section class="grupo"><h2>${g.titulo}</h2>
+      <p class="nota">${g.nota}</p><ul class="asserts">${items}</ul></section>`;
+  }).join('');
+  return { total, fallos };
+}
+
+let yaCorrio = false;
+
+async function ejecutar() {
+  $boton.disabled = true;
+  const t0 = performance.now();
+
+  await ejecutarCasos();
+
+  pintarMedicion();
+  const { total, fallos } = pintarResultados();
+  const ms = (performance.now() - t0).toFixed(0);
+
+  $marcador.className = 'marcador ' + (fallos === 0 ? 'ok' : 'mal');
+  $marcador.innerHTML = fallos === 0
+    ? `<span class="cifra">${total}/${total}</span> aserciones verdes`
+    : `<span class="cifra">${total - fallos}/${total}</span> verdes · ${fallos} en rojo`;
+  $reloj.textContent = `${ms} ms`;
+
+  // Chunklet.setup es one-shot: una segunda corrida completa lanzaría.
+  if (yaCorrio) return;
+  yaCorrio = true;
+  $boton.textContent = 'Recargar para correr de nuevo';
+  $boton.addEventListener('click', () => location.reload());
+  $boton.disabled = false;
+}
+
+ejecutar();
+</script>
+</body>
+</html>
