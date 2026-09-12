@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escena 1.3 — harness de mensajes</title>
+<style>
+  :root{--papel:#F1F3EF;--superf:#FBFCFA;--tinta:#1A1F1C;--tenue:#5C6660;--regla:#CBD2CB;
+        --verde:#3D7A4E;--oxido:#A8342A;--pizarra:#43617F;--ambar:#8A6410;
+        --sans:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+        --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace}
+  *{box-sizing:border-box}
+  body{margin:0;padding:3rem 1.5rem 6rem;background:var(--papel);color:var(--tinta);
+       font-family:var(--sans);font-size:15px;line-height:1.55}
+  main{max-width:62rem;margin:0 auto}
+  h1{font-size:1.45rem;font-weight:600;letter-spacing:-.011em;margin:0 0 .4rem}
+  .subtitulo{color:var(--tenue);max-width:46rem;margin:0 0 2rem}
+  .subtitulo code{font-family:var(--mono);font-size:.88em}
+  .barra{display:flex;align-items:baseline;gap:1.25rem;flex-wrap:wrap;padding:.9rem 0;
+         border-top:1px solid var(--regla);border-bottom:1px solid var(--regla);margin-bottom:2.5rem}
+  button{font:inherit;font-weight:500;color:var(--superf);background:var(--tinta);border:none;
+         border-radius:3px;padding:.45rem 1.1rem;cursor:pointer}
+  button:hover{background:#2B332D}
+  button[disabled]{opacity:.45;cursor:default}
+  .marcador{font-family:var(--mono);font-size:.95rem}
+  .marcador .cifra{font-weight:600}
+  .marcador.ok .cifra{color:var(--verde)}
+  .marcador.mal .cifra{color:var(--oxido)}
+  .reloj{font-family:var(--mono);color:var(--tenue);font-size:.9rem}
+  .traza{background:var(--superf);border:1px solid var(--regla);border-radius:4px;
+         padding:1.4rem 1.5rem;margin-bottom:1.5rem}
+  .traza h2{font-size:.98rem;font-weight:600;margin:0 0 .3rem}
+  .traza p{margin:0 0 1.2rem;color:var(--tenue);font-size:.9rem;max-width:44rem}
+  .traza p.remate{margin:1.1rem 0 0;font-size:.86rem}
+  table.medicion{border-collapse:collapse;font-family:var(--mono);font-size:.87rem}
+  table.medicion th{text-align:right;font-weight:500;color:var(--tenue);font-family:var(--sans);
+                    font-size:.8rem;padding:.3rem 1.1rem .3rem 0}
+  table.medicion td{text-align:right;padding:.3rem 1.1rem .3rem 0}
+  table.medicion td b{color:var(--pizarra)}
+  table.medicion td.holgado{color:var(--verde)}
+  table.medicion td.apretado{color:var(--ambar);font-weight:600}
+  table.medicion td.excedido{color:var(--oxido);font-weight:600}
+  table.medicion tr+tr td{border-top:1px dotted var(--regla)}
+  section.grupo{margin-bottom:2.25rem}
+  section.grupo>h2{font-size:.98rem;font-weight:600;margin:0 0 .15rem}
+  section.grupo>.nota{color:var(--tenue);font-size:.88rem;margin:0 0 .8rem;max-width:46rem}
+  ul.asserts{list-style:none;margin:0;padding:0}
+  ul.asserts li{display:grid;grid-template-columns:4.2rem 1fr;gap:.75rem;align-items:baseline;
+                padding:.32rem 0;border-bottom:1px solid rgba(203,210,203,.5)}
+  .veredicto{font-family:var(--mono);font-size:.76rem;letter-spacing:.02em}
+  .veredicto.ok{color:var(--verde)}
+  .veredicto.mal{color:var(--oxido);font-weight:600}
+  .detalle{grid-column:2;font-family:var(--mono);font-size:.82rem;color:var(--oxido);
+           background:rgba(168,52,42,.06);border-left:2px solid var(--oxido);
+           padding:.4rem .7rem;margin-top:.35rem;white-space:pre-wrap}
+  #fixture{position:absolute;left:-9999px;top:0;width:40rem;height:20rem;overflow:hidden}
+  @media(max-width:34rem){ul.asserts li{grid-template-columns:3.4rem 1fr}.detalle{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Escena 1.3 — harness de mensajes</h1>
+  <p class="subtitulo">
+    Verifica el modelo de mensajes, el provider simulado y el widget de dos
+    suscripciones. La aserción central es que <strong>el streaming no
+    reconstruye la lista</strong>: el DOM resultante es idéntico se llegue a él
+    reconstruyendo o escribiendo un nodo, así que hay que contar
+    reconstrucciones. Meter <code>texto</code> en la firma estructural pone
+    tres aserciones en rojo.
+  </p>
+
+  <div class="barra">
+    <button id="correr">Correr el harness</button>
+    <span class="marcador" id="marcador">sin ejecutar</span>
+    <span class="reloj" id="reloj"></span>
+  </div>
+
+  <div class="traza">
+    <h2>Coste del streaming en el modelo</h2>
+    <p>
+      T mutaciones sobre una sola entidad con N entidades en el grafo, midiendo
+      la cadena <code>nebula.update</code> → Bridge → proyección →
+      <code>_notify</code>. A 30 tokens por segundo el presupuesto por token es
+      33&nbsp;ms; para no perder un fotograma a 60&nbsp;Hz, 16&nbsp;ms.
+    </p>
+    <table class="medicion" id="medicion-modelo"><tr><td>pendiente</td></tr></table>
+    <p class="remate" id="veredicto-modelo"></p>
+  </div>
+
+  <div class="traza">
+    <h2>Coste del repintado en el DOM real</h2>
+    <p>
+      Ésta es la medición que el entorno sustituto no puede dar: Node no hace
+      layout ni pintado. Reconstrucción completa frente a escritura del nodo en
+      vuelo, con M mensajes ya en pantalla.
+    </p>
+    <table class="medicion" id="medicion-dom"><tr><td>pendiente</td></tr></table>
+    <p class="remate" id="veredicto-dom"></p>
+  </div>
+
+  <div id="resultados"></div>
+</main>
+
+<div id="fixture"></div>
+
+<script type="module">
+import * as modelo from '../app/modelo.js';
+import { crearPrimitivas, arrancarDatos, montarInterfaz } from '../app/boot.js';
+import { crearMockProvider } from '../app/mock-provider.js';
+import { conversationMessages } from '../app/conversation-messages.js';
+import Chunklet from '../../../src/chunklet.js';
+
+const grupos = []; let g = null;
+function grupo(t, n) { g = { titulo: t, nota: n, casos: [] }; grupos.push(g); }
+function eq(etiqueta, actual, esperado) {
+  const a = JSON.stringify(actual), e = JSON.stringify(esperado);
+  g.casos.push({ etiqueta, ok: a === e, actual: a, esperado: e });
+}
+function ok(etiqueta, cond, detalle = '') {
+  g.casos.push({ etiqueta, ok: !!cond, actual: cond ? 'true' : `false${detalle ? ' — ' + detalle : ''}`, esperado: 'true' });
+}
+function lanza(etiqueta, fn) {
+  let l = false; try { fn(); } catch { l = true; }
+  g.casos.push({ etiqueta, ok: l, actual: l ? 'lanzó' : 'no lanzó', esperado: 'lanzó' });
+}
+const stg = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) }; };
+
+/** Planificador manual: avanza el stream sin esperar temporizadores reales. */
+function planificador() {
+  const cola = []; let seq = 0;
+  return {
+    programar: (fn) => { const h = ++seq; cola.push({ h, fn }); return h; },
+    cancelar: (h) => { const i = cola.findIndex((x) => x.h === h); if (i >= 0) cola.splice(i, 1); },
+    pendientes: () => cola.length,
+    avanzar(n = 1) { for (let i = 0; i < n && cola.length; i++) cola.shift().fn(); },
+    agotar(max = 10000) { let v = 0; while (cola.length && v < max) { cola.shift().fn(); v++; } return v; },
+  };
+}
+
+const medModelo = [];
+const medDom = [];
+
+// ==================================================================
+function ejecutarCasos() {
+  grupos.length = 0; medModelo.length = 0; medDom.length = 0;
+
+  // ---------------------------------------------------------------
+  grupo('Modelo — mensajes',
+    'La relación conversation→message da la pertenencia; creadoEn da el orden. ' +
+    'Los links preservan el orden de inserción, pero eso no es garantía del contrato.');
+  {
+    const { nebula } = crearPrimitivas();
+    const conv = modelo.crearConversacion(nebula, { titulo: 'C' });
+    const m1 = modelo.agregarMensaje(nebula, conv, { rol: 'user', texto: 'hola' });
+    ok('el mensaje existe', nebula.get(m1) !== null);
+    eq('conserva rol y texto',
+      [nebula.get(m1).properties.rol, nebula.get(m1).properties.texto], ['user', 'hola']);
+    eq('nace completo por defecto', nebula.get(m1).properties.estado, modelo.ESTADO_COMPLETO);
+    eq('queda enlazado desde la conversación',
+      nebula.get(conv).links[modelo.RELACION_CONTIENE], [m1]);
+    lanza('agregar a una conversación inexistente lanza',
+      () => modelo.agregarMensaje(nebula, 'conversation:fantasma', { rol: 'user' }));
+    lanza('un rol inválido lanza', () => modelo.agregarMensaje(nebula, conv, { rol: 'sistema' }));
+  }
+  {
+    const { nebula } = crearPrimitivas();
+    const conv = modelo.crearConversacion(nebula, { titulo: 'C' });
+    const antes = nebula.get(conv).properties.actualizadaEn;
+    const m = modelo.agregarMensaje(nebula, conv, { rol: 'user', texto: 'x' });
+    ok('agregar un mensaje sube la conversación en la lista',
+      nebula.get(conv).properties.actualizadaEn > antes);
+    const trasCrear = nebula.get(conv).properties.actualizadaEn;
+    modelo.anexarTexto(nebula, m, ' más');
+    eq('anexar texto NO vuelve a tocar la conversación',
+      nebula.get(conv).properties.actualizadaEn, trasCrear);
+    eq('anexar concatena', nebula.get(m).properties.texto, 'x más');
+  }
+  {
+    const { nebula } = crearPrimitivas();
+    const conv = modelo.crearConversacion(nebula);
+    const ids = [];
+    for (let i = 0; i < 5; i++) {
+      ids.push(modelo.agregarMensaje(nebula, conv, { rol: i % 2 ? 'assistant' : 'user', texto: `m${i}` }));
+    }
+    const entities = {};
+    for (const id of nebula.allIds()) entities[id] = nebula.get(id);
+    eq('se listan del más antiguo al más reciente',
+      modelo.listarMensajes(entities, conv).map((m) => m.id), ids);
+    eq('sin conversación devuelve lista vacía', modelo.listarMensajes(entities, null), []);
+    const faltante = { ...entities }; delete faltante[ids[2]];
+    eq('un link huérfano se omite sin romper', modelo.listarMensajes(faltante, conv).length, 4);
+  }
+
+  // ---------------------------------------------------------------
+  grupo('Firma estructural',
+    'Excluir el texto es lo que hace posible el streaming. Incluir el estado ' +
+    'es lo que hace que el cierre del mensaje se pinte.');
+  {
+    const base = [
+      { id: 'm:1', rol: 'user', texto: 'a', creadoEn: 1, estado: 'completo' },
+      { id: 'm:2', rol: 'assistant', texto: 'b', creadoEn: 2, estado: 'en-vuelo' },
+    ];
+    ok('el texto NO participa de la firma',
+      modelo.mismaEstructuraDeMensajes(base, [
+        { id: 'm:1', rol: 'user', texto: 'AAAA', creadoEn: 1, estado: 'completo' },
+        { id: 'm:2', rol: 'assistant', texto: 'BBBB', creadoEn: 2, estado: 'en-vuelo' },
+      ]));
+    ok('el estado SÍ participa',
+      !modelo.mismaEstructuraDeMensajes(base, base.map((m, i) => i === 1 ? { ...m, estado: 'completo' } : m)));
+    ok('añadir un mensaje rompe la firma',
+      !modelo.mismaEstructuraDeMensajes(base, [...base, { id: 'm:3', rol: 'user', texto: '', creadoEn: 3, estado: 'completo' }]));
+    ok('cambiar el rol rompe la firma',
+      !modelo.mismaEstructuraDeMensajes(base, base.map((m, i) => i === 0 ? { ...m, rol: 'assistant' } : m)));
+    eq('el mensaje en vuelo se identifica', modelo.mensajeEnVuelo(base).id, 'm:2');
+    eq('sin mensajes en vuelo devuelve null',
+      modelo.mensajeEnVuelo(base.map((m) => ({ ...m, estado: 'completo' }))), null);
+  }
+
+  // ---------------------------------------------------------------
+  grupo('Mock provider',
+    'Un stream que no se puede cancelar es un recurso que no se puede liberar. ' +
+    'El planificador se inyecta para avanzarlo paso a paso.');
+  {
+    const { nebula } = crearPrimitivas();
+    const conv = modelo.crearConversacion(nebula);
+    const p = planificador();
+    const provider = crearMockProvider({ nebula },
+      { programar: p.programar, cancelar: p.cancelar, respuestas: ['uno dos tres'] });
+    const asa = provider.responder(conv);
+    eq('nace en vuelo y vacío',
+      [nebula.get(asa.mensajeId).properties.estado, nebula.get(asa.mensajeId).properties.texto],
+      [modelo.ESTADO_EN_VUELO, '']);
+    ok('el asa reporta actividad', asa.activo);
+    p.avanzar(1);
+    eq('el primer token llega', nebula.get(asa.mensajeId).properties.texto, 'uno');
+    p.agotar();
+    eq('al agotarse queda el texto completo', nebula.get(asa.mensajeId).properties.texto, 'uno dos tres');
+    eq('y el estado pasa a completo', nebula.get(asa.mensajeId).properties.estado, modelo.ESTADO_COMPLETO);
+    ok('el asa deja de reportar actividad', !asa.activo);
+    eq('no quedan temporizadores pendientes', p.pendientes(), 0);
+  }
+  {
+    const { nebula } = crearPrimitivas();
+    const conv = modelo.crearConversacion(nebula);
+    const p = planificador();
+    const provider = crearMockProvider({ nebula },
+      { programar: p.programar, cancelar: p.cancelar, respuestas: ['uno dos tres cuatro cinco'] });
+    const asa = provider.responder(conv);
+    p.avanzar(3);
+    const parcial = nebula.get(asa.mensajeId).properties.texto;
+    asa.detener();
+    eq('detener deja el mensaje interrumpido',
+      nebula.get(asa.mensajeId).properties.estado, modelo.ESTADO_INTERRUMPIDO);
+    eq('detener conserva lo ya recibido', nebula.get(asa.mensajeId).properties.texto, parcial);
+    eq('detener libera el temporizador', p.pendientes(), 0);
+    asa.detener();
+    eq('detener dos veces no altera el estado',
+      nebula.get(asa.mensajeId).properties.estado, modelo.ESTADO_INTERRUMPIDO);
+  }
+
+  // ---------------------------------------------------------------
+  grupo('Coste del streaming',
+    'El modelo es JavaScript puro, así que el sustituto lo mide bien. El DOM ' +
+    'no: aquí es donde el navegador aporta lo que Node no puede.');
+  {
+    // --- modelo ---
+    for (const [N, T] of [[10, 200], [200, 200], [500, 200], [1000, 600]]) {
+      const { nebula, pulsar } = crearPrimitivas();
+      const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 't', debounceMs: 1e6 });
+      const conv = modelo.crearConversacion(nebula);
+      for (let i = 0; i < N - 1; i++) nebula.put(`message:p${i}`, { texto: 'x'.repeat(40), rol: 'user' });
+      const id = modelo.agregarMensaje(nebula, conv, { rol: 'assistant', texto: '', estado: modelo.ESTADO_EN_VUELO });
+      const t0 = performance.now();
+      for (let i = 0; i < T; i++) modelo.anexarTexto(nebula, id, 'token ');
+      const ms = (performance.now() - t0) / T;
+      medModelo.push({ N, T, ms });
+      datos.destruir({ guardarPendiente: false });
+    }
+    const peorModelo = Math.max(...medModelo.map((m) => m.ms));
+    ok('el coste del modelo por token cabe en el presupuesto de 16 ms',
+      peorModelo < 16, `peor caso ${peorModelo.toFixed(3)} ms`);
+
+    // --- DOM ---
+    const caja = document.getElementById('fixture');
+    for (const M of [10, 50, 200, 500]) {
+      const medir = (estrategia) => {
+        caja.innerHTML = '<div id="c" style="height:12rem;overflow:auto"></div>';
+        const c = document.getElementById('c');
+        const textos = [];
+        for (let i = 0; i <= M; i++) {
+          const el = document.createElement('article');
+          const t = document.createElement('div');
+          t.textContent = i < M ? 'Mensaje previo de longitud media. '.repeat(3) : '';
+          el.appendChild(t); c.appendChild(el); textos.push(t);
+        }
+        let txt = '';
+        const t0 = performance.now();
+        for (let i = 0; i < 120; i++) {
+          txt += 'token ';
+          if (estrategia === 'total') {
+            c.textContent = '';
+            for (let j = 0; j <= M; j++) {
+              const el = document.createElement('article');
+              const t = document.createElement('div');
+              t.textContent = j < M ? 'Mensaje previo de longitud media. '.repeat(3) : txt;
+              el.appendChild(t); c.appendChild(el);
+            }
+          } else {
+            textos[M].textContent = txt;
+          }
+          void c.scrollHeight;   // fuerza layout, que es el coste real
+        }
+        return (performance.now() - t0) / 120;
+      };
+      const tot = medir('total'), inc = medir('inc');
+      medDom.push({ M, tot, inc });
+    }
+    caja.innerHTML = '';
+    const peorInc = Math.max(...medDom.map((m) => m.inc));
+    ok('el repintado incremental cabe en el presupuesto de 16 ms',
+      peorInc < 16, `peor caso ${peorInc.toFixed(3)} ms`);
+    ok('el incremental es más barato que la reconstrucción en todos los tamaños',
+      medDom.every((m) => m.inc < m.tot));
+  }
+
+  // ---------------------------------------------------------------
+  grupo('Widget sobre DOM',
+    'Contar reconstrucciones es la única forma de afirmar que el streaming no ' +
+    'las provoca: el DOM resultante es idéntico de una u otra manera.');
+  {
+    const fixture = document.getElementById('fixture');
+    fixture.innerHTML = `
+      <div id="raiz" data-chunk="app-shell">
+        <aside data-chunk="conversation-list">
+          <button data-accion="nueva-conversacion">Nueva</button>
+          <p data-zona="vacio"></p><ul data-zona="lista"></ul>
+          <template data-plantilla="conversation-item">
+            <li data-chunk="conversation-item" aria-selected="false"><span data-zona="titulo"></span></li>
+          </template>
+        </aside>
+        <main data-chunk="conversation-messages">
+          <h1 data-zona="titulo-activo"></h1>
+          <div data-zona="mensajes-scroll" style="height:8rem;overflow:auto">
+            <p data-zona="sin-mensajes"></p>
+            <div data-zona="mensajes"></div>
+          </div>
+          <template data-plantilla="message-item">
+            <article data-mensaje><div data-zona="quien"></div><div data-zona="texto"></div></article>
+          </template>
+        </main>
+      </div>`;
+
+    const raiz = document.getElementById('raiz');
+    const { nebula, pulsar } = crearPrimitivas();
+    const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 'nexus.test' });
+
+    montarInterfaz({ nebula, pulsar, raiz, modoRuta: 'hash' });
+
+    // Envoltura de factory (Chunklet Contract §8): captura el asa del widget
+    // sin que el código de producción tenga que exponerla por otra vía.
+    const main = raiz.querySelector('[data-chunk="conversation-messages"]');
+    Chunklet.unmount(main);
+    let asaWidget = null;
+    Chunklet.define('conversation-messages', (el, ctx) => {
+      asaWidget = conversationMessages(el, ctx);
+      return asaWidget;
+    });
+    Chunklet.mount(main);
+
+    const zona = raiz.querySelector('[data-zona="mensajes"]');
+    const sinMensajes = raiz.querySelector('[data-zona="sin-mensajes"]');
+
+    eq('sin conversación activa no hay mensajes', zona.children.length, 0);
+    eq('el aviso de vacío está visible', sinMensajes.hidden, false);
+
+    const conv = modelo.crearConversacion(nebula, { titulo: 'C' });
+    pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv } });
+    eq('una conversación vacía no pinta mensajes', zona.children.length, 0);
+
+    const m1 = modelo.agregarMensaje(nebula, conv, { rol: 'user', texto: 'Hola' });
+    eq('un mensaje se pinta', zona.children.length, 1);
+    eq('el nodo lleva el id del modelo', zona.children[0].dataset.entity, m1);
+    eq('el nodo lleva el rol', zona.children[0].dataset.rol, 'user');
+    eq('el nodo muestra el texto',
+      zona.children[0].querySelector('[data-zona="texto"]').textContent, 'Hola');
+    eq('el aviso de vacío se oculta', sinMensajes.hidden, true);
+
+    // --- la aserción central ---
+    const p = planificador();
+    const provider = crearMockProvider({ nebula }, {
+      programar: p.programar, cancelar: p.cancelar,
+      respuestas: ['uno dos tres cuatro cinco seis siete ocho nueve diez'],
+    });
+    const antes = asaWidget.reconstrucciones;
+    const asa = provider.responder(conv);
+    const trasAbrir = asaWidget.reconstrucciones;
+    eq('abrir el mensaje reconstruye una vez', trasAbrir - antes, 1);
+
+    const pasos = p.agotar() - 1;
+    const trasStream = asaWidget.reconstrucciones;
+    ok('el streaming emitió varios tokens', pasos >= 10, `pasos: ${pasos}`);
+    eq('cerrar el mensaje reconstruye una sola vez más', trasStream - trasAbrir, 1);
+    eq('hay dos mensajes', zona.children.length, 2);
+    eq('el texto final está completo',
+      zona.lastElementChild.querySelector('[data-zona="texto"]').textContent,
+      'uno dos tres cuatro cinco seis siete ocho nueve diez');
+    eq('el nodo refleja el estado final', zona.lastElementChild.dataset.estado, modelo.ESTADO_COMPLETO);
+
+    // --- interrupción ---
+    const antesInt = asaWidget.reconstrucciones;
+    const asa2 = provider.responder(conv, { texto: 'a b c d e f g h' });
+    p.avanzar(3);
+    const parcial = zona.lastElementChild.querySelector('[data-zona="texto"]').textContent;
+    asa2.detener();
+    eq('interrumpir deja el texto parcial en pantalla',
+      zona.lastElementChild.querySelector('[data-zona="texto"]').textContent, parcial);
+    eq('el nodo refleja el estado interrumpido',
+      zona.lastElementChild.dataset.estado, modelo.ESTADO_INTERRUMPIDO);
+    eq('abrir y cerrar suman dos reconstrucciones', asaWidget.reconstrucciones - antesInt, 2);
+    eq('interrumpir no deja temporizadores', p.pendientes(), 0);
+
+    // --- desplazamiento ---
+    const hilo = raiz.querySelector('[data-zona="mensajes-scroll"]');
+    for (let i = 0; i < 12; i++) modelo.agregarMensaje(nebula, conv, { rol: 'user', texto: `relleno ${i}` });
+    hilo.scrollTop = hilo.scrollHeight;
+    const asa3 = provider.responder(conv, { texto: 'x y z' });
+    p.agotar();
+    ok('siguiendo el final, el streaming mantiene la vista abajo',
+      hilo.scrollHeight - hilo.scrollTop - hilo.clientHeight <= 48);
+
+    hilo.scrollTop = 0;
+    const arribaAntes = hilo.scrollTop;
+    const asa4 = provider.responder(conv, { texto: 'p q r s t' });
+    p.agotar();
+    eq('desplazado hacia arriba, el streaming no arrastra al usuario',
+      hilo.scrollTop, arribaAntes);
+
+    // --- cambio de conversación ---
+    const conv2 = modelo.crearConversacion(nebula, { titulo: 'Otra' });
+    pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv2 } });
+    eq('cambiar de conversación vacía la vista', zona.children.length, 0);
+    pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv } });
+    ok('volver restaura los mensajes', zona.children.length > 0);
+
+    // --- teardown ---
+    Chunklet.unmount(main);
+    eq('desmontar vacía la zona', zona.children.length, 0);
+    modelo.agregarMensaje(nebula, conv, { rol: 'user', texto: 'tras desmontar' });
+    eq('tras desmontar el DOM ya no reacciona', zona.children.length, 0);
+
+    datos.destruir({ guardarPendiente: false });
+    fixture.innerHTML = '';
+  }
+}
+
+// ------------------------------------------------------------------
+const $mm = document.getElementById('medicion-modelo');
+const $md = document.getElementById('medicion-dom');
+const $vm = document.getElementById('veredicto-modelo');
+const $vd = document.getElementById('veredicto-dom');
+const $r = document.getElementById('resultados');
+const $mc = document.getElementById('marcador');
+const $rl = document.getElementById('reloj');
+const $b = document.getElementById('correr');
+
+const clase = (ms) => ms < 8 ? 'holgado' : ms < 16 ? 'apretado' : 'excedido';
+
+function pintarMediciones() {
+  if (medModelo.length) {
+    $mm.innerHTML =
+      '<tr><th>entidades en el grafo</th>' + medModelo.map((m) => `<td>${m.N}</td>`).join('') + '</tr>' +
+      '<tr><th>tokens emitidos</th>' + medModelo.map((m) => `<td>${m.T}</td>`).join('') + '</tr>' +
+      '<tr><th>coste por token</th>' + medModelo.map((m) => `<td class="${clase(m.ms)}"><b>${m.ms.toFixed(3)} ms</b></td>`).join('') + '</tr>';
+    const peor = Math.max(...medModelo.map((m) => m.ms));
+    $vm.textContent = peor < 16
+      ? `Peor caso ${peor.toFixed(3)} ms por token, el ${(peor / 16 * 100).toFixed(1)} % del presupuesto de fotograma. El Bridge no es el cuello de botella: BRIDGE-REACTIVE se mantiene diferido.`
+      : `Peor caso ${peor.toFixed(3)} ms por token, por encima del presupuesto. La decisión sobre Camino 2 hay que revisarla.`;
+  }
+  if (medDom.length) {
+    $md.innerHTML =
+      '<tr><th>mensajes en pantalla</th>' + medDom.map((m) => `<td>${m.M}</td>`).join('') + '</tr>' +
+      '<tr><th>reconstrucción completa</th>' + medDom.map((m) => `<td class="${clase(m.tot)}">${m.tot.toFixed(3)} ms</td>`).join('') + '</tr>' +
+      '<tr><th>escritura incremental</th>' + medDom.map((m) => `<td class="${clase(m.inc)}"><b>${m.inc.toFixed(3)} ms</b></td>`).join('') + '</tr>' +
+      '<tr><th>factor</th>' + medDom.map((m) => `<td>×${(m.tot / m.inc).toFixed(0)}</td>`).join('') + '</tr>';
+    const peorTot = Math.max(...medDom.map((m) => m.tot));
+    const peorInc = Math.max(...medDom.map((m) => m.inc));
+    $vd.textContent =
+      `Incremental, peor caso ${peorInc.toFixed(3)} ms. Reconstrucción completa, ${peorTot.toFixed(3)} ms. ` +
+      (peorTot >= 16
+        ? 'La reconstrucción por token excede el presupuesto de fotograma: la separación de suscripciones no es una optimización, es lo que hace viable el streaming.'
+        : 'Ambas caben en el presupuesto a estos tamaños, pero la brecha crece con el número de mensajes.');
+  }
+}
+
+function pintarResultados() {
+  let total = 0, fallos = 0;
+  $r.innerHTML = grupos.map((gr) => {
+    const items = gr.casos.map((c) => {
+      total++; if (!c.ok) fallos++;
+      const d = c.ok ? '' : `<div class="detalle">esperado  ${c.esperado}\nobtenido  ${c.actual}</div>`;
+      return `<li><span class="veredicto ${c.ok ? 'ok' : 'mal'}">${c.ok ? 'verde' : 'ROJO'}</span><span>${c.etiqueta}</span>${d}</li>`;
+    }).join('');
+    return `<section class="grupo"><h2>${gr.titulo}</h2><p class="nota">${gr.nota}</p><ul class="asserts">${items}</ul></section>`;
+  }).join('');
+  return { total, fallos };
+}
+
+let yaCorrio = false;
+function ejecutar() {
+  $b.disabled = true;
+  const t0 = performance.now();
+  ejecutarCasos();
+  pintarMediciones();
+  const { total, fallos } = pintarResultados();
+  $mc.className = 'marcador ' + (fallos === 0 ? 'ok' : 'mal');
+  $mc.innerHTML = fallos === 0
+    ? `<span class="cifra">${total}/${total}</span> aserciones verdes`
+    : `<span class="cifra">${total - fallos}/${total}</span> verdes · ${fallos} en rojo`;
+  $rl.textContent = `${(performance.now() - t0).toFixed(0)} ms`;
+  if (yaCorrio) return;
+  yaCorrio = true;
+  $b.textContent = 'Recargar para correr de nuevo';
+  $b.addEventListener('click', () => location.reload());
+  $b.disabled = false;
+}
+ejecutar();
+</script>
+</body>
+</html>
