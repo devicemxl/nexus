@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escena 1.2 — harness de conversaciones</title>
+<style>
+  :root {
+    --papel:#F1F3EF; --superf:#FBFCFA; --tinta:#1A1F1C; --tenue:#5C6660;
+    --regla:#CBD2CB; --verde:#3D7A4E; --oxido:#A8342A; --pizarra:#43617F;
+    --sans:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:3rem 1.5rem 6rem;background:var(--papel);color:var(--tinta);
+       font-family:var(--sans);font-size:15px;line-height:1.55}
+  main{max-width:62rem;margin:0 auto}
+  h1{font-size:1.45rem;font-weight:600;letter-spacing:-.011em;margin:0 0 .4rem}
+  .subtitulo{color:var(--tenue);max-width:46rem;margin:0 0 2rem}
+  .subtitulo code{font-family:var(--mono);font-size:.88em}
+  .barra{display:flex;align-items:baseline;gap:1.25rem;flex-wrap:wrap;padding:.9rem 0;
+         border-top:1px solid var(--regla);border-bottom:1px solid var(--regla);margin-bottom:2.5rem}
+  button{font:inherit;font-weight:500;color:var(--superf);background:var(--tinta);border:none;
+         border-radius:3px;padding:.45rem 1.1rem;cursor:pointer}
+  button:hover{background:#2B332D}
+  button[disabled]{opacity:.45;cursor:default}
+  .marcador{font-family:var(--mono);font-size:.95rem}
+  .marcador .cifra{font-weight:600}
+  .marcador.ok .cifra{color:var(--verde)}
+  .marcador.mal .cifra{color:var(--oxido)}
+  .reloj{font-family:var(--mono);color:var(--tenue);font-size:.9rem}
+  .traza{background:var(--superf);border:1px solid var(--regla);border-radius:4px;
+         padding:1.4rem 1.5rem;margin-bottom:2.5rem}
+  .traza h2{font-size:.98rem;font-weight:600;margin:0 0 .3rem}
+  .traza p{margin:0 0 1.2rem;color:var(--tenue);font-size:.9rem;max-width:44rem}
+  table.medicion{border-collapse:collapse;font-family:var(--mono);font-size:.87rem}
+  table.medicion th{text-align:right;font-weight:500;color:var(--tenue);font-family:var(--sans);
+                    font-size:.8rem;padding:.3rem 1.1rem .3rem 0}
+  table.medicion td{text-align:right;padding:.3rem 1.1rem .3rem 0}
+  table.medicion td b{color:var(--pizarra)}
+  table.medicion td.cero{color:var(--verde);font-weight:600}
+  table.medicion tr+tr td{border-top:1px dotted var(--regla)}
+  section.grupo{margin-bottom:2.25rem}
+  section.grupo>h2{font-size:.98rem;font-weight:600;margin:0 0 .15rem}
+  section.grupo>.nota{color:var(--tenue);font-size:.88rem;margin:0 0 .8rem;max-width:46rem}
+  ul.asserts{list-style:none;margin:0;padding:0}
+  ul.asserts li{display:grid;grid-template-columns:4.2rem 1fr;gap:.75rem;align-items:baseline;
+                padding:.32rem 0;border-bottom:1px solid rgba(203,210,203,.5)}
+  .veredicto{font-family:var(--mono);font-size:.76rem;letter-spacing:.02em}
+  .veredicto.ok{color:var(--verde)}
+  .veredicto.mal{color:var(--oxido);font-weight:600}
+  .detalle{grid-column:2;font-family:var(--mono);font-size:.82rem;color:var(--oxido);
+           background:rgba(168,52,42,.06);border-left:2px solid var(--oxido);
+           padding:.4rem .7rem;margin-top:.35rem;white-space:pre-wrap}
+  #fixture{position:absolute;left:-9999px;top:0;width:40rem}
+  @media(max-width:34rem){ul.asserts li{grid-template-columns:3.4rem 1fr}.detalle{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Escena 1.2 — harness de conversaciones</h1>
+  <p class="subtitulo">
+    Verifica el modelo de entidades del chat y los dos widgets que lo
+    presentan. La aserción central del grupo de repintado es que
+    <strong>mutar entidades que no son conversaciones no repinta la
+    lista</strong>: sin ella, cada token del streaming de la Escena 1.3
+    reconstruiría el lateral entero.
+  </p>
+
+  <div class="barra">
+    <button id="correr">Correr el harness</button>
+    <span class="marcador" id="marcador">sin ejecutar</span>
+    <span class="reloj" id="reloj"></span>
+  </div>
+
+  <div class="traza">
+    <h2>Ruido reactivo absorbido por la firma estable</h2>
+    <p>
+      Con una lista de conversaciones que no cambia, se mutan sólo mensajes.
+      El selector se evalúa una vez por mutación en ambos casos — eso es
+      <code>BRIDGE-REACTIVE</code> y la <code>equality</code> no lo evita. Lo
+      que evita es el repintado del DOM, que es la parte cara.
+    </p>
+    <table class="medicion" id="medicion"><tr><td>pendiente de ejecución</td></tr></table>
+  </div>
+
+  <div id="resultados"></div>
+</main>
+
+<div id="fixture"></div>
+
+<script type="module">
+import { crearPrimitivas, arrancarDatos, montarInterfaz } from '../app/boot.js';
+import { generarId, tipoDe, esDeTipo } from '../app/ids.js';
+import * as modelo from '../app/modelo.js';
+import Chunklet from '../../../src/chunklet.js';
+
+const grupos = []; let g = null;
+function grupo(t, n) { g = { titulo: t, nota: n, casos: [] }; grupos.push(g); }
+function eq(etiqueta, actual, esperado) {
+  const a = JSON.stringify(actual), e = JSON.stringify(esperado);
+  g.casos.push({ etiqueta, ok: a === e, actual: a, esperado: e });
+}
+function ok(etiqueta, cond, detalle = '') {
+  g.casos.push({ etiqueta, ok: !!cond, actual: cond ? 'true' : `false${detalle ? ' — ' + detalle : ''}`, esperado: 'true' });
+}
+function lanza(etiqueta, fn) {
+  let lanzo = false;
+  try { fn(); } catch { lanzo = true; }
+  g.casos.push({ etiqueta, ok: lanzo, actual: lanzo ? 'lanzó' : 'no lanzó', esperado: 'lanzó' });
+}
+function storageMock() {
+  const m = new Map();
+  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) };
+}
+const medicion = [];
+
+// ==================================================================
+function ejecutarCasos() {
+  grupos.length = 0; medicion.length = 0;
+
+  grupo('Identificadores',
+    'Generador propio, sin crypto.randomUUID: esa API exige contexto seguro y ' +
+    'los esquemas custom de Wails y Tauri no lo garantizan de forma uniforme.');
+  {
+    const a = generarId('conversation'), b = generarId('conversation');
+    ok('llevan el prefijo de tipo', a.startsWith('conversation:'), a);
+    ok('dos llamadas seguidas no colisionan', a !== b);
+    eq('tipoDe recupera el prefijo', tipoDe(a), 'conversation');
+    eq('esDeTipo discrimina', [esDeTipo(a, 'conversation'), esDeTipo(a, 'message')], [true, false]);
+    lanza('un tipo con ":" es rechazado', () => generarId('a:b'));
+    lanza('un tipo vacío es rechazado', () => generarId(''));
+    const s = new Set();
+    for (let i = 0; i < 5000; i++) s.add(generarId('x'));
+    eq('5000 ids consecutivos son únicos', s.size, 5000);
+  }
+
+  grupo('Modelo — escritura',
+    'Cada operación usa la variante de mutación que le corresponde ' +
+    'semánticamente: put para crear, update para modificar.');
+  {
+    const { graphlet } = crearPrimitivas();
+    const id = modelo.crearConversacion(graphlet, { titulo: 'Primera' });
+    const e = graphlet.get(id);
+    ok('la conversación existe tras crearla', e !== null);
+    eq('conserva el título dado', e.properties.titulo, 'Primera');
+    ok('registra creadaEn y actualizadaEn',
+      typeof e.properties.creadaEn === 'number' && typeof e.properties.actualizadaEn === 'number');
+    const st = modelo.crearConversacion(graphlet);
+    ok('genera un título por defecto',
+      graphlet.get(st).properties.titulo.startsWith('Conversación'));
+  }
+  {
+    const { graphlet } = crearPrimitivas();
+    const id = modelo.crearConversacion(graphlet, { titulo: 'Antes' });
+    const creadaEn = graphlet.get(id).properties.creadaEn;
+    modelo.renombrarConversacion(graphlet, id, 'Después');
+    eq('renombrar cambia el título', graphlet.get(id).properties.titulo, 'Después');
+    eq('renombrar NO borra creadaEn', graphlet.get(id).properties.creadaEn, creadaEn);
+    lanza('renombrar algo inexistente lanza',
+      () => modelo.renombrarConversacion(graphlet, 'conversation:fantasma', 'x'));
+  }
+  {
+    const { graphlet } = crearPrimitivas();
+    const id = modelo.crearConversacion(graphlet);
+    modelo.eliminarConversacion(graphlet, id);
+    eq('eliminar quita la entidad', graphlet.get(id), null);
+    modelo.eliminarConversacion(graphlet, id);
+    eq('eliminar dos veces no lanza', graphlet.allIds(), []);
+  }
+
+  grupo('Modelo — derivación de la lista',
+    'El orden de presentación se decide por propiedades explícitas, nunca ' +
+    'por el identificador ni por el orden de inserción en el grafo.');
+  {
+    const entities = {
+      'conversation:a': { properties: { titulo: 'A', creadaEn: 1, actualizadaEn: 300 }, links: {} },
+      'conversation:b': { properties: { titulo: 'B', creadaEn: 2, actualizadaEn: 100 }, links: {} },
+      'conversation:c': { properties: { titulo: 'C', creadaEn: 3, actualizadaEn: 200 }, links: {} },
+      'message:z': { properties: { texto: 'no soy conversación' }, links: {} },
+    };
+    const lista = modelo.listarConversaciones(entities);
+    eq('sólo incluye entidades de tipo conversation', lista.length, 3);
+    eq('ordena por actualizadaEn descendente', lista.map((c) => c.id),
+      ['conversation:a', 'conversation:c', 'conversation:b']);
+    eq('el empate se desempata por id, de forma estable',
+      modelo.listarConversaciones({
+        'conversation:z': { properties: { titulo: 'Z', actualizadaEn: 5 }, links: {} },
+        'conversation:a': { properties: { titulo: 'A', actualizadaEn: 5 }, links: {} },
+      }).map((c) => c.id), ['conversation:a', 'conversation:z']);
+    eq('sin entities devuelve lista vacía', modelo.listarConversaciones(undefined), []);
+    eq('una conversación sin título no rompe',
+      modelo.listarConversaciones({ 'conversation:x': { properties: {}, links: {} } })[0].titulo,
+      '(sin título)');
+  }
+
+  grupo('Firma estable',
+    'La equality del selector compara sólo los campos que la interfaz pinta. ' +
+    'Es lo que decide si la lista se reconstruye o se deja en paz.');
+  {
+    const base = [{ id: 'c:1', titulo: 'A', creadaEn: 1, actualizadaEn: 9 }];
+    ok('una lista es igual a sí misma', modelo.mismasConversaciones(base, base));
+    ok('dos listas con mismos campos son iguales',
+      modelo.mismasConversaciones(base, [{ id: 'c:1', titulo: 'A', creadaEn: 1, actualizadaEn: 9 }]));
+    ok('un título distinto rompe la igualdad',
+      !modelo.mismasConversaciones(base, [{ id: 'c:1', titulo: 'B', creadaEn: 1, actualizadaEn: 9 }]));
+    ok('un id distinto rompe la igualdad',
+      !modelo.mismasConversaciones(base, [{ id: 'c:2', titulo: 'A', creadaEn: 1, actualizadaEn: 9 }]));
+    ok('distinta longitud rompe la igualdad', !modelo.mismasConversaciones(base, []));
+    ok('creadaEn NO participa: no se pinta',
+      modelo.mismasConversaciones(base, [{ id: 'c:1', titulo: 'A', creadaEn: 999, actualizadaEn: 9 }]));
+  }
+
+  // ---------------------------------------------------------------
+  grupo('Ruido reactivo',
+    'La medición de la tabla superior, como aserción. Mutar mensajes no debe ' +
+    'repintar la lista de conversaciones: es lo que protege a la Escena 1.3.');
+  {
+    for (const [conv, mut] of [[5, 20], [10, 50], [10, 200], [50, 200]]) {
+      const medir = (conEquality) => {
+        const { graphlet, pulsar } = crearPrimitivas();
+        const datos = arrancarDatos({ graphlet, pulsar, storage: storageMock(), clave: 't' });
+        for (let i = 0; i < conv; i++) modelo.crearConversacion(graphlet, { titulo: `C ${i}` });
+        let evaluaciones = 0, repintados = 0;
+        pulsar.subscribeSelector(
+          (e) => { evaluaciones++; return modelo.listarConversaciones(e.entities); },
+          () => { repintados++; },
+          conEquality ? { equality: modelo.mismasConversaciones, immediate: true } : { immediate: true }
+        );
+        const b = { evaluaciones, repintados };
+        for (let i = 0; i < mut; i++) graphlet.put(`message:${i}`, { texto: `token ${i}` });
+        datos.destruir({ guardarPendiente: false });
+        return { evaluaciones: evaluaciones - b.evaluaciones, repintados: repintados - b.repintados };
+      };
+      const sin = medir(false), con = medir(true);
+      medicion.push({ conv, mut, evaluaciones: con.evaluaciones, sin: sin.repintados, con: con.repintados });
+      eq(`${conv} conversaciones y ${mut} mutaciones ajenas: cero repintados`, con.repintados, 0);
+    }
+    ok('sin equality, el repintado sería uno por mutación',
+      medicion.every((m) => m.sin === m.mut));
+    ok('el selector se evalúa igual en ambos casos: eso es BRIDGE-REACTIVE',
+      medicion.every((m) => m.evaluaciones === m.mut));
+  }
+
+  // ---------------------------------------------------------------
+  grupo('Widgets sobre DOM',
+    'Una sola vez por página: montarInterfaz llama a Chunklet.setup, que es ' +
+    'one-shot por módulo. Ejercita la ruta real de arranque, no un stack armado a mano.');
+  {
+    const fixture = document.getElementById('fixture');
+    fixture.innerHTML = `
+      <div id="raiz" data-chunk="app-shell">
+        <aside data-chunk="conversation-list">
+          <button data-accion="nueva-conversacion">Nueva</button>
+          <p data-zona="vacio">vacío</p>
+          <ul data-zona="lista"></ul>
+          <template data-plantilla="conversation-item">
+            <li class="fila" data-chunk="conversation-item" aria-selected="false">
+              <span data-zona="titulo"></span>
+            </li>
+          </template>
+        </aside>
+        <main>
+          <h1 data-zona="titulo-activo">nada</h1>
+          <div data-zona="hueco-mensajes" hidden></div>
+        </main>
+      </div>`;
+
+    const raiz = document.getElementById('raiz');
+    const { graphlet, pulsar } = crearPrimitivas();
+    const datos = arrancarDatos({ graphlet, pulsar, storage: storageMock(), clave: 'nexus.test' });
+
+    let fallo = null;
+    try { montarInterfaz({ graphlet, pulsar, raiz, modoRuta: 'hash' }); }
+    catch (e) { fallo = e.message; }
+    ok('montarInterfaz no lanza', fallo === null, fallo || '');
+
+    const lista = raiz.querySelector('[data-zona="lista"]');
+    const vacio = raiz.querySelector('[data-zona="vacio"]');
+    const boton = raiz.querySelector('[data-accion="nueva-conversacion"]');
+    const tituloActivo = raiz.querySelector('[data-zona="titulo-activo"]');
+
+    eq('arranca sin filas', lista.children.length, 0);
+    eq('el aviso de lista vacía está visible', vacio.hidden, false);
+
+    const id1 = modelo.crearConversacion(graphlet, { titulo: 'Uno' });
+    eq('una conversación nueva pinta una fila', lista.children.length, 1);
+    eq('la fila lleva el id del modelo', lista.children[0].dataset.entity, id1);
+    eq('la fila muestra el título',
+      lista.children[0].querySelector('[data-zona="titulo"]').textContent, 'Uno');
+    eq('el aviso de vacío se oculta', vacio.hidden, true);
+
+    const id2 = modelo.crearConversacion(graphlet, { titulo: 'Dos' });
+    eq('dos conversaciones pintan dos filas', lista.children.length, 2);
+    eq('la más reciente va primero', lista.children[0].dataset.entity, id2);
+
+    lista.children[1].dispatchEvent(new Event('click', { bubbles: true }));
+    eq('el click selecciona la conversación', pulsar.getState().ui.activeConversation, id1);
+    eq('la fila seleccionada marca aria-selected',
+      lista.children[1].getAttribute('aria-selected'), 'true');
+    eq('la otra fila no queda seleccionada',
+      lista.children[0].getAttribute('aria-selected'), 'false');
+    eq('el área principal refleja la selección', tituloActivo.textContent, 'Uno');
+
+    boton.dispatchEvent(new Event('click', { bubbles: true }));
+    eq('el botón añade una fila', lista.children.length, 3);
+    const idNuevo = pulsar.getState().ui.activeConversation;
+    ok('el botón selecciona la recién creada', idNuevo !== id1 && idNuevo !== id2);
+    eq('la recién creada encabeza la lista', lista.children[0].dataset.entity, idNuevo);
+
+    modelo.renombrarConversacion(graphlet, id1, 'Uno renombrado');
+    const fila1 = [...lista.children].find((f) => f.dataset.entity === id1);
+    eq('renombrar repinta el título de la fila',
+      fila1.querySelector('[data-zona="titulo"]').textContent, 'Uno renombrado');
+
+    // La fila activa se destruye y se recrea en el repintado total. Recupera
+    // su estado de `ui` al montarse: por eso la selección no vive en el DOM.
+    const filaActiva = [...lista.children].find((f) => f.dataset.entity === idNuevo);
+    eq('la selección sobrevive a un repintado total',
+      filaActiva.getAttribute('aria-selected'), 'true');
+    eq('las filas no seleccionadas siguen sin marcar',
+      fila1.getAttribute('aria-selected'), 'false');
+
+    modelo.eliminarConversacion(graphlet, id2);
+    eq('eliminar quita la fila', lista.children.length, 2);
+    ok('la fila eliminada ya no está',
+      ![...lista.children].some((f) => f.dataset.entity === id2));
+
+    graphlet.put('message:1', { texto: 'un mensaje' });
+    graphlet.put('message:2', { texto: 'otro' });
+    graphlet.update('message:1', { texto: 'editado' });
+    eq('mutar entidades ajenas no altera la lista', lista.children.length, 2);
+    eq('las conversaciones siguen siendo las mismas',
+      [...lista.children].map((f) => f.dataset.entity).sort(), [id1, idNuevo].sort());
+
+    Chunklet.unmount(raiz);
+    eq('desmontar vacía la lista', lista.children.length, 0);
+    const antes = pulsar.getState().ui.activeConversation;
+    modelo.crearConversacion(graphlet, { titulo: 'Tras desmontar' });
+    eq('tras desmontar, el DOM ya no reacciona', lista.children.length, 0);
+    eq('tras desmontar, la selección no cambia sola',
+      pulsar.getState().ui.activeConversation, antes);
+
+    datos.destruir({ guardarPendiente: false });
+    fixture.innerHTML = '';
+  }
+}
+
+// ------------------------------------------------------------------
+const $m = document.getElementById('medicion');
+const $r = document.getElementById('resultados');
+const $mc = document.getElementById('marcador');
+const $rl = document.getElementById('reloj');
+const $b = document.getElementById('correr');
+
+function pintarMedicion() {
+  if (!medicion.length) { $m.innerHTML = '<tr><td>sin datos</td></tr>'; return; }
+  const f = (etiqueta, sel, clase) => '<tr><th>' + etiqueta + '</th>' +
+    medicion.map((x) => `<td class="${clase && sel(x) === 0 ? 'cero' : ''}">${sel(x)}</td>`).join('') + '</tr>';
+  $m.innerHTML =
+    '<tr><th>conversaciones en la lista</th>' + medicion.map((x) => `<td>${x.conv}</td>`).join('') + '</tr>' +
+    '<tr><th>mutaciones ajenas</th>' + medicion.map((x) => `<td>${x.mut}</td>`).join('') + '</tr>' +
+    '<tr><th>evaluaciones del selector</th>' + medicion.map((x) => `<td><b>${x.evaluaciones}</b></td>`).join('') + '</tr>' +
+    f('repintados sin equality', (x) => x.sin, false) +
+    f('repintados con equality', (x) => x.con, true);
+}
+
+function pintarResultados() {
+  let total = 0, fallos = 0;
+  $r.innerHTML = grupos.map((gr) => {
+    const items = gr.casos.map((c) => {
+      total++; if (!c.ok) fallos++;
+      const d = c.ok ? '' : `<div class="detalle">esperado  ${c.esperado}\nobtenido  ${c.actual}</div>`;
+      return `<li><span class="veredicto ${c.ok ? 'ok' : 'mal'}">${c.ok ? 'verde' : 'ROJO'}</span><span>${c.etiqueta}</span>${d}</li>`;
+    }).join('');
+    return `<section class="grupo"><h2>${gr.titulo}</h2><p class="nota">${gr.nota}</p><ul class="asserts">${items}</ul></section>`;
+  }).join('');
+  return { total, fallos };
+}
+
+let yaCorrio = false;
+function ejecutar() {
+  $b.disabled = true;
+  const t0 = performance.now();
+  ejecutarCasos();
+  pintarMedicion();
+  const { total, fallos } = pintarResultados();
+  $mc.className = 'marcador ' + (fallos === 0 ? 'ok' : 'mal');
+  $mc.innerHTML = fallos === 0
+    ? `<span class="cifra">${total}/${total}</span> aserciones verdes`
+    : `<span class="cifra">${total - fallos}/${total}</span> verdes · ${fallos} en rojo`;
+  $rl.textContent = `${(performance.now() - t0).toFixed(0)} ms`;
+
+  if (yaCorrio) return;
+  yaCorrio = true;
+  $b.textContent = 'Recargar para correr de nuevo';
+  $b.addEventListener('click', () => location.reload());
+  $b.disabled = false;
+}
+ejecutar();
+</script>
+</body>
+</html>

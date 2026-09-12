@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus — lista de conversaciones</title>
+<style>
+  :root {
+    --lateral:   #22282E;
+    --lateral-t: #96A1AC;
+    --lateral-a: #2D353D;
+    --principal: #FAFBFC;
+    --tinta:     #1C2126;
+    --tenue:     #6B757F;
+    --regla:     #E1E6EA;
+    --senal:     #3E7C74;
+    --sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; font-family: var(--sans); color: var(--tinta);
+    background: var(--principal); font-size: 15px; line-height: 1.5;
+  }
+  .marco { display: grid; grid-template-columns: 16rem 1fr; height: 100%; }
+
+  /* ---------- Lateral ---------- */
+  .lateral {
+    background: var(--lateral); color: var(--lateral-t);
+    padding: 1.2rem 0.9rem; display: flex; flex-direction: column; gap: 1rem;
+    min-height: 0;
+  }
+  .marca { color: #EDF1F4; font-weight: 600; font-size: 0.95rem; padding: 0 0.3rem; }
+  .marca span {
+    display: block; font-weight: 400; font-size: 0.78rem; color: var(--lateral-t);
+  }
+
+  .nueva {
+    font: inherit; font-size: 0.88rem; font-weight: 500;
+    width: 100%; text-align: left;
+    color: #EDF1F4; background: var(--lateral-a);
+    border: 1px solid #39424B; border-radius: 4px;
+    padding: 0.5rem 0.75rem; cursor: pointer;
+  }
+  .nueva:hover { background: #353E47; }
+  .nueva::before { content: "+"; margin-right: 0.5rem; color: var(--lateral-t); }
+
+  .lista { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 0; }
+
+  .fila {
+    padding: 0.5rem 0.75rem; border-radius: 4px; cursor: pointer;
+    font-size: 0.88rem; color: var(--lateral-t);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .fila:hover { background: var(--lateral-a); color: #D3DAE1; }
+  .fila.activa {
+    background: var(--lateral-a); color: #EDF1F4;
+    box-shadow: inset 2px 0 0 var(--senal);
+  }
+  .fila:focus-visible { outline: 2px solid var(--senal); outline-offset: -2px; }
+
+  .vacio { font-size: 0.82rem; color: #59636D; padding: 0.5rem 0.75rem; font-style: italic; }
+
+  /* ---------- Principal ---------- */
+  .principal {
+    padding: 2.5rem; display: flex; flex-direction: column; gap: 1.25rem;
+    overflow: auto; min-height: 0;
+  }
+  h1 { margin: 0; font-size: 1.25rem; font-weight: 600; letter-spacing: -0.011em; }
+  .principal > p { margin: 0; color: var(--tenue); max-width: 40rem; font-size: 0.92rem; }
+  .hueco {
+    flex: 1; min-height: 8rem; border: 1px dashed var(--regla); border-radius: 5px;
+    display: grid; place-items: center; color: var(--tenue); font-size: 0.85rem;
+  }
+
+  @media (max-width: 44rem) {
+    .marco { grid-template-columns: 1fr; grid-template-rows: 14rem 1fr; }
+    .principal { padding: 1.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="marco" data-chunk="app-shell">
+
+  <aside class="lateral" data-chunk="conversation-list">
+    <div class="marca">
+      Nexus
+      <span>Escena 1.2</span>
+    </div>
+
+    <button type="button" class="nueva" data-accion="nueva-conversacion">
+      Nueva conversación
+    </button>
+
+    <p class="vacio" data-zona="vacio">Todavía no hay conversaciones.</p>
+
+    <ul class="lista" data-zona="lista" role="listbox" aria-label="Conversaciones"></ul>
+
+    <!--
+      Plantilla de fila. `conversation-list` la clona por cada conversación,
+      escribe data-entity con el id del modelo, y monta el Chunklet.
+      Chunklet nunca genera identificadores: los lee de aquí.
+    -->
+    <template data-plantilla="conversation-item">
+      <li class="fila" data-chunk="conversation-item" role="option"
+          tabindex="0" aria-selected="false">
+        <span data-zona="titulo"></span>
+      </li>
+    </template>
+  </aside>
+
+  <main class="principal">
+    <h1 data-zona="titulo-activo">Ninguna conversación seleccionada</h1>
+    <p>
+      La lista del lateral se pinta desde la proyección del Bridge. Crear una
+      conversación muta Graphlet; el repintado llega por Pulsar. Seleccionar
+      no toca el modelo: sólo escribe en <code>ui.activeConversation</code>.
+    </p>
+    <div class="hueco" data-zona="hueco-mensajes" hidden>
+      los mensajes llegan en la Escena 1.3
+    </div>
+  </main>
+
+</div>
+
+<script type="module">
+  import { arrancar } from './app/boot.js';
+
+  try {
+    const nexus = arrancar({ exponerGlobal: true });
+
+    if (nexus.hidratacion.estado === 'corrupto') {
+      console.warn(
+        '[index] se arrancó con estado vacío por snapshot ilegible:',
+        nexus.hidratacion.motivo
+      );
+    }
+  } catch (error) {
+    console.error('[index] el arranque falló:', error);
+    const zona = document.querySelector('[data-zona="titulo-activo"]');
+    if (zona) zona.textContent = 'El arranque falló, ver consola';
+  }
+</script>
+</body>
+</html>
