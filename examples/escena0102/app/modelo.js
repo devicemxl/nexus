@@ -18,6 +18,29 @@
 
 import { generarId, esDeTipo } from './ids.js';
 
+/**
+ * Reloj lógico monótono.
+ *
+ * `Date.now()` tiene resolución de milisegundo, y los motores de navegador la
+ * engrosan todavía más como mitigación de Spectre. Dos conversaciones creadas
+ * en la misma ráfaga reciben la misma marca, y entonces el orden de la lista
+ * queda decidido por el desempate en vez de por la intención.
+ *
+ * Esto garantiza que cada llamada devuelve un valor estrictamente mayor que
+ * el anterior dentro del proceso. Cuando el reloj real avanza, se le sigue;
+ * cuando no, se adelanta un milisegundo. La deriva respecto al tiempo real
+ * está acotada por el número de operaciones en un mismo milisegundo y nunca
+ * es visible: el valor se usa para ordenar, y el título que se muestra al
+ * usuario se formatea a minutos.
+ */
+let _ultimaMarca = 0;
+
+export function ahora() {
+  const real = Date.now();
+  _ultimaMarca = real > _ultimaMarca ? real : _ultimaMarca + 1;
+  return _ultimaMarca;
+}
+
 export const TIPO_CONVERSACION = 'conversation';
 
 // ==================================================================
@@ -35,12 +58,12 @@ export const TIPO_CONVERSACION = 'conversation';
  */
 export function crearConversacion(graphlet, { titulo } = {}) {
   const id = generarId(TIPO_CONVERSACION);
-  const ahora = Date.now();
+  const marca = ahora();
 
   graphlet.put(id, {
-    titulo: titulo || tituloPorDefecto(ahora),
-    creadaEn: ahora,
-    actualizadaEn: ahora,
+    titulo: titulo || tituloPorDefecto(marca),
+    creadaEn: marca,
+    actualizadaEn: marca,
   });
 
   return id;
@@ -55,7 +78,7 @@ export function crearConversacion(graphlet, { titulo } = {}) {
  * lance es la conducta correcta (Graphlet Contract §4.1).
  */
 export function renombrarConversacion(graphlet, id, titulo) {
-  graphlet.update(id, { titulo, actualizadaEn: Date.now() });
+  graphlet.update(id, { titulo, actualizadaEn: ahora() });
 }
 
 /**
@@ -63,7 +86,7 @@ export function renombrarConversacion(graphlet, id, titulo) {
  * Escena 1.3 la llamará al añadir mensajes.
  */
 export function tocarConversacion(graphlet, id) {
-  graphlet.update(id, { actualizadaEn: Date.now() });
+  graphlet.update(id, { actualizadaEn: ahora() });
 }
 
 /**
@@ -114,9 +137,22 @@ export function listarConversaciones(entities) {
     });
   }
 
+  // El desempate va en la MISMA dirección que el criterio principal. Ordenar
+  // por tiempo descendente y desempatar por id ascendente invertiría la lista
+  // en cada empate, poniendo la más antigua primero — que es justo lo
+  // contrario de lo que la lista promete.
+  //
+  // El id sirve aquí sólo como último recurso para que el orden sea total y
+  // estable, no como criterio de presentación. Su prefijo temporal en base 36
+  // hace que el descendente coincida con "la más reciente primero", y su
+  // comparación es lexicográfica porque todas las marcas tienen la misma
+  // longitud en base 36 hasta bien entrado el siglo.
+  //
+  // Con el reloj monótono de arriba los empates sólo aparecen en datos
+  // hidratados desde almacenamiento; en ejecución normal no ocurren.
   lista.sort((a, b) => {
     if (b.actualizadaEn !== a.actualizadaEn) return b.actualizadaEn - a.actualizadaEn;
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
   });
 
   return lista;

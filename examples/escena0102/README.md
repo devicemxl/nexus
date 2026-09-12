@@ -60,6 +60,16 @@ escena0102/
 
 **Firma estable en el selector.** La `equality` compara sólo los campos que la interfaz pinta: id, título y `actualizadaEn`. Es la decisión con consecuencia medible.
 
+## Reloj lógico monótono
+
+`Date.now()` tiene resolución de milisegundo, y los motores de navegador la engrosan todavía más como mitigación de Spectre. Dos conversaciones creadas en la misma ráfaga reciben la misma marca, y entonces el orden de la lista lo decide el desempate en vez de la intención.
+
+`modelo.ahora()` garantiza que cada llamada devuelva un valor estrictamente mayor que el anterior: sigue al reloj real cuando avanza y se adelanta un milisegundo cuando no. La deriva está acotada por el número de operaciones dentro de un mismo milisegundo y nunca es visible, porque el valor sólo se usa para ordenar.
+
+El desempate por id existe todavía, pero como último recurso para datos hidratados desde almacenamiento, y va en la **misma dirección** que el criterio principal. Ordenar por tiempo descendente y desempatar por id ascendente invertía la lista en cada empate, poniendo la más antigua primero. Ese fue el defecto que la corrida en navegador reveló y que la corrida en Node ocultaba, porque Node era lo bastante lento como para que las marcas no empataran.
+
+La batería se ejecuta también con `Date.now()` congelado, que es el peor caso de engrosamiento posible.
+
 ## Evidencia: ruido reactivo
 
 Con una lista de conversaciones que no cambia, mutando sólo mensajes:
@@ -89,6 +99,8 @@ Lo que justificaría el diff es que aparezca algo que sí se pierda al recrear l
 
 ## Verificación
 
-- 52/52 verdes en `validar-modelo.mjs`, incluyendo el ejercicio de ambos widgets sobre DOM real
-- 56 aserciones en el harness de navegador, pendiente de corrida para el registro canónico
+- 57/57 verdes en `validar-modelo.mjs`, incluyendo el ejercicio de ambos widgets sobre DOM real
+- 57/57 verdes con `Date.now()` congelado, que simula el peor engrosamiento del navegador
+- 61 aserciones en el harness de navegador
+- Invertir el desempate del orden pone dos aserciones en rojo
 - La medición de ruido reproduce la tabla de arriba

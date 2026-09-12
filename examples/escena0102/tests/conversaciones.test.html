@@ -183,15 +183,47 @@ function ejecutarCasos() {
     eq('sólo incluye entidades de tipo conversation', lista.length, 3);
     eq('ordena por actualizadaEn descendente', lista.map((c) => c.id),
       ['conversation:a', 'conversation:c', 'conversation:b']);
-    eq('el empate se desempata por id, de forma estable',
+    // El empate sólo llega desde almacenamiento: el reloj monótono lo impide
+    // en ejecución. Se desempata en la MISMA dirección que el criterio
+    // principal; lo contrario invertiría la lista en cada empate.
+    eq('el empate se desempata sin invertir el criterio principal',
+      modelo.listarConversaciones({
+        'conversation:a': { properties: { titulo: 'A', actualizadaEn: 5 }, links: {} },
+        'conversation:z': { properties: { titulo: 'Z', actualizadaEn: 5 }, links: {} },
+      }).map((c) => c.id), ['conversation:z', 'conversation:a']);
+    eq('el desempate es estable ante el orden de las claves',
       modelo.listarConversaciones({
         'conversation:z': { properties: { titulo: 'Z', actualizadaEn: 5 }, links: {} },
         'conversation:a': { properties: { titulo: 'A', actualizadaEn: 5 }, links: {} },
-      }).map((c) => c.id), ['conversation:a', 'conversation:z']);
+      }).map((c) => c.id), ['conversation:z', 'conversation:a']);
     eq('sin entities devuelve lista vacía', modelo.listarConversaciones(undefined), []);
     eq('una conversación sin título no rompe',
       modelo.listarConversaciones({ 'conversation:x': { properties: {}, links: {} } })[0].titulo,
       '(sin título)');
+  }
+
+  grupo('Reloj monótono',
+    'Date.now() empata cuando dos operaciones caben en un milisegundo, y los ' +
+    'navegadores engrosan su resolución como mitigación de Spectre. El reloj ' +
+    'lógico garantiza que el orden lo decida la intención y no el desempate.');
+  {
+    const marcas = [];
+    for (let i = 0; i < 500; i++) marcas.push(modelo.ahora());
+    let creciente = true;
+    for (let i = 1; i < marcas.length; i++) if (marcas[i] <= marcas[i - 1]) creciente = false;
+    ok('500 llamadas seguidas son estrictamente crecientes', creciente);
+    ok('no se aleja del tiempo real más de lo que dura la ráfaga',
+      Math.abs(marcas[marcas.length - 1] - Date.now()) < 1000);
+
+    const { graphlet } = crearPrimitivas();
+    const ids = [];
+    for (let i = 0; i < 6; i++) ids.push(modelo.crearConversacion(graphlet, { titulo: `C${i}` }));
+    eq('seis creaciones seguidas no comparten marca',
+      new Set(ids.map((id) => graphlet.get(id).properties.actualizadaEn)).size, 6);
+    const entities = {};
+    for (const id of graphlet.allIds()) entities[id] = graphlet.get(id);
+    eq('la creada en último lugar encabeza la lista',
+      modelo.listarConversaciones(entities)[0].id, ids[5]);
   }
 
   grupo('Firma estable',
