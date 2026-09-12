@@ -41,7 +41,7 @@
  */
 
 import { createStatePulsar } from './pulsar.js';
-import { createnebula } from './nebula.js';
+import { createNebula } from './nebula.js';
 import { createVoyajer } from './voyajer.js';
 
 // ============================================
@@ -185,7 +185,7 @@ function _resolvePulsarOption(pulsarOption) {
 
 function _resolvenebulaOption(nebulaOption) {
   if (nebulaOption === undefined) {
-    return createnebula();
+    return createNebula();
   }
   if (_isnebulaInstance(nebulaOption)) {
     return nebulaOption;
@@ -290,7 +290,7 @@ export function setup(options = {}) {
  *   bridge.destroy();
  *   persistence.flush(); persistence.destroy();
  *   Chunklet.configure({ nebula: nuevonebula });
- *   bridge = createnebulaPulsarBridge({ nebula: nuevonebula, pulsar });
+ *   bridge = createNebulaPulsarBridge({ nebula: nuevonebula, pulsar });
  *   persistence = createPersistenceAdapter({ nebula: nuevonebula }, { key });
  *
  * Chunklet no puede resolverlo por sí mismo: no conoce a los adapters

@@ -192,7 +192,7 @@
   </div>
 
   <script type="module">
-    import { createnebula } from '../src/nebula.js';
+    import { createNebula } from '../src/nebula.js';
     import { createHydrationAdapter } from '../src/adapters/hydration-adapter.js';
     import { createPersistenceAdapter } from '../src/adapters/persistence-adapter.js';
 
@@ -218,7 +218,7 @@
     // ============================================================
     // Setup del stack (nebula + Hydration + Persistence)
     // ============================================================
-    const nebula = createnebula();
+    const nebula = createNebula();
 
     // Fase 1: Hydration
     // Intentar leer desde localStorage; si no hay nada, hidratar el default.

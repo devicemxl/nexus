@@ -18,7 +18,7 @@ type nebulaPulsarBridgeOptions = {
   skipInitialSync?: boolean; // If true, don't project existing entities at instantiation. Default: false.
 };
 
-function createnebulaPulsarBridge(
+function createNebulaPulsarBridge(
   context: { nebula: nebulaInstance, pulsar: PulsarInstance },
   options?: nebulaPulsarBridgeOptions
 ): { destroy(): void };

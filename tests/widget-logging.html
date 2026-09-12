@@ -212,14 +212,14 @@
   </div>
 
   <script type="module">
-    import { createnebula } from '../src/nebula.js';
+    import { createNebula } from '../src/nebula.js';
     import { createStatePulsar } from '../src/pulsar.js';
     import { createLoggingAdapter } from '../src/adapters/logging-adapter.js';
 
     // ============================================================
     // Setup
     // ============================================================
-    const nebula = createnebula();
+    const nebula = createNebula();
     const pulsar = createStatePulsar({ ui: {}, counter: 0 });
 
     // Sembrado inicial para tener con qué operar

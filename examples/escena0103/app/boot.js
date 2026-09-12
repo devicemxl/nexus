@@ -16,10 +16,10 @@
  * `arrancar()` orquesta ambas y es lo que usa la aplicación.
  */
 
-import { createnebula } from '../../../src/nebula.js';
+import { createNebula } from '../../../src/nebula.js';
 import { createStatePulsar } from '../../../src/pulsar.js';
 import { createHydrationAdapter } from '../../../src/adapters/hydration-adapter.js';
-import { createnebulaPulsarBridge } from '../../../src/adapters/nebula-pulsar-bridge.js';
+import { createNebulaPulsarBridge } from '../../../src/adapters/nebula-pulsar-bridge.js';
 import { createPersistenceAdapter } from '../../../src/adapters/persistence-adapter.js';
 import Chunklet from '../../../src/chunklet.js';
 
@@ -51,7 +51,7 @@ export function estadoInicial() {
  */
 export function crearPrimitivas() {
   return {
-    nebula: createnebula(),
+    nebula: createNebula(),
     pulsar: createStatePulsar(estadoInicial()),
   };
 }
@@ -108,7 +108,7 @@ export function arrancarDatos(opciones = {}) {
   // 2. Bridge. `skipInitialSync` queda en su default (false), de modo que
   //    todo lo hidratado se proyecta en UNA sola pasada.
   // ----------------------------------------------------------------
-  const bridge = createnebulaPulsarBridge(
+  const bridge = createNebulaPulsarBridge(
     { nebula, pulsar },
     { path: 'entities' }
   );

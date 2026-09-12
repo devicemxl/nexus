@@ -2,10 +2,10 @@
  * Medición limpia: warmup + mediana de repeticiones, para caracterizar
  * la curva de crecimiento de cada orden sin ruido de JIT.
  */
-import { createnebula } from './nebula.js';
+import { createNebula } from './nebula.js';
 import { createStatePulsar } from './pulsar.js';
 import { createHydrationAdapter } from './hydration-adapter.js';
-import { createnebulaPulsarBridge } from './nebula-pulsar-bridge.js';
+import { createNebulaPulsarBridge } from './nebula-pulsar-bridge.js';
 import { createPersistenceAdapter } from './persistence-adapter.js';
 
 function construirSnapshot(n) {
@@ -29,7 +29,7 @@ function crearStorage() {
 }
 
 function correr(orden, snapshot) {
-  const nebula = createnebula();
+  const nebula = createNebula();
   const pulsar = createStatePulsar({ ui: {}, entities: {} });
   const storage = crearStorage();
   let setStateN = 0;
@@ -39,10 +39,10 @@ function correr(orden, snapshot) {
   const t0 = performance.now();
   if (orden === 'A') {
     createHydrationAdapter({ nebula }, { snapshot });
-    createnebulaPulsarBridge({ nebula, pulsar }, { path: 'entities' });
+    createNebulaPulsarBridge({ nebula, pulsar }, { path: 'entities' });
     createPersistenceAdapter({ nebula }, { key: 'b', storage, writeOnInit: false });
   } else {
-    createnebulaPulsarBridge({ nebula, pulsar }, { path: 'entities' });
+    createNebulaPulsarBridge({ nebula, pulsar }, { path: 'entities' });
     createPersistenceAdapter({ nebula }, { key: 'b', storage, writeOnInit: false });
     createHydrationAdapter({ nebula }, { snapshot });
   }

@@ -22,7 +22,7 @@ que Hydration, Bridge y Persistence conviven sobre el mismo nebula.
 
 ```javascript
 // 1. Primitivas crudas. Ningún wrapper instalado todavía.
-const nebula = createnebula();
+const nebula = createNebula();
 const pulsar   = createStatePulsar({ ui: {}, entities: {}, route: {}, net: {} });
 
 // 2. Hidratar ANTES de montar adapters. Ver §3.
@@ -32,7 +32,7 @@ if (guardado) {
 }
 
 // 3. Bridge. Una sola proyección inicial de todo lo hidratado.
-const bridge = createnebulaPulsarBridge(
+const bridge = createNebulaPulsarBridge(
   { nebula, pulsar },
   { path: 'entities' }            // skipInitialSync: false (default)
 );

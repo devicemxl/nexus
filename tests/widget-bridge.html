@@ -137,15 +137,15 @@
 
   <script type="module">
     import { createStatePulsar } from '../src/pulsar.js';
-    import { createnebula } from '../src/nebula.js';
-    import { createnebulaPulsarBridge } from '../src/adapters/nebula-pulsar-bridge.js';
+    import { createNebula } from '../src/nebula.js';
+    import { createNebulaPulsarBridge } from '../src/adapters/nebula-pulsar-bridge.js';
 
     // ============================================================
     // Setup del stack mínimo
     // ============================================================
-    const nebula = createnebula();
+    const nebula = createNebula();
     const pulsar = createStatePulsar({});
-    createnebulaPulsarBridge({ nebula, pulsar });
+    createNebulaPulsarBridge({ nebula, pulsar });
 
     // Sembrado inicial: dos entidades. 'watched' es la que el contador observará.
     nebula.put('user:watched', { name: 'Watched User', role: 'observed' });

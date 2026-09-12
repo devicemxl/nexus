@@ -17,8 +17,8 @@
 
   <script type="module">
     import { createStatePulsar } from '../src/pulsar.js';
-    import { createnebula } from '../src/nebula.js';
-    import { createnebulaPulsarBridge } from '../src/adapters/nebula-pulsar-bridge.js';
+    import { createNebula } from '../src/nebula.js';
+    import { createNebulaPulsarBridge } from '../src/adapters/nebula-pulsar-bridge.js';
 
     const output = document.getElementById('output');
     let passed = 0;
@@ -59,12 +59,12 @@
     // ============================================================
     section('TEST 1: Inicialización eager proyecta entidades preexistentes');
 
-    const g1 = createnebula();
+    const g1 = createNebula();
     g1.put('u:1', { name: 'Alice' });
     g1.put('u:2', { name: 'Bob' });
 
     const p1 = createStatePulsar({});
-    const b1 = createnebulaPulsarBridge({ nebula: g1, pulsar: p1 });
+    const b1 = createNebulaPulsarBridge({ nebula: g1, pulsar: p1 });
 
     const proj1 = p1.getState().entities;
     assert(proj1 !== undefined, 'Proyección existe en state.entities tras instanciación');
@@ -80,11 +80,11 @@
     // ============================================================
     section('TEST 2: skipInitialSync=true no proyecta al instanciar');
 
-    const g2 = createnebula();
+    const g2 = createNebula();
     g2.put('x:1', { v: 1 });
 
     const p2 = createStatePulsar({});
-    const b2 = createnebulaPulsarBridge(
+    const b2 = createNebulaPulsarBridge(
       { nebula: g2, pulsar: p2 },
       { skipInitialSync: true }
     );
@@ -107,9 +107,9 @@
     // ============================================================
     section('TEST 3: put, upsert, update disparan re-proyección');
 
-    const g3 = createnebula();
+    const g3 = createNebula();
     const p3 = createStatePulsar({});
-    const b3 = createnebulaPulsarBridge({ nebula: g3, pulsar: p3 });
+    const b3 = createNebulaPulsarBridge({ nebula: g3, pulsar: p3 });
 
     const counter3 = makeNotifyCounter(p3);
     // La proyección inicial ya ocurrió; el contador arranca desde ahora.
@@ -137,12 +137,12 @@
     // ============================================================
     section('TEST 4: link dispara re-proyección; duplicado es no-op (set semantics)');
 
-    const g4 = createnebula();
+    const g4 = createNebula();
     g4.put('a', {});
     g4.put('b', {});
 
     const p4 = createStatePulsar({});
-    const b4 = createnebulaPulsarBridge({ nebula: g4, pulsar: p4 });
+    const b4 = createNebulaPulsarBridge({ nebula: g4, pulsar: p4 });
 
     const counter4 = makeNotifyCounter(p4);
     counter4.reset();
@@ -174,14 +174,14 @@
     // ============================================================
     section('TEST 5: unlink dispara re-proyección; unlink de ausente es no-op');
 
-    const g5 = createnebula();
+    const g5 = createNebula();
     g5.put('a', {});
     g5.put('b', {});
     g5.put('c', {});
     g5.link('a', 'knows', 'b');
 
     const p5 = createStatePulsar({});
-    const b5 = createnebulaPulsarBridge({ nebula: g5, pulsar: p5 });
+    const b5 = createNebulaPulsarBridge({ nebula: g5, pulsar: p5 });
 
     const counter5 = makeNotifyCounter(p5);
     counter5.reset();
@@ -209,13 +209,13 @@
     // ============================================================
     section('TEST 6: unlinkAll dispara re-proyección; sobre relación ausente es no-op');
 
-    const g6 = createnebula();
+    const g6 = createNebula();
     g6.put('a', {});
     g6.put('b', {});
     g6.link('a', 'knows', 'b');
 
     const p6 = createStatePulsar({});
-    const b6 = createnebulaPulsarBridge({ nebula: g6, pulsar: p6 });
+    const b6 = createNebulaPulsarBridge({ nebula: g6, pulsar: p6 });
 
     const counter6 = makeNotifyCounter(p6);
     counter6.reset();
@@ -235,7 +235,7 @@
     // ============================================================
     section('TEST 7: delete refleja la cascada de incoming links');
 
-    const g7 = createnebula();
+    const g7 = createNebula();
     g7.put('a', {});
     g7.put('b', {});
     g7.put('c', {});
@@ -243,7 +243,7 @@
     g7.link('c', 'friend', 'b');
 
     const p7 = createStatePulsar({});
-    const b7 = createnebulaPulsarBridge({ nebula: g7, pulsar: p7 });
+    const b7 = createNebulaPulsarBridge({ nebula: g7, pulsar: p7 });
 
     // Verificación pre-delete: a y c tienen link a b
     assert(p7.getState().entities['a'].links.friend.includes('b'),
@@ -279,11 +279,11 @@
     // ============================================================
     section('TEST 8: path punteado escribe en la ruta anidada correcta');
 
-    const g8 = createnebula();
+    const g8 = createNebula();
     g8.put('x:1', { v: 1 });
 
     const p8 = createStatePulsar({ existing: 'keep-me', domain: { other: 'preserve' } });
-    const b8 = createnebulaPulsarBridge(
+    const b8 = createNebulaPulsarBridge(
       { nebula: g8, pulsar: p8 },
       { path: 'domain.entities' }
     );
@@ -305,9 +305,9 @@
     // ============================================================
     section('TEST 9: destroy restaura métodos originales; post-destroy no proyecta');
 
-    const g9 = createnebula();
+    const g9 = createNebula();
     const p9 = createStatePulsar({});
-    const b9 = createnebulaPulsarBridge({ nebula: g9, pulsar: p9 });
+    const b9 = createNebulaPulsarBridge({ nebula: g9, pulsar: p9 });
 
     // Captura de referencias a los métodos wrappeados
     const wrappedPut = g9.put;
@@ -340,9 +340,9 @@
     // ============================================================
     section('TEST 10: destroy es idempotente');
 
-    const g10 = createnebula();
+    const g10 = createNebula();
     const p10 = createStatePulsar({});
-    const b10 = createnebulaPulsarBridge({ nebula: g10, pulsar: p10 });
+    const b10 = createNebulaPulsarBridge({ nebula: g10, pulsar: p10 });
 
     let threwOnFirst = false;
     let threwOnSecond = false;
@@ -368,7 +368,7 @@
     // context ausente
     let threwNoContext = false;
     try {
-      createnebulaPulsarBridge();
+      createNebulaPulsarBridge();
     } catch (e) {
       threwNoContext = e instanceof TypeError;
     }
@@ -377,7 +377,7 @@
     // nebula ausente
     let threwNonebula = false;
     try {
-      createnebulaPulsarBridge({ pulsar: createStatePulsar({}) });
+      createNebulaPulsarBridge({ pulsar: createStatePulsar({}) });
     } catch (e) {
       threwNonebula = e instanceof TypeError && e.message.includes('nebula');
     }
@@ -386,7 +386,7 @@
     // pulsar ausente
     let threwNoPulsar = false;
     try {
-      createnebulaPulsarBridge({ nebula: createnebula() });
+      createNebulaPulsarBridge({ nebula: createNebula() });
     } catch (e) {
       threwNoPulsar = e instanceof TypeError && e.message.includes('pulsar');
     }
@@ -395,7 +395,7 @@
     // nebula inválido (no tiene la API correcta)
     let threwBadnebula = false;
     try {
-      createnebulaPulsarBridge({
+      createNebulaPulsarBridge({
         nebula: { fake: true },
         pulsar: createStatePulsar({})
       });
@@ -407,8 +407,8 @@
     // pulsar inválido
     let threwBadPulsar = false;
     try {
-      createnebulaPulsarBridge({
-        nebula: createnebula(),
+      createNebulaPulsarBridge({
+        nebula: createNebula(),
         pulsar: { fake: true }
       });
     } catch (e) {
@@ -421,13 +421,13 @@
     // ============================================================
     section('TEST 12: shape de proyección es idéntico al de nebula.get()');
 
-    const g12 = createnebula();
+    const g12 = createNebula();
     g12.put('e:1', { name: 'Test', age: 42 });
     g12.put('e:2', {});
     g12.link('e:1', 'knows', 'e:2');
 
     const p12 = createStatePulsar({});
-    const b12 = createnebulaPulsarBridge({ nebula: g12, pulsar: p12 });
+    const b12 = createNebulaPulsarBridge({ nebula: g12, pulsar: p12 });
 
     const fromnebula = g12.get('e:1');
     const fromProjection = p12.getState().entities['e:1'];
@@ -467,12 +467,12 @@
     // Ese será evidencia empírica de que la versión reactiva funciona.
     section('TEST 13: limitación de ruido reactivo (snapshot version)');
 
-    const g13 = createnebula();
+    const g13 = createNebula();
     g13.put('watched', { v: 0 });
     g13.put('ignored', { v: 0 });
 
     const p13 = createStatePulsar({});
-    const b13 = createnebulaPulsarBridge({ nebula: g13, pulsar: p13 });
+    const b13 = createNebulaPulsarBridge({ nebula: g13, pulsar: p13 });
 
     let watchedNotifyCount = 0;
     const unsubWatched = p13.subscribeSelector(

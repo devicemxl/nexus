@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escena 1.4 — harness de composer y navegación</title>
+<style>
+  :root{--papel:#F1F3EF;--superf:#FBFCFA;--tinta:#1A1F1C;--tenue:#5C6660;--regla:#CBD2CB;
+        --verde:#3D7A4E;--oxido:#A8342A;
+        --sans:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+        --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace}
+  *{box-sizing:border-box}
+  body{margin:0;padding:3rem 1.5rem 6rem;background:var(--papel);color:var(--tinta);
+       font-family:var(--sans);font-size:15px;line-height:1.55}
+  main{max-width:62rem;margin:0 auto}
+  h1{font-size:1.45rem;font-weight:600;letter-spacing:-.011em;margin:0 0 .4rem}
+  .subtitulo{color:var(--tenue);max-width:46rem;margin:0 0 2rem}
+  .subtitulo code{font-family:var(--mono);font-size:.88em}
+  .barra{display:flex;align-items:baseline;gap:1.25rem;flex-wrap:wrap;padding:.9rem 0;
+         border-top:1px solid var(--regla);border-bottom:1px solid var(--regla);margin-bottom:2.5rem}
+  button{font:inherit;font-weight:500;color:var(--superf);background:var(--tinta);border:none;
+         border-radius:3px;padding:.45rem 1.1rem;cursor:pointer}
+  button:hover{background:#2B332D}
+  button[disabled]{opacity:.45;cursor:default}
+  .marcador{font-family:var(--mono);font-size:.95rem}
+  .marcador .cifra{font-weight:600}
+  .marcador.ok .cifra{color:var(--verde)}
+  .marcador.mal .cifra{color:var(--oxido)}
+  .reloj{font-family:var(--mono);color:var(--tenue);font-size:.9rem}
+  section.grupo{margin-bottom:2.25rem}
+  section.grupo>h2{font-size:.98rem;font-weight:600;margin:0 0 .15rem}
+  section.grupo>.nota{color:var(--tenue);font-size:.88rem;margin:0 0 .8rem;max-width:46rem}
+  ul.asserts{list-style:none;margin:0;padding:0}
+  ul.asserts li{display:grid;grid-template-columns:4.2rem 1fr;gap:.75rem;align-items:baseline;
+                padding:.32rem 0;border-bottom:1px solid rgba(203,210,203,.5)}
+  .veredicto{font-family:var(--mono);font-size:.76rem;letter-spacing:.02em}
+  .veredicto.ok{color:var(--verde)}
+  .veredicto.mal{color:var(--oxido);font-weight:600}
+  .detalle{grid-column:2;font-family:var(--mono);font-size:.82rem;color:var(--oxido);
+           background:rgba(168,52,42,.06);border-left:2px solid var(--oxido);
+           padding:.4rem .7rem;margin-top:.35rem;white-space:pre-wrap}
+  #fixture{position:absolute;left:-9999px;top:0;width:40rem;height:20rem;overflow:hidden}
+  @media(max-width:34rem){ul.asserts li{grid-template-columns:3.4rem 1fr}.detalle{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Escena 1.4 — harness de composer y navegación</h1>
+  <p class="subtitulo">
+    Verifica el composer, el par <code>parse</code>/<code>serialize</code> y el
+    puente entre <code>route.*</code> y <code>ui.*</code>. Los casos de
+    navegación usan un Voyajer simulado para no alterar la URL de esta página;
+    la integración con el Voyajer real se ejercita en
+    <code>validar-composer.mjs</code>, que construye una ventana completa.
+  </p>
+
+  <div class="barra">
+    <button id="correr">Correr el harness</button>
+    <span class="marcador" id="marcador">sin ejecutar</span>
+    <span class="reloj" id="reloj"></span>
+  </div>
+
+  <div id="resultados"></div>
+</main>
+
+<div id="fixture"></div>
+
+<script type="module">
+import * as modelo from '../app/modelo.js';
+import * as ruta from '../app/ruta-adapter.js';
+import { crearPrimitivas, arrancarDatos, montarInterfaz } from '../app/boot.js';
+import { crearMockProvider } from '../app/mock-provider.js';
+import Chunklet from '../../../src/chunklet.js';
+
+const grupos = []; let g = null;
+function grupo(t, n) { g = { titulo: t, nota: n, casos: [] }; grupos.push(g); }
+function eq(etiqueta, actual, esperado) {
+  const a = JSON.stringify(actual), e = JSON.stringify(esperado);
+  g.casos.push({ etiqueta, ok: a === e, actual: a, esperado: e });
+}
+function ok(etiqueta, cond, detalle = '') {
+  g.casos.push({ etiqueta, ok: !!cond, actual: cond ? 'true' : `false${detalle ? ' — ' + detalle : ''}`, esperado: 'true' });
+}
+function callado(fn) { const v = console.warn; console.warn = () => {}; try { return fn(); } finally { console.warn = v; } }
+const stg = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) }; };
+
+function planificador() {
+  const cola = []; let seq = 0;
+  return {
+    programar: (fn) => { const h = ++seq; cola.push({ h, fn }); return h; },
+    cancelar: (h) => { const i = cola.findIndex((x) => x.h === h); if (i >= 0) cola.splice(i, 1); },
+    pendientes: () => cola.length,
+    avanzar(n = 1) { for (let i = 0; i < n && cola.length; i++) cola.shift().fn(); },
+    agotar(max = 9999) { let v = 0; while (cola.length && v < max) { cola.shift().fn(); v++; } return v; },
+  };
+}
+
+/**
+ * Voyajer simulado. Se usa para no alterar la URL de esta página, que es la
+ * del propio harness. Reproduce lo único de lo que el adapter depende: `push`
+ * idempotente que escribe el estado parseado en `route`.
+ */
+function voyajerSimulado(pulsar) {
+  let rutaActual = '/';
+  const v = {
+    empujes: 0,
+    push(estado) {
+      const url = ruta.serialize(estado);
+      if (!url || url === rutaActual) return;     // idempotencia del contrato
+      v.empujes++;
+      rutaActual = url;
+      pulsar.setState({ route: ruta.parse({ pathname: url }) });
+    },
+    replace(estado) { v.push(estado); },
+    /** Simula que el usuario cambia la URL desde fuera. */
+    irA(url) {
+      rutaActual = url;
+      pulsar.setState({ route: ruta.parse({ pathname: url }) });
+    },
+    getCurrent() { return pulsar.getState().route; },
+    destroy() {},
+  };
+  return v;
+}
+
+// ==================================================================
+function ejecutarCasos() {
+  grupos.length = 0;
+
+  grupo('Formato de URL',
+    'El par parse/serialize es donde el contrato de Voyajer sitúa el ' +
+    'conocimiento del formato, y por eso es donde vive el acoplamiento al ' +
+    'formato de identificador.');
+  {
+    eq('una ruta de conversación se reconoce',
+      ruta.parse({ pathname: '/c/abc' }), { vista: 'conversacion', conversacionId: 'conversation:abc' });
+    eq('la raíz es la vista de inicio', ruta.parse({ pathname: '/' }), { vista: 'inicio' });
+    eq('una ruta desconocida cae a inicio', ruta.parse({ pathname: '/otra/cosa' }), { vista: 'inicio' });
+    eq('un slug vacío cae a inicio', ruta.parse({ pathname: '/c/' }), { vista: 'inicio' });
+    eq('serializar retira el prefijo de tipo',
+      ruta.serialize({ vista: 'conversacion', conversacionId: 'conversation:abc' }), '/c/abc');
+    eq('inicio serializa a la raíz', ruta.serialize({ vista: 'inicio' }), '/');
+    eq('un estado sin id serializa a la raíz', ruta.serialize({ vista: 'conversacion' }), '/');
+    eq('ida y vuelta conserva la ruta',
+      ruta.serialize(ruta.parse({ pathname: '/c/mt1a2b3c' })), '/c/mt1a2b3c');
+    const id = 'conversation:mt1a2b3c';
+    eq('ida y vuelta conserva el identificador',
+      ruta.parse({ pathname: ruta.serialize({ vista: 'conversacion', conversacionId: id }) }).conversacionId, id);
+  }
+
+  grupo('Puente entre ruta e interfaz',
+    'Lo que corta el bucle es la idempotencia de push más la equality del ' +
+    'selector. La guarda del adapter no lo corta: ahorra un setState por selección.');
+  {
+    const { nebula, pulsar } = crearPrimitivas();
+    const voyajer = voyajerSimulado(pulsar);
+    const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 't', voyajer });
+    const a = modelo.crearConversacion(nebula, { titulo: 'A' });
+    const b = modelo.crearConversacion(nebula, { titulo: 'B' });
+
+    let setStates = 0;
+    const orig = pulsar.setState.bind(pulsar);
+    pulsar.setState = (p) => { setStates++; return orig(p); };
+
+    voyajer.empujes = 0; setStates = 0;
+    pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: a } });
+    eq('seleccionar navega una vez', voyajer.empujes, 1);
+    eq('una selección cuesta dos setState, no tres', setStates, 2);
+
+    voyajer.empujes = 0;
+    pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: a } });
+    eq('reseleccionar lo mismo no navega', voyajer.empujes, 0);
+
+    voyajer.empujes = 0; setStates = 0;
+    voyajer.irA('/c/' + b.split(':')[1]);
+    eq('navegar por URL selecciona la conversación', pulsar.getState().ui.activeConversation, b);
+    eq('navegar por URL no genera navegación adicional', voyajer.empujes, 0);
+    eq('una navegación por URL cuesta dos setState', setStates, 2);
+
+    voyajer.irA('/c/' + a.split(':')[1]);
+    eq('alternar por URL vuelve a converger', pulsar.getState().ui.activeConversation, a);
+
+    pulsar.setState = orig;
+    datos.destruir({ guardarPendiente: false });
+  }
+  {
+    const { nebula, pulsar } = crearPrimitivas();
+    const conv = modelo.crearConversacion(nebula, { titulo: 'Destino' });
+    const voyajer = voyajerSimulado(pulsar);
+    pulsar.setState({ route: ruta.parse({ pathname: '/c/' + conv.split(':')[1] }) });
+    const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 't', voyajer });
+    eq('arrancar con una ruta de conversación la selecciona',
+      pulsar.getState().ui.activeConversation, conv);
+    datos.destruir({ guardarPendiente: false });
+  }
+  {
+    const { nebula, pulsar } = crearPrimitivas();
+    const voyajer = voyajerSimulado(pulsar);
+    pulsar.setState({ route: ruta.parse({ pathname: '/c/noexiste' }) });
+    const datos = callado(() => arrancarDatos({ nebula, pulsar, storage: stg(), clave: 't', voyajer }));
+    eq('una ruta a una conversación inexistente no selecciona nada',
+      pulsar.getState().ui.activeConversation || null, null);
+    eq('y no la crea', nebula.allIds(), []);
+    datos.destruir({ guardarPendiente: false });
+  }
+
+  // ---------------------------------------------------------------
+  grupo('Composer',
+    'Sustituye al andamio de la Escena 1.3. El asa del stream vive aquí ' +
+    'porque aquí se inicia: quien adquiere un recurso lo libera.');
+  {
+    const fixture = document.getElementById('fixture');
+    fixture.innerHTML = `
+      <div id="raiz" data-chunk="app-shell">
+        <aside data-chunk="conversation-list">
+          <button data-accion="nueva-conversacion"></button>
+          <p data-zona="vacio"></p><ul data-zona="lista"></ul>
+          <template data-plantilla="conversation-item">
+            <li data-chunk="conversation-item" aria-selected="false"><span data-zona="titulo"></span></li>
+          </template>
+        </aside>
+        <main data-chunk="conversation-messages">
+          <h1 data-zona="titulo-activo"></h1>
+          <div data-zona="mensajes-scroll" style="height:6rem;overflow:auto">
+            <p data-zona="sin-mensajes"></p><div data-zona="mensajes"></div>
+          </div>
+          <template data-plantilla="message-item">
+            <article data-mensaje><div data-zona="quien"></div><div data-zona="texto"></div></article>
+          </template>
+          <form data-chunk="composer">
+            <textarea data-zona="entrada"></textarea>
+            <button type="button" data-accion="enviar">Enviar</button>
+          </form>
+        </main>
+      </div>`;
+
+    const raiz = document.getElementById('raiz');
+    const { nebula, pulsar } = crearPrimitivas();
+    const voyajer = voyajerSimulado(pulsar);
+    const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 'nexus.test', voyajer });
+    const p = planificador();
+    const provider = crearMockProvider({ nebula }, {
+      programar: p.programar, cancelar: p.cancelar, respuestas: ['uno dos tres cuatro cinco'],
+    });
+
+    montarInterfaz({ nebula, pulsar, voyajer, provider, raiz });
+
+    const entrada = raiz.querySelector('[data-zona="entrada"]');
+    const boton = raiz.querySelector('[data-accion="enviar"]');
+    const mensajes = raiz.querySelector('[data-zona="mensajes"]');
+
+    eq('el botón arranca en modo enviar', boton.dataset.modo, 'enviar');
+
+    entrada.value = 'Hola, esto es una prueba';
+    boton.click();
+    const conv = pulsar.getState().ui.activeConversation;
+    ok('enviar sin conversación activa crea una', !!conv);
+    eq('el título sale del primer mensaje',
+      nebula.get(conv).properties.titulo, 'Hola, esto es una prueba');
+    eq('se pintan el mensaje del usuario y el del asistente', mensajes.children.length, 2);
+    eq('el primero es del usuario', mensajes.children[0].dataset.rol, 'user');
+    eq('el campo se vacía tras enviar', entrada.value, '');
+    eq('durante el streaming el botón detiene', boton.dataset.modo, 'detener');
+    eq('y la entrada queda deshabilitada', entrada.disabled, true);
+    eq('la URL siguió a la conversación nueva', voyajer.getCurrent().conversacionId, conv);
+
+    p.agotar();
+    eq('al terminar el botón vuelve a enviar', boton.dataset.modo, 'enviar');
+    eq('y la entrada se rehabilita', entrada.disabled, false);
+    eq('el texto llegó completo',
+      mensajes.children[1].querySelector('[data-zona="texto"]').textContent, 'uno dos tres cuatro cinco');
+
+    const antesVacio = mensajes.children.length;
+    entrada.value = '   ';
+    boton.click();
+    eq('enviar en blanco no crea mensajes', mensajes.children.length, antesVacio);
+
+    entrada.value = 'Con Enter';
+    entrada.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: false, bubbles: true, cancelable: true }));
+    eq('Enter envía', mensajes.children.length, antesVacio + 2);
+    p.agotar();
+
+    const antesShift = mensajes.children.length;
+    entrada.value = 'Con Shift';
+    entrada.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }));
+    eq('Shift+Enter no envía', mensajes.children.length, antesShift);
+    entrada.value = '';
+
+    entrada.value = 'Voy a interrumpir esto';
+    boton.click();
+    p.avanzar(2);
+    eq('el botón está en modo detener', boton.dataset.modo, 'detener');
+    boton.click();
+    eq('detener deja el mensaje interrumpido',
+      mensajes.lastElementChild.dataset.estado, modelo.ESTADO_INTERRUMPIDO);
+    eq('detener libera los temporizadores', p.pendientes(), 0);
+    eq('el botón vuelve a enviar', boton.dataset.modo, 'enviar');
+
+    const otra = modelo.crearConversacion(nebula, { titulo: 'Otra' });
+    pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv } });
+    entrada.value = 'Empiezo aquí y me voy';
+    boton.click();
+    p.avanzar(2);
+    ok('hay un stream vivo', p.pendientes() > 0);
+    pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: otra } });
+    eq('cambiar de conversación detiene el stream', p.pendientes(), 0);
+
+    pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv } });
+    ok('el mensaje queda marcado como interrumpido',
+      modelo.listarMensajes(pulsar.getState().entities, conv)
+        .filter((m) => m.estado === modelo.ESTADO_INTERRUMPIDO).length >= 1);
+
+    const form = raiz.querySelector('[data-chunk="composer"]');
+    entrada.value = 'Uno más antes de desmontar';
+    boton.click();
+    p.avanzar(1);
+    ok('hay un stream vivo antes de desmontar', p.pendientes() > 0);
+    Chunklet.unmount(form);
+    eq('desmontar el composer detiene el stream', p.pendientes(), 0);
+
+    datos.destruir({ guardarPendiente: false });
+    fixture.innerHTML = '';
+  }
+}
+
+// ------------------------------------------------------------------
+const $r = document.getElementById('resultados');
+const $mc = document.getElementById('marcador');
+const $rl = document.getElementById('reloj');
+const $b = document.getElementById('correr');
+
+function pintarResultados() {
+  let total = 0, fallos = 0;
+  $r.innerHTML = grupos.map((gr) => {
+    const items = gr.casos.map((c) => {
+      total++; if (!c.ok) fallos++;
+      const d = c.ok ? '' : `<div class="detalle">esperado  ${c.esperado}\nobtenido  ${c.actual}</div>`;
+      return `<li><span class="veredicto ${c.ok ? 'ok' : 'mal'}">${c.ok ? 'verde' : 'ROJO'}</span><span>${c.etiqueta}</span>${d}</li>`;
+    }).join('');
+    return `<section class="grupo"><h2>${gr.titulo}</h2><p class="nota">${gr.nota}</p><ul class="asserts">${items}</ul></section>`;
+  }).join('');
+  return { total, fallos };
+}
+
+let yaCorrio = false;
+function ejecutar() {
+  $b.disabled = true;
+  const t0 = performance.now();
+  ejecutarCasos();
+  const { total, fallos } = pintarResultados();
+  $mc.className = 'marcador ' + (fallos === 0 ? 'ok' : 'mal');
+  $mc.innerHTML = fallos === 0
+    ? `<span class="cifra">${total}/${total}</span> aserciones verdes`
+    : `<span class="cifra">${total - fallos}/${total}</span> verdes · ${fallos} en rojo`;
+  $rl.textContent = `${(performance.now() - t0).toFixed(0)} ms`;
+  if (yaCorrio) return;
+  yaCorrio = true;
+  $b.textContent = 'Recargar para correr de nuevo';
+  $b.addEventListener('click', () => location.reload());
+  $b.disabled = false;
+}
+ejecutar();
+</script>
+</body>
+</html>

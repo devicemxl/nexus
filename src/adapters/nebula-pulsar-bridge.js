@@ -11,8 +11,8 @@
  * La versión reactiva por-entidad queda diferida (ver §7 de la mini-spec).
  *
  * Uso:
- *   import { createnebulaPulsarBridge } from './adapters/nebula-pulsar-bridge.js';
- *   const bridge = createnebulaPulsarBridge(
+ *   import { createNebulaPulsarBridge } from './adapters/nebula-pulsar-bridge.js';
+ *   const bridge = createNebulaPulsarBridge(
  *     { nebula, pulsar },
  *     { path: 'entities' }
  *   );
@@ -95,7 +95,7 @@ function _isPulsarInstance(value) {
  *   entidades existentes al instanciar.
  * @returns {{destroy: () => void}}
  */
-export function createnebulaPulsarBridge(context, options = {}) {
+export function createNebulaPulsarBridge(context, options = {}) {
   // Validación del context
   if (!context || typeof context !== 'object') {
     throw new TypeError('[nebulaPulsarBridge] context debe ser un objeto');
@@ -308,4 +308,4 @@ export function createnebulaPulsarBridge(context, options = {}) {
   };
 }
 
-export default createnebulaPulsarBridge;
+export default createNebulaPulsarBridge;

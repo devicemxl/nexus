@@ -166,7 +166,7 @@
   </div>
 
   <script type="module">
-    import { createnebula } from '../src/nebula.js';
+    import { createNebula } from '../src/nebula.js';
     import { createHydrationAdapter } from '../src/adapters/hydration-adapter.js';
 
     // ============================================================
@@ -177,7 +177,7 @@
     // ============================================================
     // Setup: nebula vacío, snapshot desde <script type="application/json">
     // ============================================================
-    const nebula = createnebula();
+    const nebula = createNebula();
 
     // Verificación explícita: antes del adapter, nebula está vacío.
     const idsBeforeHydration = nebula.allIds();
@@ -251,7 +251,7 @@
     // Timing y verdict
     // ============================================================
     document.getElementById('timing').innerHTML = `
-      ⏱ Setup (createnebula): ${(t1 - t0).toFixed(2)}ms &nbsp;·&nbsp;
+      ⏱ Setup (createNebula): ${(t1 - t0).toFixed(2)}ms &nbsp;·&nbsp;
       Hydration: ${(t2 - t1).toFixed(2)}ms &nbsp;·&nbsp;
       Render: ${(t3 - t2).toFixed(2)}ms &nbsp;·&nbsp;
       <strong>Total: ${(t3 - t0).toFixed(2)}ms</strong>

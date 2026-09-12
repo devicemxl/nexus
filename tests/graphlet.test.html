@@ -17,7 +17,7 @@
   <div id="output"></div>
 
   <script type="module">
-    import { createnebula } from '../src/nebula.js';
+    import { createNebula } from '../src/nebula.js';
 
     const output = document.getElementById('output');
     let passed = 0;
@@ -48,7 +48,7 @@
     // CONFIGURACIÓN: Crear una instancia limpia para cada grupo
     // ------------------------------------------------------------
     function freshGraph() {
-      return createnebula();
+      return createNebula();
     }
 
     // ============================================================

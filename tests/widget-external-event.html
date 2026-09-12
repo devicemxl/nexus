@@ -234,7 +234,7 @@
   </div>
 
   <script type="module">
-    import { createnebula } from '../src/nebula.js';
+    import { createNebula } from '../src/nebula.js';
     import { createExternalEventAdapter } from '../src/adapters/external-event-adapter.js';
 
     const CHANNEL_NAME = 'widget-sync-demo';
@@ -242,7 +242,7 @@
     // ============================================================
     // Setup
     // ============================================================
-    const nebula = createnebula();
+    const nebula = createNebula();
     const adapter = createExternalEventAdapter(
       { nebula },
       { channelName: CHANNEL_NAME }

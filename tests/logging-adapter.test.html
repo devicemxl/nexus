@@ -18,7 +18,7 @@
   <div id="output"></div>
 
   <script type="module">
-    import { createnebula } from '../src/nebula.js';
+    import { createNebula } from '../src/nebula.js';
     import { createStatePulsar } from '../src/pulsar.js';
     import { createLoggingAdapter } from '../src/adapters/logging-adapter.js';
 
@@ -61,7 +61,7 @@
     section('TEST 1: Observando solo nebula');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const { sink, events } = makeCapturingSink();
       const adapter = createLoggingAdapter({ nebula: g }, { sink });
 
@@ -112,7 +112,7 @@
     section('TEST 3: Observando ambos, eventos entrelazados');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const p = createStatePulsar({});
       const { sink, events } = makeCapturingSink();
       const adapter = createLoggingAdapter({ nebula: g, pulsar: p }, { sink });
@@ -137,7 +137,7 @@
     section('TEST 4: Los eventos tienen la estructura del contrato');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const { sink, events } = makeCapturingSink();
       const adapter = createLoggingAdapter({ nebula: g }, { sink });
 
@@ -162,7 +162,7 @@
     section('TEST 5: ts es monotónico creciente');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const { sink, events } = makeCapturingSink();
       const adapter = createLoggingAdapter({ nebula: g }, { sink });
 
@@ -183,7 +183,7 @@
     section('TEST 6: filter descarta eventos correctamente');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const { sink, events } = makeCapturingSink();
       const adapter = createLoggingAdapter(
         { nebula: g },
@@ -211,7 +211,7 @@
     section('TEST 7: filter que lanza no propaga, evento descartado');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const { sink, events } = makeCapturingSink();
 
       // Capturar console.warn para verificar que se avisó
@@ -248,7 +248,7 @@
     section('TEST 8: sink que lanza no propaga, mutación sigue funcionando');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const warns = [];
       const originalWarn = console.warn;
       console.warn = (...args) => warns.push(args.join(' '));
@@ -281,7 +281,7 @@
     section('TEST 9: si el original lanza, el evento NO se emite');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const { sink, events } = makeCapturingSink();
       const adapter = createLoggingAdapter({ nebula: g }, { sink });
 
@@ -304,7 +304,7 @@
     section('TEST 10: Set semantics: link idempotente no emite');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       g.put('a', {});
       g.put('b', {});
 
@@ -327,7 +327,7 @@
     section('TEST 11: Set semantics: unlink de triple ausente no emite');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       g.put('a', {});
       g.put('b', {});
       g.link('a', 'rel', 'b');
@@ -359,7 +359,7 @@
     section('TEST 12: destroy() restaura métodos originales de nebula');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const originalPut = g.put;
 
       const { sink, events } = makeCapturingSink();
@@ -404,7 +404,7 @@
     section('TEST 14: destroy() idempotente');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const adapter = createLoggingAdapter({ nebula: g });
 
       let first = false, second = false;
@@ -444,14 +444,14 @@
       // 15.5: sink no función
       t = false;
       try {
-        createLoggingAdapter({ nebula: createnebula() }, { sink: 'nope' });
+        createLoggingAdapter({ nebula: createNebula() }, { sink: 'nope' });
       } catch { t = true; }
       assert(t, '15.5: sink no-función lanza TypeError');
 
       // 15.6: filter no función
       t = false;
       try {
-        createLoggingAdapter({ nebula: createnebula() }, { filter: 42 });
+        createLoggingAdapter({ nebula: createNebula() }, { filter: 42 });
       } catch { t = true; }
       assert(t, '15.6: filter no-función lanza TypeError');
     }
@@ -463,7 +463,7 @@
 
     {
       // Sin adapter
-      const g1 = createnebula();
+      const g1 = createNebula();
       g1.put('user:1', { name: 'Alice' });
       g1.put('user:2', { name: 'Bob' });
       g1.link('user:1', 'knows', 'user:2');
@@ -474,7 +474,7 @@
       };
 
       // Con adapter
-      const g2 = createnebula();
+      const g2 = createNebula();
       const adapter = createLoggingAdapter({ nebula: g2 }, { sink: () => {} });
       g2.put('user:1', { name: 'Alice' });
       g2.put('user:2', { name: 'Bob' });
@@ -500,7 +500,7 @@
     section('TEST 17: Sink default emite a console sin lanzar');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const adapter = createLoggingAdapter({ nebula: g });
       // Sin sink custom, usa el default (console.log)
 

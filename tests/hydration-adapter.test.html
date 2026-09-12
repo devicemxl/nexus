@@ -17,7 +17,7 @@
   <div id="output"></div>
 
   <script type="module">
-    import { createnebula } from '../src/nebula.js';
+    import { createNebula } from '../src/nebula.js';
     import { createHydrationAdapter } from '../src/adapters/hydration-adapter.js';
 
     const output = document.getElementById('output');
@@ -65,7 +65,7 @@
     section('TEST 1: Hidratación básica poblando entidades y links');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const snapshot = {
         entities: {
           'user:1': {
@@ -97,7 +97,7 @@
     section('TEST 2: La hidratación es síncrona; datos disponibles al retornar');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const snapshot = { entities: { 'x:1': { properties: { v: 1 } } } };
 
       // Antes de instanciar: vacío.
@@ -118,7 +118,7 @@
     section('TEST 3: Two-pass permite que un link referencie una entidad definida más tarde en el snapshot');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       // NOTA: 'source' aparece ANTES que 'target' en el objeto, pero
       // 'source.links' referencia a 'target'. Si no fuera two-pass,
       // nebula.link('source', 'x', 'target') fallaría porque
@@ -152,7 +152,7 @@
     section("TEST 4: mode='merge' (default) hace upsert — properties preexistentes se preservan");
 
     {
-      const g = createnebula();
+      const g = createNebula();
       g.put('user:1', { name: 'Alice', role: 'admin' });
 
       const snapshot = {
@@ -174,7 +174,7 @@
     section("TEST 5: mode='replace' hace put — properties preexistentes se descartan");
 
     {
-      const g = createnebula();
+      const g = createNebula();
       g.put('user:1', { name: 'Alice', role: 'admin' });
 
       const snapshot = {
@@ -196,7 +196,7 @@
     section('TEST 6: Targets duplicados en un array de links se deduplican antes de llamar link');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const snapshot = {
         entities: {
           a: {
@@ -224,7 +224,7 @@
     section("TEST 7: onMissingTarget='throw' (default) propaga error de nebula");
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const snapshot = {
         entities: {
           a: { properties: {}, links: { rel: ['ghost'] } }  // 'ghost' no existe
@@ -253,7 +253,7 @@
     section("TEST 8: onMissingTarget='skip' loguea warning y continúa con los demás links");
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const snapshot = {
         entities: {
           a: {
@@ -291,7 +291,7 @@
     section('TEST 9: parse permite hidratar desde una shape no canónica');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       // Shape "externa": un array de {id, props, edges}
       const external = [
         { id: 'n:1', props: { label: 'Uno' }, edges: [{ rel: 'next', to: 'n:2' }] },
@@ -322,7 +322,7 @@
     section('TEST 10: destroy() es no-op idempotente (no hay recursos vivos)');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const adapter = createHydrationAdapter(
         { nebula: g },
         { snapshot: { entities: {} } }
@@ -351,7 +351,7 @@
 
       // 11.2: falta snapshot
       t = false;
-      try { createHydrationAdapter({ nebula: createnebula() }, {}); }
+      try { createHydrationAdapter({ nebula: createNebula() }, {}); }
       catch (e) { t = true; }
       assert(t, '11.2: falta options.snapshot lanza TypeError');
 
@@ -359,7 +359,7 @@
       t = false;
       try {
         createHydrationAdapter(
-          { nebula: createnebula() },
+          { nebula: createNebula() },
           { snapshot: { entities: {} }, mode: 'invalid' }
         );
       } catch (e) { t = true; }
@@ -369,7 +369,7 @@
       t = false;
       try {
         createHydrationAdapter(
-          { nebula: createnebula() },
+          { nebula: createNebula() },
           { snapshot: { entities: {} }, onMissingTarget: 'invalid' }
         );
       } catch (e) { t = true; }
@@ -379,7 +379,7 @@
       t = false;
       try {
         createHydrationAdapter(
-          { nebula: createnebula() },
+          { nebula: createNebula() },
           { snapshot: { foo: 'bar' } }
         );
       } catch (e) { t = true; }
@@ -390,7 +390,7 @@
       let errMsg = '';
       try {
         createHydrationAdapter(
-          { nebula: createnebula() },
+          { nebula: createNebula() },
           { snapshot: { entities: { 'x:1': 'not-an-object' } } }
         );
       } catch (e) { t = true; errMsg = e.message; }
@@ -402,7 +402,7 @@
       t = false;
       try {
         createHydrationAdapter(
-          { nebula: createnebula() },
+          { nebula: createNebula() },
           { snapshot: { entities: { 'x:1': { properties: {}, links: 'nope' } } } }
         );
       } catch (e) { t = true; }
@@ -415,7 +415,7 @@
     section('TEST 12: Snapshot con entities: {} es válido y hidrata a un grafo vacío');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       let threw = false;
       try {
         createHydrationAdapter({ nebula: g }, { snapshot: { entities: {} } });

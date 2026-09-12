@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus — chat</title>
+<style>
+  :root {
+    --lateral:#22282E; --lateral-t:#96A1AC; --lateral-a:#2D353D;
+    --principal:#FAFBFC; --tinta:#1C2126; --tenue:#6B757F; --regla:#E1E6EA;
+    --senal:#3E7C74; --burbuja-u:#EDF1F4; --burbuja-a:#FFFFFF;
+    --sans:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font-family:var(--sans);color:var(--tinta);background:var(--principal);
+       font-size:15px;line-height:1.5}
+  .marco{display:grid;grid-template-columns:16rem 1fr;height:100%}
+
+  /* ---------- Lateral ---------- */
+  .lateral{background:var(--lateral);color:var(--lateral-t);padding:1.2rem .9rem;
+           display:flex;flex-direction:column;gap:1rem;min-height:0}
+  .marca{color:#EDF1F4;font-weight:600;font-size:.95rem;padding:0 .3rem}
+  .marca span{display:block;font-weight:400;font-size:.78rem;color:var(--lateral-t)}
+  .nueva{font:inherit;font-size:.88rem;font-weight:500;width:100%;text-align:left;
+         color:#EDF1F4;background:var(--lateral-a);border:1px solid #39424B;
+         border-radius:4px;padding:.5rem .75rem;cursor:pointer}
+  .nueva:hover{background:#353E47}
+  .nueva::before{content:"+";margin-right:.5rem;color:var(--lateral-t)}
+  .lista{list-style:none;margin:0;padding:0;overflow-y:auto;flex:1;min-height:0}
+  .fila{padding:.5rem .75rem;border-radius:4px;cursor:pointer;font-size:.88rem;
+        color:var(--lateral-t);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fila:hover{background:var(--lateral-a);color:#D3DAE1}
+  .fila.activa{background:var(--lateral-a);color:#EDF1F4;box-shadow:inset 2px 0 0 var(--senal)}
+  .fila:focus-visible{outline:2px solid var(--senal);outline-offset:-2px}
+  .vacio{font-size:.82rem;color:#59636D;padding:.5rem .75rem;font-style:italic}
+
+  /* ---------- Principal ---------- */
+  .principal{display:grid;grid-template-rows:auto 1fr auto;min-height:0;overflow:hidden}
+  .cabecera{padding:1.1rem 2rem;border-bottom:1px solid var(--regla)}
+  .cabecera h1{margin:0;font-size:1.05rem;font-weight:600;letter-spacing:-.011em}
+
+  .hilo{overflow-y:auto;padding:1.5rem 2rem;min-height:0}
+  .sin-mensajes{color:var(--tenue);font-size:.9rem;text-align:center;padding:3rem 0;margin:0}
+  .mensajes{display:flex;flex-direction:column;gap:.9rem;max-width:46rem;margin:0 auto}
+
+  article[data-mensaje]{border:1px solid var(--regla);border-radius:6px;
+                        padding:.7rem .95rem;font-size:.93rem}
+  article[data-rol="user"]{background:var(--burbuja-u);align-self:flex-end;max-width:85%}
+  article[data-rol="assistant"]{background:var(--burbuja-a);align-self:flex-start;max-width:95%}
+  article .quien{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;
+                 color:var(--tenue);margin-bottom:.25rem}
+  article [data-zona="texto"]{white-space:pre-wrap;word-break:break-word}
+
+  /* Cursor de escritura mientras el mensaje está en vuelo. */
+  article[data-estado="en-vuelo"] [data-zona="texto"]::after{
+    content:"";display:inline-block;width:.5em;height:1em;margin-left:.1em;
+    vertical-align:text-bottom;background:var(--senal);animation:latir 1s steps(2) infinite}
+  @keyframes latir{0%,50%{opacity:1}51%,100%{opacity:0}}
+  article[data-estado="interrumpido"]{border-style:dashed}
+  article[data-estado="interrumpido"] [data-zona="texto"]::after{
+    content:" (interrumpido)";color:var(--tenue);font-size:.8em;font-style:italic}
+
+  /* ---------- Composer ---------- */
+  .composer{padding:1rem 2rem;border-top:1px solid var(--regla);display:flex;
+            align-items:flex-end;gap:.75rem;background:#F7F9F6}
+  .composer textarea{flex:1;font:inherit;font-size:.93rem;line-height:1.45;
+                     resize:none;overflow-y:auto;min-height:2.6rem;max-height:11rem;
+                     padding:.6rem .8rem;border:1px solid var(--regla);border-radius:5px;
+                     background:#FFF;color:var(--tinta)}
+  .composer textarea:focus{outline:2px solid var(--senal);outline-offset:-1px;border-color:transparent}
+  .composer textarea:disabled{background:#F1F3F0;color:var(--tenue)}
+  .composer button{font:inherit;font-size:.88rem;font-weight:500;color:#FBFCFA;
+                   background:var(--tinta);border:none;border-radius:5px;
+                   padding:.65rem 1.2rem;cursor:pointer;white-space:nowrap}
+  .composer button:hover{background:#2B332D}
+  .composer button[data-modo="detener"]{background:#8A3A32}
+  .composer button[data-modo="detener"]:hover{background:#763128}
+
+  @media(max-width:44rem){
+    .marco{grid-template-columns:1fr;grid-template-rows:11rem 1fr}
+    .cabecera,.hilo,.andamio{padding-left:1.1rem;padding-right:1.1rem}
+  }
+</style>
+</head>
+<body>
+
+<div class="marco" data-chunk="app-shell">
+
+  <aside class="lateral" data-chunk="conversation-list">
+    <div class="marca">Nexus<span>Escena 1.4</span></div>
+    <button type="button" class="nueva" data-accion="nueva-conversacion">Nueva conversación</button>
+    <p class="vacio" data-zona="vacio">Todavía no hay conversaciones.</p>
+    <ul class="lista" data-zona="lista" role="listbox" aria-label="Conversaciones"></ul>
+    <template data-plantilla="conversation-item">
+      <li class="fila" data-chunk="conversation-item" role="option" tabindex="0" aria-selected="false">
+        <span data-zona="titulo"></span>
+      </li>
+    </template>
+  </aside>
+
+  <main class="principal" data-chunk="conversation-messages">
+    <div class="cabecera">
+      <h1 data-zona="titulo-activo">Ninguna conversación seleccionada</h1>
+    </div>
+
+    <div class="hilo" data-zona="mensajes-scroll">
+      <p class="sin-mensajes" data-zona="sin-mensajes">
+        No hay mensajes en esta conversación.
+      </p>
+      <div class="mensajes" data-zona="mensajes"></div>
+    </div>
+
+    <template data-plantilla="message-item">
+      <article data-mensaje>
+        <div class="quien" data-zona="quien"></div>
+        <div data-zona="texto"></div>
+      </article>
+    </template>
+
+    <form class="composer" data-chunk="composer" onsubmit="return false">
+      <textarea data-zona="entrada" rows="1" placeholder="Escribe un mensaje…"
+                aria-label="Mensaje"></textarea>
+      <button type="button" data-accion="enviar" data-modo="enviar">Enviar</button>
+    </form>
+
+  </main>
+
+</div>
+
+<script type="module">
+  import { arrancar } from './app/boot.js';
+
+  try {
+    const nexus = arrancar({ exponerGlobal: true });
+    if (nexus.hidratacion.estado === 'corrupto') {
+      console.warn('[index] se arrancó con estado vacío por snapshot ilegible:',
+        nexus.hidratacion.motivo);
+    }
+  } catch (error) {
+    console.error('[index] el arranque falló:', error);
+    const zona = document.querySelector('[data-zona="titulo-activo"]');
+    if (zona) zona.textContent = 'El arranque falló, ver consola';
+  }
+</script>
+</body>
+</html>

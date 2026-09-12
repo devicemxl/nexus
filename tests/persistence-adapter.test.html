@@ -18,7 +18,7 @@
   <div id="output"></div>
 
   <script type="module">
-    import { createnebula } from '../src/nebula.js';
+    import { createNebula } from '../src/nebula.js';
     import { createHydrationAdapter } from '../src/adapters/hydration-adapter.js';
     import { createPersistenceAdapter } from '../src/adapters/persistence-adapter.js';
 
@@ -107,7 +107,7 @@
     section('TEST 1: Modo eager escribe síncronamente tras cada mutación');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
         { nebula: g },
@@ -135,7 +135,7 @@
     section('TEST 2: Modo debounced coalesce mutaciones rápidas');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
         { nebula: g },
@@ -166,7 +166,7 @@
     section('TEST 3: Debounced trailing — cada mutación resetea el timer');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
         { nebula: g },
@@ -193,7 +193,7 @@
     section('TEST 4: writeOnInit=true escribe el estado inicial de nebula');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       g.put('preexistente:1', { name: 'Preexistente' });
 
       const storage = createMockStorage();
@@ -219,7 +219,7 @@
     section('TEST 5: writeOnInit por defecto es false');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       g.put('x:1', {});
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
@@ -237,7 +237,7 @@
     section('TEST 6: flush() escribe ya y cancela timer pendiente');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
         { nebula: g },
@@ -266,7 +266,7 @@
     section('TEST 7: flush() es seguro llamar sin pendiente');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
         { nebula: g },
@@ -294,7 +294,7 @@
     section('TEST 8: destroy() no hace flush implícito');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
         { nebula: g },
@@ -316,7 +316,7 @@
     section('TEST 9: destroy() cancela el timer debounced pendiente');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
         { nebula: g },
@@ -336,7 +336,7 @@
     section('TEST 10: destroy() restaura los métodos originales');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const originalPut = g.put;
 
       const storage = createMockStorage();
@@ -363,7 +363,7 @@
     section('TEST 11: destroy() es idempotente');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const storage = createMockStorage();
       const adapter = createPersistenceAdapter(
         { nebula: g },
@@ -384,7 +384,7 @@
     section('TEST 12: Set semantics (G-0): link duplicado no produce escritura');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       g.put('a', {});
       g.put('b', {});
 
@@ -416,7 +416,7 @@
     section('TEST 13: Set semantics: unlink sobre triple inexistente no produce escritura');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       g.put('a', {});
       g.put('b', {});
       g.link('a', 'rel', 'b');
@@ -452,7 +452,7 @@
 
     {
       // Fase 1: sembrar y persistir
-      const g1 = createnebula();
+      const g1 = createNebula();
       const storage = createMockStorage();
       const p = createPersistenceAdapter(
         { nebula: g1 },
@@ -467,7 +467,7 @@
       p.destroy();
 
       // Fase 2: nueva nebula vacía, hidratar desde el snapshot
-      const g2 = createnebula();
+      const g2 = createNebula();
       assert(g2.allIds().length === 0, 'g2 empieza vacía');
 
       const parsed = JSON.parse(snapshotWritten);
@@ -490,7 +490,7 @@
     section('TEST 15: onError se invoca en fallo de write, sin propagar');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const storage = createMockStorage();
       const errors = [];
       const adapter = createPersistenceAdapter(
@@ -527,7 +527,7 @@
     section('TEST 16: onError se invoca en fallo de serialize (referencia circular)');
 
     {
-      const g = createnebula();
+      const g = createNebula();
       const storage = createMockStorage();
       const errors = [];
       const adapter = createPersistenceAdapter(
@@ -577,7 +577,7 @@
       t = false;
       try {
         createPersistenceAdapter(
-          { nebula: createnebula() },
+          { nebula: createNebula() },
           { storage: dummyStorage }
         );
       } catch (e) { t = true; }
@@ -587,7 +587,7 @@
       t = false;
       try {
         createPersistenceAdapter(
-          { nebula: createnebula() },
+          { nebula: createNebula() },
           { key: '   ', storage: dummyStorage }
         );
       } catch (e) { t = true; }
@@ -597,7 +597,7 @@
       t = false;
       try {
         createPersistenceAdapter(
-          { nebula: createnebula() },
+          { nebula: createNebula() },
           { key: 'k', mode: 'nope', storage: dummyStorage }
         );
       } catch (e) { t = true; }
@@ -607,7 +607,7 @@
       t = false;
       try {
         createPersistenceAdapter(
-          { nebula: createnebula() },
+          { nebula: createNebula() },
           { key: 'k', debounceMs: -1, storage: dummyStorage }
         );
       } catch (e) { t = true; }
@@ -617,7 +617,7 @@
       t = false;
       try {
         createPersistenceAdapter(
-          { nebula: createnebula() },
+          { nebula: createNebula() },
           { key: 'k', storage: { foo: 'bar' } }
         );
       } catch (e) { t = true; }

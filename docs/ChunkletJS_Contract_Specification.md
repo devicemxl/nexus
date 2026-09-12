@@ -102,7 +102,7 @@ Initializes the stack. Must be called exactly once before any `mount`, `define`,
 **Behavior**
 
 1. If `pulsar` is a Pulsar instance, use it. If it is a configuration object, call `createStatePulsar(initialState, options)`. If it is `undefined`, create `createStatePulsar({})`.
-2. If `nebula` is a nebula instance, use it. Otherwise create an empty one via `createnebula()`.
+2. If `nebula` is a nebula instance, use it. Otherwise create an empty one via `createNebula()`.
 3. If `voyajer` is a Voyajer instance, use it. If it is an options object, call `createVoyajer(pulsar, options)` with the resolved Pulsar. If `undefined`, do not create Voyajer; `ctx.voyajer` will be `undefined` and navigation helpers will throw when invoked.
 4. Store the resolved instances internally as the module-scoped stack.
 5. If `enabledPath` is provided, subscribe to that path in Pulsar (via `subscribeSelector`) and remount affected elements when the value changes.

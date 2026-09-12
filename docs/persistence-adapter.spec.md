@@ -104,7 +104,7 @@ No retry logic. Persistence is best-effort; the caller decides if a retry strate
 - **With Hydration Adapter:** the shapes are compatible by design. A canonical startup sequence is:
 
 ```javascript
-const nebula = createnebula();
+const nebula = createNebula();
 
 // Read what was saved from the previous session (if any).
 const raw = localStorage.getItem('my-app-graph');

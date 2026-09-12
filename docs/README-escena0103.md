@@ -102,6 +102,16 @@ Meter `texto` en la firma estructural —el error natural, porque parece más co
 
 Sólo si el usuario ya está cerca del final. La medida se toma **antes** de escribir el token, porque después el contenido ya creció y diría que el usuario se quedó atrás cuando estaba al día.
 
+## Deuda registrada
+
+**`RECONCILIACION-CON-CLAVE`** (`PHASE_1_DEFERRED.md`). Los cambios
+estructurales —añadir un mensaje, abrirlo, cerrarlo— reconstruyen la lista
+entera en vez de tocar sólo lo que cambió. No afecta al streaming, que ya es
+incremental, pero un turno de conversación cuesta tres reconstrucciones: 3.6 ms
+a 50 mensajes, 31 ms a 500. Se resuelve en la Escena 1.5, donde la widget
+factory debe descubrir el patrón de reconciliación con cuatro widgets delante
+en vez de uno.
+
 ## Fuera de alcance
 
 - **Composer y navegación.** Escena 1.4.

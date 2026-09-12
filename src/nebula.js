@@ -26,7 +26,7 @@
 // FACTORY FUNCTION
 // ============================================
 
-export function createnebula() {
+export function createNebula() {
   const _entities = new Map();
 
   // ============================================
@@ -297,4 +297,4 @@ export function createnebula() {
 // EXPORTACIÓN POR DEFECTO (Opcional)
 // ============================================
 
-export default createnebula;
+export default createNebula;
