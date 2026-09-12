@@ -1,7 +1,7 @@
 # Escena 1.3 — Mensajes con streaming simulado
 
 **Fase:** 1 (chatbot sobre Nexus)
-**Estado:** implementada, pendiente de corrida en navegador
+**Estado:** cerrada, con registro en navegador
 **Propósito:** primer widget con ruta caliente, y punto de decisión sobre `BRIDGE-REACTIVE`.
 
 ## Qué es
@@ -33,7 +33,7 @@ node medir-streaming.mjs     # coste del modelo
 
 **Dirección de la relación: `conversation --contiene--> message`.**
 
-nebula no mantiene índice inverso. Renderizar la conversación activa se resuelve leyendo los links de una sola entidad; la dirección opuesta obligaría a recorrer el grafo entero en cada repintado, y durante el streaming eso ocurre una vez por token.
+Graphlet no mantiene índice inverso. Renderizar la conversación activa se resuelve leyendo los links de una sola entidad; la dirección opuesta obligaría a recorrer el grafo entero en cada repintado, y durante el streaming eso ocurre una vez por token.
 
 **El orden no lo dan los links.** El array preserva el orden de inserción, pero eso es consecuencia de la implementación, no garantía de la tabla de conductas del contrato. Los mensajes se ordenan por `creadoEn`, del reloj monótono de la Escena 1.2.
 
@@ -55,7 +55,7 @@ Que `estado` sí participe de la firma es lo que hace que la transición en-vuel
 
 El roadmap anticipaba que la fricción aparecería aquí. **La medición no lo sostiene.**
 
-Coste por token de la cadena `nebula.update` → Bridge → proyección → `_notify`:
+Coste por token de la cadena `graphlet.update` → Bridge → proyección → `_notify`:
 
 | entidades en el grafo | tokens | coste por token |
 |---|---|---|
@@ -71,7 +71,20 @@ El presupuesto es 33 ms por token a 30 tokens/s, o 16 ms para no perder un fotog
 
 Esta medición es confiable en entorno sustituto porque es JavaScript puro: sin DOM, sin layout, sin pintado. Node mide lo mismo que mediría el navegador.
 
-Lo que Node **no** puede medir es el coste del repintado, porque no hace layout. Esa medición vive en el harness de navegador y fuerza layout explícitamente en cada iteración. Es la que decide si la separación de suscripciones era necesaria o sólo prudente.
+Lo que Node **no** puede medir es el coste del repintado, porque no hace layout. Esa medición vive en el harness de navegador y fuerza layout explícitamente en cada iteración.
+
+Medido en navegador, con M mensajes ya en pantalla:
+
+| mensajes | reconstrucción completa | escritura incremental | factor |
+|---|---|---|---|
+| 10 | 0.30 ms | 0.056 ms | ×5 |
+| 50 | 1.19 ms | 0.077 ms | ×15 |
+| 200 | 4.22 ms | 0.163 ms | ×26 |
+| 500 | 10.41 ms | 0.327 ms | ×32 |
+
+A 500 mensajes la reconstrucción por token consume el 65 % del presupuesto de fotograma, y el factor sigue creciendo con el tamaño. La separación de suscripciones no es una optimización prematura: es lo que mantiene el streaming viable en conversaciones largas.
+
+Nótese que Node estimaba el factor entre ×6 y ×24 de forma errática; el navegador lo da entre ×5 y ×32, creciendo de forma limpia con el número de mensajes. El sustituto acertó la dirección y falló la magnitud y la tendencia, que es exactamente lo que D-5 predice.
 
 ## La aserción central
 
@@ -99,6 +112,12 @@ Sólo si el usuario ya está cerca del final. La medida se toma **antes** de esc
 ## Verificación
 
 - 53/53 verdes en `validar-mensajes.mjs`
-- 56 aserciones en el harness de navegador, pendiente de corrida
+- 56/56 verdes en `mensajes.test.html`, en navegador y sin caché
 - Meter `texto` en la firma estructural pone tres aserciones en rojo
-- La medición del DOM en navegador es el registro que confirma o revisa la decisión sobre `BRIDGE-REACTIVE`
+- La medición en navegador confirma que `BRIDGE-REACTIVE` sigue diferido: peor caso 0.578 ms por token, el 3.6 % del presupuesto de fotograma
+
+El harness cede el hilo entre mediciones y pinta las tablas de forma
+progresiva. Las mediciones fuerzan layout a propósito —es la única forma de
+medir su coste real— y sin ceder bloqueaban la página unos tres segundos, con
+el correspondiente aviso de reflow forzado del navegador. Medir con honestidad
+no obliga a congelar la interfaz.

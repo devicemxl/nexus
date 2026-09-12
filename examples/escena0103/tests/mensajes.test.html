@@ -79,7 +79,7 @@
     <h2>Coste del streaming en el modelo</h2>
     <p>
       T mutaciones sobre una sola entidad con N entidades en el grafo, midiendo
-      la cadena <code>nebula.update</code> → Bridge → proyección →
+      la cadena <code>graphlet.update</code> → Bridge → proyección →
       <code>_notify</code>. A 30 tokens por segundo el presupuesto por token es
       33&nbsp;ms; para no perder un fotograma a 60&nbsp;Hz, 16&nbsp;ms.
     </p>
@@ -140,8 +140,35 @@ function planificador() {
 const medModelo = [];
 const medDom = [];
 
+/**
+ * Cede el hilo para que el navegador pinte antes de seguir.
+ *
+ * Las mediciones de abajo fuerzan layout a propósito — es la única forma de
+ * medir su coste real — y eso las vuelve caras. Sin ceder, el harness bloquea
+ * la página varios segundos y el navegador emite un aviso de reflow forzado.
+ * Medir con honestidad no obliga a congelar la interfaz.
+ */
+const ceder = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+
+/**
+ * Repite `fn` hasta agotar un presupuesto de tiempo, con un mínimo de
+ * repeticiones para que la media signifique algo. Devuelve el coste por
+ * operación.
+ *
+ * El presupuesto acota el coste total del harness: sin él, el caso más caro
+ * (reconstruir 500 nodos por token) domina el reloj entero.
+ */
+function medirConPresupuesto(fn, { presupuestoMs = 110, minimo = 8, maximo = 60 } = {}) {
+  const t0 = performance.now();
+  let n = 0;
+  while (n < maximo && (n < minimo || performance.now() - t0 < presupuestoMs)) {
+    fn(n); n++;
+  }
+  return (performance.now() - t0) / n;
+}
+
 // ==================================================================
-function ejecutarCasos() {
+async function ejecutarCasos() {
   grupos.length = 0; medModelo.length = 0; medDom.length = 0;
 
   // ---------------------------------------------------------------
@@ -149,41 +176,41 @@ function ejecutarCasos() {
     'La relación conversation→message da la pertenencia; creadoEn da el orden. ' +
     'Los links preservan el orden de inserción, pero eso no es garantía del contrato.');
   {
-    const { nebula } = crearPrimitivas();
-    const conv = modelo.crearConversacion(nebula, { titulo: 'C' });
-    const m1 = modelo.agregarMensaje(nebula, conv, { rol: 'user', texto: 'hola' });
-    ok('el mensaje existe', nebula.get(m1) !== null);
+    const { graphlet } = crearPrimitivas();
+    const conv = modelo.crearConversacion(graphlet, { titulo: 'C' });
+    const m1 = modelo.agregarMensaje(graphlet, conv, { rol: 'user', texto: 'hola' });
+    ok('el mensaje existe', graphlet.get(m1) !== null);
     eq('conserva rol y texto',
-      [nebula.get(m1).properties.rol, nebula.get(m1).properties.texto], ['user', 'hola']);
-    eq('nace completo por defecto', nebula.get(m1).properties.estado, modelo.ESTADO_COMPLETO);
+      [graphlet.get(m1).properties.rol, graphlet.get(m1).properties.texto], ['user', 'hola']);
+    eq('nace completo por defecto', graphlet.get(m1).properties.estado, modelo.ESTADO_COMPLETO);
     eq('queda enlazado desde la conversación',
-      nebula.get(conv).links[modelo.RELACION_CONTIENE], [m1]);
+      graphlet.get(conv).links[modelo.RELACION_CONTIENE], [m1]);
     lanza('agregar a una conversación inexistente lanza',
-      () => modelo.agregarMensaje(nebula, 'conversation:fantasma', { rol: 'user' }));
-    lanza('un rol inválido lanza', () => modelo.agregarMensaje(nebula, conv, { rol: 'sistema' }));
+      () => modelo.agregarMensaje(graphlet, 'conversation:fantasma', { rol: 'user' }));
+    lanza('un rol inválido lanza', () => modelo.agregarMensaje(graphlet, conv, { rol: 'sistema' }));
   }
   {
-    const { nebula } = crearPrimitivas();
-    const conv = modelo.crearConversacion(nebula, { titulo: 'C' });
-    const antes = nebula.get(conv).properties.actualizadaEn;
-    const m = modelo.agregarMensaje(nebula, conv, { rol: 'user', texto: 'x' });
+    const { graphlet } = crearPrimitivas();
+    const conv = modelo.crearConversacion(graphlet, { titulo: 'C' });
+    const antes = graphlet.get(conv).properties.actualizadaEn;
+    const m = modelo.agregarMensaje(graphlet, conv, { rol: 'user', texto: 'x' });
     ok('agregar un mensaje sube la conversación en la lista',
-      nebula.get(conv).properties.actualizadaEn > antes);
-    const trasCrear = nebula.get(conv).properties.actualizadaEn;
-    modelo.anexarTexto(nebula, m, ' más');
+      graphlet.get(conv).properties.actualizadaEn > antes);
+    const trasCrear = graphlet.get(conv).properties.actualizadaEn;
+    modelo.anexarTexto(graphlet, m, ' más');
     eq('anexar texto NO vuelve a tocar la conversación',
-      nebula.get(conv).properties.actualizadaEn, trasCrear);
-    eq('anexar concatena', nebula.get(m).properties.texto, 'x más');
+      graphlet.get(conv).properties.actualizadaEn, trasCrear);
+    eq('anexar concatena', graphlet.get(m).properties.texto, 'x más');
   }
   {
-    const { nebula } = crearPrimitivas();
-    const conv = modelo.crearConversacion(nebula);
+    const { graphlet } = crearPrimitivas();
+    const conv = modelo.crearConversacion(graphlet);
     const ids = [];
     for (let i = 0; i < 5; i++) {
-      ids.push(modelo.agregarMensaje(nebula, conv, { rol: i % 2 ? 'assistant' : 'user', texto: `m${i}` }));
+      ids.push(modelo.agregarMensaje(graphlet, conv, { rol: i % 2 ? 'assistant' : 'user', texto: `m${i}` }));
     }
     const entities = {};
-    for (const id of nebula.allIds()) entities[id] = nebula.get(id);
+    for (const id of graphlet.allIds()) entities[id] = graphlet.get(id);
     eq('se listan del más antiguo al más reciente',
       modelo.listarMensajes(entities, conv).map((m) => m.id), ids);
     eq('sin conversación devuelve lista vacía', modelo.listarMensajes(entities, null), []);
@@ -221,42 +248,44 @@ function ejecutarCasos() {
     'Un stream que no se puede cancelar es un recurso que no se puede liberar. ' +
     'El planificador se inyecta para avanzarlo paso a paso.');
   {
-    const { nebula } = crearPrimitivas();
-    const conv = modelo.crearConversacion(nebula);
+    const { graphlet } = crearPrimitivas();
+    const conv = modelo.crearConversacion(graphlet);
     const p = planificador();
-    const provider = crearMockProvider({ nebula },
+    const provider = crearMockProvider({ graphlet },
       { programar: p.programar, cancelar: p.cancelar, respuestas: ['uno dos tres'] });
     const asa = provider.responder(conv);
     eq('nace en vuelo y vacío',
-      [nebula.get(asa.mensajeId).properties.estado, nebula.get(asa.mensajeId).properties.texto],
+      [graphlet.get(asa.mensajeId).properties.estado, graphlet.get(asa.mensajeId).properties.texto],
       [modelo.ESTADO_EN_VUELO, '']);
     ok('el asa reporta actividad', asa.activo);
     p.avanzar(1);
-    eq('el primer token llega', nebula.get(asa.mensajeId).properties.texto, 'uno');
+    eq('el primer token llega', graphlet.get(asa.mensajeId).properties.texto, 'uno');
     p.agotar();
-    eq('al agotarse queda el texto completo', nebula.get(asa.mensajeId).properties.texto, 'uno dos tres');
-    eq('y el estado pasa a completo', nebula.get(asa.mensajeId).properties.estado, modelo.ESTADO_COMPLETO);
+    eq('al agotarse queda el texto completo', graphlet.get(asa.mensajeId).properties.texto, 'uno dos tres');
+    eq('y el estado pasa a completo', graphlet.get(asa.mensajeId).properties.estado, modelo.ESTADO_COMPLETO);
     ok('el asa deja de reportar actividad', !asa.activo);
     eq('no quedan temporizadores pendientes', p.pendientes(), 0);
   }
   {
-    const { nebula } = crearPrimitivas();
-    const conv = modelo.crearConversacion(nebula);
+    const { graphlet } = crearPrimitivas();
+    const conv = modelo.crearConversacion(graphlet);
     const p = planificador();
-    const provider = crearMockProvider({ nebula },
+    const provider = crearMockProvider({ graphlet },
       { programar: p.programar, cancelar: p.cancelar, respuestas: ['uno dos tres cuatro cinco'] });
     const asa = provider.responder(conv);
     p.avanzar(3);
-    const parcial = nebula.get(asa.mensajeId).properties.texto;
+    const parcial = graphlet.get(asa.mensajeId).properties.texto;
     asa.detener();
     eq('detener deja el mensaje interrumpido',
-      nebula.get(asa.mensajeId).properties.estado, modelo.ESTADO_INTERRUMPIDO);
-    eq('detener conserva lo ya recibido', nebula.get(asa.mensajeId).properties.texto, parcial);
+      graphlet.get(asa.mensajeId).properties.estado, modelo.ESTADO_INTERRUMPIDO);
+    eq('detener conserva lo ya recibido', graphlet.get(asa.mensajeId).properties.texto, parcial);
     eq('detener libera el temporizador', p.pendientes(), 0);
     asa.detener();
     eq('detener dos veces no altera el estado',
-      nebula.get(asa.mensajeId).properties.estado, modelo.ESTADO_INTERRUMPIDO);
+      graphlet.get(asa.mensajeId).properties.estado, modelo.ESTADO_INTERRUMPIDO);
   }
+
+  await ceder();
 
   // ---------------------------------------------------------------
   grupo('Coste del streaming',
@@ -265,63 +294,83 @@ function ejecutarCasos() {
   {
     // --- modelo ---
     for (const [N, T] of [[10, 200], [200, 200], [500, 200], [1000, 600]]) {
-      const { nebula, pulsar } = crearPrimitivas();
-      const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 't', debounceMs: 1e6 });
-      const conv = modelo.crearConversacion(nebula);
-      for (let i = 0; i < N - 1; i++) nebula.put(`message:p${i}`, { texto: 'x'.repeat(40), rol: 'user' });
-      const id = modelo.agregarMensaje(nebula, conv, { rol: 'assistant', texto: '', estado: modelo.ESTADO_EN_VUELO });
+      const { graphlet, pulsar } = crearPrimitivas();
+      const datos = arrancarDatos({ graphlet, pulsar, storage: stg(), clave: 't', debounceMs: 1e6 });
+      const conv = modelo.crearConversacion(graphlet);
+      for (let i = 0; i < N - 1; i++) graphlet.put(`message:p${i}`, { texto: 'x'.repeat(40), rol: 'user' });
+      const id = modelo.agregarMensaje(graphlet, conv, { rol: 'assistant', texto: '', estado: modelo.ESTADO_EN_VUELO });
       const t0 = performance.now();
-      for (let i = 0; i < T; i++) modelo.anexarTexto(nebula, id, 'token ');
+      for (let i = 0; i < T; i++) modelo.anexarTexto(graphlet, id, 'token ');
       const ms = (performance.now() - t0) / T;
       medModelo.push({ N, T, ms });
       datos.destruir({ guardarPendiente: false });
+      pintarMediciones();
+      await ceder();
     }
     const peorModelo = Math.max(...medModelo.map((m) => m.ms));
     ok('el coste del modelo por token cabe en el presupuesto de 16 ms',
       peorModelo < 16, `peor caso ${peorModelo.toFixed(3)} ms`);
 
     // --- DOM ---
+    //
+    // Cada iteración fuerza layout leyendo scrollHeight. Sin esa lectura el
+    // navegador agruparía el trabajo y la medición subestimaría el coste, que
+    // es justo lo que esta tabla existe para no hacer.
     const caja = document.getElementById('fixture');
+    const relleno = 'Mensaje previo de longitud media. '.repeat(3);
+
     for (const M of [10, 50, 200, 500]) {
-      const medir = (estrategia) => {
+      const preparar = () => {
         caja.innerHTML = '<div id="c" style="height:12rem;overflow:auto"></div>';
         const c = document.getElementById('c');
         const textos = [];
         for (let i = 0; i <= M; i++) {
           const el = document.createElement('article');
           const t = document.createElement('div');
-          t.textContent = i < M ? 'Mensaje previo de longitud media. '.repeat(3) : '';
+          t.textContent = i < M ? relleno : '';
           el.appendChild(t); c.appendChild(el); textos.push(t);
         }
-        let txt = '';
-        const t0 = performance.now();
-        for (let i = 0; i < 120; i++) {
-          txt += 'token ';
-          if (estrategia === 'total') {
-            c.textContent = '';
-            for (let j = 0; j <= M; j++) {
-              const el = document.createElement('article');
-              const t = document.createElement('div');
-              t.textContent = j < M ? 'Mensaje previo de longitud media. '.repeat(3) : txt;
-              el.appendChild(t); c.appendChild(el);
-            }
-          } else {
-            textos[M].textContent = txt;
-          }
-          void c.scrollHeight;   // fuerza layout, que es el coste real
-        }
-        return (performance.now() - t0) / 120;
+        return { c, textos };
       };
-      const tot = medir('total'), inc = medir('inc');
+
+      const { c: cTot } = preparar();
+      let txt = '';
+      const tot = medirConPresupuesto(() => {
+        txt += 'token ';
+        cTot.textContent = '';
+        for (let j = 0; j <= M; j++) {
+          const el = document.createElement('article');
+          const t = document.createElement('div');
+          t.textContent = j < M ? relleno : txt;
+          el.appendChild(t); cTot.appendChild(el);
+        }
+        void cTot.scrollHeight;
+      });
+
+      await ceder();
+
+      const { c: cInc, textos } = preparar();
+      let txt2 = '';
+      const inc = medirConPresupuesto(() => {
+        txt2 += 'token ';
+        textos[M].textContent = txt2;
+        void cInc.scrollHeight;
+      });
+
       medDom.push({ M, tot, inc });
+      pintarMediciones();
+      await ceder();
     }
     caja.innerHTML = '';
+
     const peorInc = Math.max(...medDom.map((m) => m.inc));
     ok('el repintado incremental cabe en el presupuesto de 16 ms',
       peorInc < 16, `peor caso ${peorInc.toFixed(3)} ms`);
     ok('el incremental es más barato que la reconstrucción en todos los tamaños',
       medDom.every((m) => m.inc < m.tot));
   }
+
+  await ceder();
 
   // ---------------------------------------------------------------
   grupo('Widget sobre DOM',
@@ -351,10 +400,10 @@ function ejecutarCasos() {
       </div>`;
 
     const raiz = document.getElementById('raiz');
-    const { nebula, pulsar } = crearPrimitivas();
-    const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 'nexus.test' });
+    const { graphlet, pulsar } = crearPrimitivas();
+    const datos = arrancarDatos({ graphlet, pulsar, storage: stg(), clave: 'nexus.test' });
 
-    montarInterfaz({ nebula, pulsar, raiz, modoRuta: 'hash' });
+    montarInterfaz({ graphlet, pulsar, raiz, modoRuta: 'hash' });
 
     // Envoltura de factory (Chunklet Contract §8): captura el asa del widget
     // sin que el código de producción tenga que exponerla por otra vía.
@@ -373,11 +422,11 @@ function ejecutarCasos() {
     eq('sin conversación activa no hay mensajes', zona.children.length, 0);
     eq('el aviso de vacío está visible', sinMensajes.hidden, false);
 
-    const conv = modelo.crearConversacion(nebula, { titulo: 'C' });
+    const conv = modelo.crearConversacion(graphlet, { titulo: 'C' });
     pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv } });
     eq('una conversación vacía no pinta mensajes', zona.children.length, 0);
 
-    const m1 = modelo.agregarMensaje(nebula, conv, { rol: 'user', texto: 'Hola' });
+    const m1 = modelo.agregarMensaje(graphlet, conv, { rol: 'user', texto: 'Hola' });
     eq('un mensaje se pinta', zona.children.length, 1);
     eq('el nodo lleva el id del modelo', zona.children[0].dataset.entity, m1);
     eq('el nodo lleva el rol', zona.children[0].dataset.rol, 'user');
@@ -387,7 +436,7 @@ function ejecutarCasos() {
 
     // --- la aserción central ---
     const p = planificador();
-    const provider = crearMockProvider({ nebula }, {
+    const provider = crearMockProvider({ graphlet }, {
       programar: p.programar, cancelar: p.cancelar,
       respuestas: ['uno dos tres cuatro cinco seis siete ocho nueve diez'],
     });
@@ -421,7 +470,7 @@ function ejecutarCasos() {
 
     // --- desplazamiento ---
     const hilo = raiz.querySelector('[data-zona="mensajes-scroll"]');
-    for (let i = 0; i < 12; i++) modelo.agregarMensaje(nebula, conv, { rol: 'user', texto: `relleno ${i}` });
+    for (let i = 0; i < 12; i++) modelo.agregarMensaje(graphlet, conv, { rol: 'user', texto: `relleno ${i}` });
     hilo.scrollTop = hilo.scrollHeight;
     const asa3 = provider.responder(conv, { texto: 'x y z' });
     p.agotar();
@@ -436,7 +485,7 @@ function ejecutarCasos() {
       hilo.scrollTop, arribaAntes);
 
     // --- cambio de conversación ---
-    const conv2 = modelo.crearConversacion(nebula, { titulo: 'Otra' });
+    const conv2 = modelo.crearConversacion(graphlet, { titulo: 'Otra' });
     pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv2 } });
     eq('cambiar de conversación vacía la vista', zona.children.length, 0);
     pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv } });
@@ -445,7 +494,7 @@ function ejecutarCasos() {
     // --- teardown ---
     Chunklet.unmount(main);
     eq('desmontar vacía la zona', zona.children.length, 0);
-    modelo.agregarMensaje(nebula, conv, { rol: 'user', texto: 'tras desmontar' });
+    modelo.agregarMensaje(graphlet, conv, { rol: 'user', texto: 'tras desmontar' });
     eq('tras desmontar el DOM ya no reacciona', zona.children.length, 0);
 
     datos.destruir({ guardarPendiente: false });
@@ -506,10 +555,12 @@ function pintarResultados() {
 }
 
 let yaCorrio = false;
-function ejecutar() {
+async function ejecutar() {
   $b.disabled = true;
+  $mc.className = 'marcador';
+  $mc.textContent = 'midiendo…';
   const t0 = performance.now();
-  ejecutarCasos();
+  await ejecutarCasos();
   pintarMediciones();
   const { total, fallos } = pintarResultados();
   $mc.className = 'marcador ' + (fallos === 0 ? 'ok' : 'mal');
