@@ -106,26 +106,6 @@ arbitrary routes.
 **Resolution path.** Same as C-T7. Test can be a natural extension of the C-T7 tests in the dedicated harness.
 
 
-### BRIDGE-REACTIVE — nebula↔Pulsar Bridge: reactive per-entity version
-
-**What it resolves.** The current bridge implementation (v0.1.0) is snapshot-based: every nebula mutation re-projects all entities into Pulsar, producing new object references for every entity regardless of whether it changed. Consumers using `subscribeSelector('entities.X', ...)` with default `Object.is` equality are notified on every graph mutation, not only when entity X changes. See `adapters/nebula-pulsar-bridge.spec.md` §7.2.
-
-The reactive version writes only the slice of the affected entity into Pulsar, preserving references for unaffected entities. Consumers then receive notifications only for entities that actually changed.
-
-**Why deferred.** The snapshot version fulfills the external correctness contract (state visible to consumers is identical). The reactive noise becomes a concern only when multiple widgets are subscribed under `entities.*`. Phase 0 does not build the widget factory; deferring to Phase 1 respects evidence-first design.
-
-**Empirical evidence (from `widget-bridge.html`, Phase 0 Punto 6).** With 8 entities in the projection and a single listener subscribed to one specific entity (`entities.user:watched`), **73% of the notifications received by that listener did not correspond to changes in the observed entity**. Concretely: 86 notifications observed, only 23 reflected a real change (JSON-serialized comparison). The measurement was made under manual interaction (individual button clicks); under sustained load (e.g., drag operations at 60Hz) the accumulated cost of ignored notifications would multiply.
-
-The theoretical asymptote is `(N-1)/N`: for N=8, expected ratio is ~87% ignored (observed 73% is close; the discrepancy comes from the interaction pattern including some `watched`-modifying clicks). For N=100, expected ratio approaches 99%. This quantifies what "does not scale" means for the snapshot version and informs when the reactive version must be prioritized.
-
-**Resolution path.** Three implementation paths identified in the mini-spec §7.4:
-- **Camino 1:** Inverse index in the bridge. Adapter maintains `Map<targetId, Set<sourceId>>` updated on every link/unlink. Consulted on delete for cascade.
-- **Camino 2 (recommended):** Full-scan in delete. All mutation methods except delete are O(1) (they know their affected entity by argument); delete performs one O(N) scan to discover incoming links. Aceptable because deletes are rare in target use cases.
-- **Camino 3:** Opt-in observability API in nebula. Cleanest but requires reopening the nebula Definition, which currently prohibits reactive APIs. Not recommended unless a real application demonstrates Camino 2 is insufficient.
-
-TEST 13 in `nebula-pulsar-bridge.test.html` documents the current snapshot limitation with asserts that expect reactive noise. When the reactive version lands, those asserts should invert; passing the inverted version is empirical evidence of the fix.
-
-
 ### WIDGET-COMPOSITION — Chunklet ctx: helper for "entity + related entities"
 
 **What it resolves.** A common widget pattern is rendering an entity plus the entities it references through relations (e.g., a dropdown showing its options, a card showing its children). With the bridge projecting entities in normalized form (properties + links as IDs, no expansion), a widget needs to subscribe to the entity it renders **and** to each of the referenced entities. Coordinating these subscriptions (adding/removing subscriptions when the reference set changes, cleanup on unmount) is boilerplate that will repeat in every widget.
@@ -339,6 +319,68 @@ instrument and not the canonical record.
 **Closed.** Fase 1, during the adapter-chain work.
 
 
+### BRIDGE-REACTIVE — closed
+
+**What it recorded.** The Bridge v0.1.0 was snapshot-based: every nebula
+mutation re-projected all entities into Pulsar, producing new object
+references for every entity regardless of whether it changed. Consumers using
+`subscribeSelector('entities.X', ...)` with default `Object.is` equality were
+notified on every graph mutation, not only when X changed. Empirical
+evidence: 73% reactive noise with N=8 (`widget-bridge.html`, Phase 0 Punto 6).
+
+**How it was closed.** Camino 2 (the one the item recommended): full-scan in
+`delete`, per-entity projection everywhere else. Bridge v0.3.0 replaces
+`_reprojectAll` in every mutation path with `_projectEntity(id)` or
+`_projectMany([id, ...afectados])`. `_reprojectAll` is retained for initial
+synchronization only. No changes to the Bridge's public contract, nor to
+Pulsar or nebula.
+
+**Correction to the item's language.** The old text said "all mutation
+methods except delete are O(1)". They are not, and the framing invited a
+wrong expectation. What Camino 2 buys, per mutation, is:
+
+- `nebula.get`: from N to 1.
+- listener invocations on entity subscribers: from N to 1.
+- `Object.freeze` operations: from 3N+2 to 5.
+
+**Not O(1) work.** The `{...actuales, [id]: entidad}` spread still copies N
+pointers, and `_deepFreeze` still walks N keys of the new `entities` map
+(shorting on `Object.isFrozen` on each child, but walking them anyway). Two
+O(N) costs the Camino 2 does not touch, and that dominate the wall-time
+figure. What Camino 2 buys is invocations of listener, calls to `get`, and
+freeze operations — not total work or proportional time. This correction is
+carried in the Bridge v0.3.0 header and in
+`nebula-pulsar-bridge.spec.md` §3.
+
+**Measurement.** Node instrument (`bench-proyeccion.mjs`), median of 15
+runs, 200 tokens per run, `update` on one entity in a graph of N:
+
+| N | get/mut | freeze/mut | witness invocations | ms/mut |
+|---|---|---|---|---|
+| 10 | 10 → 1 | 32 → 5 | 200 → 0 | 0.019 → 0.013 |
+| 100 | 100 → 1 | 302 → 5 | 200 → 0 | – |
+| 1000 | 1000 → 1 | 3002 → 5 | 200 → 0 | 0.580 → 0.429 |
+
+The wall-time gain (26 % at N=1000) is smaller than the count reductions
+because of the two residual O(N) costs above. The purpose was noise
+reduction, and noise went from 200/200 to 0/200 in the observed case.
+
+**Evidence.** `graphlet-pulsar-bridge_test.v0.2.0.html`: 50/50, including
+the inverted TEST 13 that the arnés carried as aspirational since v0.1.0
+(see its own diagnostic note, preserved verbatim in the new version). Its
+inversion is the empirical evidence the item asked for.
+
+**Related item opened.** `BRIDGE-SYNC` in `PHASE_1_DEFERRED.md`. The old
+TEST 2 asserted that after the first mutation following `skipInitialSync:
+true`, the projection included all entities. That was a side effect of the
+snapshot implementation, not a contract property. Reactive per-entity
+projects only the touched entity. The rewritten TEST 2 asserts only what
+the contract guarantees; the missing reconciliation-on-demand capability is
+recorded as `BRIDGE-SYNC` for Phase 1.
+
+**Closed.** Fase 1, during the plan `CIERRE_BRIDGE_REACTIVE.md`.
+
+
 ## Not Debt (Recorded for Clarity)
 
 The following observations were investigated but are **not** deferred debt.
@@ -413,17 +455,16 @@ re-derive the conclusion from the v0.2.2 code.
 | V-T3 | Voyajer | base with regex metacharacters | Playwright (Escena 3a.2) |
 | C-T7 | Chunklet | enable/disable with `enabledPath` | Dedicated harness OR Playwright |
 | C-2 sym | Chunklet | toggle predictability | Dedicated harness OR Playwright |
-| BRIDGE-REACTIVE | Bridge adapter | reactive per-entity projection (73% noise quantified with N=8) | Phase 1 (Camino 2 recommended) |
 | WIDGET-COMPOSITION | Chunklet ctx | helper for entity + related | Iterative during Punto 6 and Phase 1 |
 | PERSISTENCE-INDEXEDDB | Persistence adapter | IndexedDB backend for large snapshots | v0.2.0 when evidence demands it |
 | ADAPTER-UTILS-DEDUP | All wrapper-pattern adapters | shared helper for set-semantics no-op detection | Fase 1; blocker spent, placement undecided |
 | CHAIN-HARNESS-PORT | Adapter chain, Voyajer, Pulsar | browser-native record for the chain work; 241 assertions not re-run | Port validators, before adapters v0.2.0 |
 
-**Total items deferred:** 9.
+**Total items deferred:** 8.
 
 **Breakdown by nature:**
 - **Testing infrastructure (5):** V-T2, V-T3, C-T7, C-2 sym, CHAIN-HARNESS-PORT. The first four resolve via dedicated harness reorganization or Playwright; the fifth needs no new infrastructure, only the work.
-- **Implementation quality (2):** BRIDGE-REACTIVE (evidence quantified: 73% reactive noise with N=8) and PERSISTENCE-INDEXEDDB (evidence pending; localStorage sufficient for current target scale).
+- **Implementation quality (1):** PERSISTENCE-INDEXEDDB (evidence pending; localStorage sufficient for current target scale).
 - **Emerging capability (1):** WIDGET-COMPOSITION. Discovered while validating the bridge; form to be discovered by widget construction, not by advance specification.
 - **Code consolidation (1):** ADAPTER-UTILS-DEDUP. ~80 lines were duplication across four adapters; the chain absorbed the installation and teardown half, leaving the set-semantics detection. No longer blocked, only undecided.
 

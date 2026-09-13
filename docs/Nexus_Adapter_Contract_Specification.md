@@ -278,11 +278,19 @@ Producing the mini-specs alongside the implementations, rather than in advance, 
 
 ### 5.2 Note on the nebula ↔ Pulsar Bridge
 
-The generic bridge described in item 1 above will initially be implemented as a **snapshot-based projection**: any nebula mutation triggers a full re-projection of the affected entity type into Pulsar. This is the version that will be produced in Punto 5.
+The Bridge projects reactively per entity: only the specific entity's slice
+in Pulsar is written when its nebula record changes, and unaffected entities
+preserve their object reference. That is what lets Chunklet behaviors
+subscribe with `subscribeSelector('entities.X', ...)` and receive
+notifications only when X actually changes.
 
-The **correct long-term implementation** projects reactively per entity: only the specific entity's slice in Pulsar is updated when its nebula record changes. This requires either additional observability primitives in nebula (an opt-in change notification API) or an intermediate change-detection layer built into the bridge itself.
-
-The initial snapshot-based version is sufficient for early applications where the entity set is small, but it does not scale. The mini-specification of the bridge will describe the correct behavior; the first implementation will document its own limitations and the path to the reactive version.
+**Historical note.** Bridge v0.1.0 and v0.2.0 were snapshot-based: every
+mutation re-projected all entities, and subscribers received notifications
+for every graph mutation regardless of what changed. That behavior was
+recorded as `BRIDGE-REACTIVE` in `PHASE_0_DEFERRED.md` and closed during
+Fase 1 by the plan `CIERRE_BRIDGE_REACTIVE.md`, taking Camino 2 (full-scan
+in `delete`, per-entity projection elsewhere). Measurement and the
+correction to the "O(1)" framing are in that closed item.
 
 
 ### 5.3 Shared Adapter Infrastructure

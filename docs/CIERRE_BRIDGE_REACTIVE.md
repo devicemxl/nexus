@@ -459,30 +459,36 @@ esperar en el del Bridge. De las tres, dos eran las prometidas por el propio
 arnés y una era una errata en el arnés. Ninguna era regresión, así que la
 comparación con una línea base intermedia no habría añadido nada.
 
-### Fase 4 — Registro canónico y documentos
+### Fase 4 — cerrada
 
-**Test canónico.** La propiedad "el Bridge preserva la referencia de las
-entidades no afectadas" pasa a `nebula-pulsar-bridge.test.html`, en términos de
-la primitiva. Es la forma que sobrevive a la retirada del testigo.
+Cuatro documentos actualizados en un solo lote:
 
-**Invertir TEST 13.** El arnés del Bridge lo tiene escrito como test
-aspiracional. Pasar la versión invertida es la evidencia empírica del arreglo, y
-es el momento para el que se escribió.
-
-**Documentos que dejan de ser ciertos el mismo día:**
-
-| Documento | Qué cambia |
+| Documento | Qué cambió |
 |---|---|
-| `PHASE_0_DEFERRED.md` | `BRIDGE-REACTIVE` a *Closed After Phase 0*: camino tomado, medición antes/después, corrección del "O(1)" |
-| `nebula-pulsar-bridge.spec.md` §7 | Describe entera la implementación snapshot y sus dos diferencias con la reactiva. Deja de aplicar |
-| `nebula-pulsar-bridge.spec.md` §3 | Deja de ser la versión correcta aspiracional y pasa a describir el código |
-| `Nexus_Adapter_Contract_Specification.md` §5.2 | Afirma que la implementación inicial es snapshot-based. Es lo primero que lee alguien de fuera |
+| `PHASE_0_DEFERRED.md` | `BRIDGE-REACTIVE` movido a *Closed After Phase 0* con camino tomado, medición antes/después, tabla de conteos por magnitud, y la corrección del "O(1)". Total de diferidos: **8** (era 9). |
+| `graphlet-pulsar-bridge_spec.md` §3 | Deja de titularse "Correct, Reactive Version" y pasa a describir el código. Incluye la nota de coste que aclara qué compra la proyección por entidad y qué no. |
+| `graphlet-pulsar-bridge_spec.md` §7 | La antigua "Note on Initial Implementation" queda como *Historical Note*: qué era el snapshot, cómo se cerró, y por qué el TEST 13 invertido es la evidencia. |
+| `Nexus_Adapter_Contract_Specification.md` §5.2 | Deja de anunciar la implementación inicial como snapshot-based; describe el Bridge reactivo y arrastra el histórico como nota. |
+| `PHASE_0_CLOSURE.md` §1.2 y §5 | Conteo del arnés del Bridge actualizado (v0.3.0, arnés v0.2.0 del test). Añadida revisión post-Fase 0 explicando la sustitución. |
 
-**La corrección del "O(1)".** El texto actual dice que todos los métodos salvo
-`delete` son O(1). No lo son: `{...actuales, [id]: entidad}` copia N punteros y
-no hay forma de evitarlo sin romper la inmutabilidad de Pulsar. Lo que el Camino
-2 compra es invocaciones de listener, llamadas a `get` y trabajo de congelado por
-mutación, no trabajo total. Corregir la frase antes de cerrar, no después.
+**El TEST 13 y la corrección del TEST 2** ya viven en
+`graphlet-pulsar-bridge_test.v0.2.0.html` desde la Fase 3. La Fase 4 sólo tenía
+que registrar el hecho en los documentos que lo describían al revés.
+
+**El TEST canónico previsto** —"el Bridge preserva la referencia de las
+entidades no afectadas"— resulta ser exactamente el TEST 13 invertido. No hay
+un test canónico nuevo que escribir en `graphlet-pulsar-bridge_test.v0.2.0.html`:
+el que había sirve una vez invertido, que es lo que su propia nota diagnóstica
+prometía. Este hallazgo (que la forma durable ya existía) se registró como
+tal en lugar de duplicarla.
+
+**La corrección del "O(1)"** quedó registrada en tres sitios donde importa: el
+comentario del propio Bridge (v0.3.0), la nota de coste en §3 del spec, y la
+tabla en el ítem cerrado del registro de deuda. La frase original —"all
+mutation methods except delete are O(1)"— era doblemente inexacta: el spread y
+`_deepFreeze` siguen visitando N claves. Lo que Camino 2 compra son
+invocaciones de listener, llamadas a `get` y operaciones de `freeze` por
+mutación. No trabajo total ni tiempo proporcional a la cuenta.
 
 
 ## 7. Riesgos y condición de abandono
@@ -524,7 +530,7 @@ ejecuta igual salga lo que salga, y entonces medir en la Fase 0 es decorativo.
 3. Los siete métodos de mutación proyectan por entidad o por conjunto acotado.
    Ninguna **ruta de mutación** llama a `_reprojectAll`; la sincronización
    inicial sí lo hace, y eso es correcto.
-4. TEST 13 invertido y verde en `nebula-pulsar-bridge.test.html`.
+4. TEST 13 invertido y verde en `graphlet-pulsar-bridge_test.v0.2.0.html`.
 5. La tabla de §5 medida antes y después, registrada diga lo que diga.
 6. Los cuatro documentos de la Fase 4 actualizados, incluida la corrección del
    "O(1)".

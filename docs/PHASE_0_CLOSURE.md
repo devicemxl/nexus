@@ -24,13 +24,23 @@ Todas ejecutan sin bundlers, sin Node.js runtime, importables por ES module desd
 
 | Capa | Adapter | Versión | Harness | Widget canónico |
 |---|---|---|---|---|
-| 9 | Bridge nebula↔Pulsar | 0.1.0 | 50/50 | `widget-bridge.html` |
+| 9 | Bridge nebula↔Pulsar | 0.3.0 | 50/50 (v0.2.0 del arnés) | `widget-bridge.html` |
 | 10 | Hydration | 0.1.0 | 41/41 | `widget-hydration.html` |
 | 11 | Persistence | 0.1.0 | 50/50 | `widget-persistence.html` |
 | 12 | External Event (BroadcastChannel) | 0.1.0 | 42/42 | `widget-external-event.html` |
 | 13 | Logging / Observability | 0.1.0 | 58/58 | `widget-logging.html` |
 
 **Total: 241 aserciones verdes de harness. 5 widgets canónicos validados empíricamente con reporte de usuario.**
+
+**Revisión post-Fase 0 (Fase 1, cierre de BRIDGE-REACTIVE).** El arnés del
+Bridge se reescribió a v0.2.0 tras migrar a proyección reactiva por entidad:
+50/50 se mantiene. El TEST 13, que llevaba dos aserciones invertidas a
+propósito desde v0.1.0 con la nota de que su inversión sería la evidencia
+del cierre, cumple ahora esa promesa. El TEST 2 se reescribió para afirmar
+sólo lo que el contrato garantiza; la capacidad que faltaba está en
+`BRIDGE-SYNC` (`PHASE_1_DEFERRED.md`). Los otros cuatro arneses tienen los
+mismos conteos que en Fase 0 — el diferencial predijo que no debían cambiar
+y se verificó tras la migración.
 
 Capa 12 se declara **cerrada en lo que resuelve** con deuda cross-adapter formalmente registrada (ítems 12-BRIDGE-INTEGRATION y 12-PERSISTENCE-INTEGRATION).
 
@@ -64,7 +74,7 @@ Capa 12 se declara **cerrada en lo que resuelve** con deuda cross-adapter formal
 **10 ítems formales en `PHASE_0_DEFERRED.md`**, todos con resolution path explícito y clasificados por naturaleza:
 
 - **4 de testing infrastructure** (V-T2, V-T3, C-T7, C-2 sym): resolubles con Playwright o harness dedicado; comprometidos a Escena 3.3 del roadmap.
-- **3 de implementation quality** (BRIDGE-REACTIVE, PERSISTENCE-INDEXEDDB, y el par 12-BRIDGE/PERSISTENCE-INTEGRATION): satisfechos externamente, resolubles cuando aparezca evidencia empírica que demande la mejora. BRIDGE-REACTIVE tiene ya evidencia cuantificada (73% ruido reactivo con N=8) que informa timing.
+- **1 de implementation quality** (PERSISTENCE-INDEXEDDB): satisfecho externamente, resoluble cuando aparezca evidencia empírica que demande la mejora. BRIDGE-REACTIVE y el par 12-BRIDGE/PERSISTENCE-INTEGRATION quedaron cerrados en Fase 1 (ver `PHASE_0_DEFERRED.md` *Closed After Phase 0*).
 - **1 de capacidad emergente** (WIDGET-COMPOSITION): forma exacta se descubrirá iterativamente durante construcción de widgets en Fase 1.
 - **1 de consolidación de código** (ADAPTER-UTILS-DEDUP): ~80 líneas duplicadas entre cuatro adapters; consolidación en Fase 1 cuando un quinto o sexto adapter provea evidencia de la forma correcta del helper.
 
@@ -111,7 +121,6 @@ Fase 1 tiene por objetivo **construir la widget factory** como reemplazo funcion
 Estos son ítems diferidos en Fase 0 cuya resolución probablemente sea prioritaria al construir la widget factory:
 
 - **WIDGET-COMPOSITION** (helper `ctx` para entity + related): emergerá con el primer widget que renderice una entidad más sus relaciones.
-- **BRIDGE-REACTIVE** (Camino 2): activable cuando la widget factory monte múltiples widgets suscritos a `entities.*`, momento en que el 73% de ruido cuantificado en Fase 0 dejará de ser tolerable.
 - **12-BRIDGE-INTEGRATION** y **12-PERSISTENCE-INTEGRATION** (sync remoto que re-proyecta y persiste en receptor): urgente si Fase 1 construye una aplicación que combina External Event con Bridge y/o Persistence.
 
 Estos son movimientos previstos, no compromisos formales. La disciplina "evidencia antes que decisión" (Article I) sigue aplicando: cada uno se resuelve cuando su fricción sea empíricamente observada, no antes.
@@ -129,7 +138,7 @@ Estos son movimientos previstos, no compromisos formales. La disciplina "evidenc
 
 Los tres adjetivos que definen el estado — empíricamente verificable, documentalmente coherente, con deuda formalizada — no son aspiraciones sino descripciones. Cada uno tiene evidencia concreta:
 
-- **Empíricamente verificable:** 241 asertos verdes en harness + 5 widgets con reporte de usuario.
+- **Empíricamente verificable:** 241 asertos verdes en harness + 5 widgets con reporte de usuario. Tras cerrar BRIDGE-REACTIVE en Fase 1, el conteo se mantiene con el arnés v0.2.0 del Bridge.
 - **Documentalmente coherente:** 11 documentos vivos con referencias cruzadas verificadas en `AUDIT_REPORT.md`.
 - **Con deuda formalizada:** 10 ítems en `PHASE_0_DEFERRED.md` con resolution path, cero ítems en estado "unknown".
 
