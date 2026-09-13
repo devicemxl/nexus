@@ -1,8 +1,36 @@
 # Nexus Adapter Contract Specification
 
-**Version:** 0.3.0
-**Status:** Design Contract (pre-implementation)
+**Version:** 0.4.0
+**Status:** Design Contract (aligned with implementations: Bridge 0.2.0, Hydration 0.2.0, Persistence 0.2.0, External Event 0.2.0, Logging 0.2.0)
 **Scope:** Generic contract for adapters that bridge the Nexus primitives with each other or with external systems.
+
+**Changes from v0.3.0 (breaking for adapter authors, non-breaking for applications):**
+- New §3.5 (**Wrapper Installation and Teardown**) makes the wrapper mechanism
+  part of the generic contract instead of a convention repeated in each
+  mini-spec. Adapters install wrappers through `adapter-chain.js`; direct
+  assignment to a primitive's method and direct restoration on destroy are now
+  forbidden. The change removes an unwritten global invariant — that adapters
+  had to be destroyed in reverse instantiation order — that produced silent
+  loss of observation when violated.
+- §3.3 corrects a bullet that described the wrapper mechanism inaccurately. The
+  previous text claimed adapters wrap "on a captured reference, not by mutating
+  the exported method", which no implemented adapter satisfied: all four wrapper
+  adapters assign to `nebula.put` and the rest on the received instance.
+  Article II governs the correction — the contract now describes what adapters
+  actually do and constrains it, rather than forbidding in words what it
+  permitted in practice.
+- §4.2 corrects the method count. The text said adapters wrap "the eight nebula
+  mutation methods" and then listed seven. The same error is present in
+  `nebula-pulsar-bridge.spec.md` §3.1 and `persistence-adapter.spec.md` §3.1;
+  `external-event-adapter.spec.md` §3.1 says seven and is correct. `query` is a
+  read, not a mutation, and no adapter wraps it.
+- §5.3 records `adapter-chain.js` as shared adapter infrastructure and states
+  its position with respect to the Nexus Contract dependency hierarchy.
+- §6 gains three guarantee rows: order-independent teardown, chain
+  reachability, and self-skipping reinjection.
+- Consequence outside this document: the deferred items
+  `12-BRIDGE-INTEGRATION` and `12-PERSISTENCE-INTEGRATION` are **resolved** by
+  §3.5. See §5.4.
 
 **Changes from v0.2.0 (breaking):**
 - Rewritten as a **generic contract plus enumerated catalog**. Adapter-specific specifications (signatures, options, behavior) are no longer part of this document; each concrete adapter gets its own mini-spec at implementation time.
@@ -71,7 +99,7 @@ Every adapter must:
 - **Return `destroy()`.** No exceptions. The application must always be able to release the adapter's resources.
 - **Release all resources on `destroy`.** Event listeners, subscriptions, timers, observers, network connections — everything acquired must be released.
 - **Be safe against double-destroy.** Calling `destroy()` twice must not throw and must not attempt to release resources a second time.
-- **Not modify the public API of consumed primitives.** An adapter that wraps `nebula.link` internally does so on a captured reference, not by mutating the exported method.
+- **Not change the observable semantics of the methods it wraps.** An adapter installs wrappers on the instance it received (see §3.5), which is how observation works at all. What it must not do is alter the signature, the return value, the thrown errors, or the effect of the wrapped method. A wrapper observes and produces side effects; it does not transform the call. A wrapper that deliberately blocks a mutation is possible but is a different kind of component, and its mini-spec must declare it.
 - **Not create primitives.** All primitives passed via `context` must be pre-existing instances created by the application.
 
 ### 3.4 Forbidden Behaviors
@@ -82,6 +110,112 @@ Adapters must not:
 - Register `beforeunload` or `unload` listeners. These disable browser optimizations (bfcache) and are hostile to application-level lifecycle management.
 - Throw during `destroy` under normal conditions. Cleanup errors should be caught and logged internally.
 - Depend on other adapters implicitly. If adapter A requires adapter B to have run first, the mini-specification of A must document this dependency and the application is responsible for the ordering.
+- Assign directly to a method of a consumed primitive, or restore one directly on destroy. Both go through the chain (§3.5). Direct assignment is what made teardown order load-bearing.
+- Require a particular destroy order relative to other adapters. If an adapter cannot be destroyed at an arbitrary point in the lifetime of its peers, that is a defect, not a documented constraint.
+
+
+### 3.5 Wrapper Installation and Teardown
+
+Adapters that observe a primitive's mutations do so by wrapping methods on the
+instance they received. This section defines how, and is mandatory.
+
+#### 3.5.1 The problem it solves
+
+The natural implementation — capture the current method, assign a wrapper,
+restore the captured method on destroy — composes correctly only if adapters
+are destroyed in reverse instantiation order:
+
+```text
+original
+A installs → A_put  (delegates to original)
+B installs → B_put  (delegates to A_put)
+```
+
+If `A.destroy()` runs first, it assigns `original` back and **B silently leaves
+the chain**: its projection, persistence or broadcast stops happening, with no
+error and no warning. When `B.destroy()` runs afterwards it reinstalls `A_put`,
+a wrapper belonging to a destroyed adapter, permanently.
+
+The `if (destroyed) return original(...)` guard that adapters carried prevents
+the call from breaking. It does not prevent the wrapper from not running.
+
+This was an unwritten global invariant. An application that happened to tear
+down in LIFO order was correct by accident; a test releasing in creation order,
+a hot reload, or a consumer destroying "for convenience" broke observation
+without any symptom.
+
+#### 3.5.2 The mechanism
+
+`adapter-chain.js` maintains one dispatcher per `(instance, method)` pair. The
+dispatcher consults the list of live entries on every invocation, so removing
+an entry is a splice in that list rather than a restoration of a captured
+reference. **Teardown order stops being observable.**
+
+```javascript
+import { wrap, unwrap, invokeSkipping } from './adapter-chain.js';
+
+const handle = wrap(nebula, 'put', function (next, id, properties) {
+  const result = next(id, properties);      // rest of the chain, then original
+  doSomething();
+  return result;
+});
+
+// on destroy:
+unwrap(handle);
+```
+
+Rules:
+
+1. **`next` is the rest of the chain.** A wrapper that does not call `next`
+   cuts the mutation. Legitimate, but it must be deliberate and declared in the
+   mini-spec (§3.3).
+2. **Execution order is last-registered-first.** The most recently installed
+   adapter is the outermost wrapper, preserving the semantics of the manual
+   nesting this replaces.
+3. **Every `wrap` returns a handle, and every handle is released on destroy.**
+   `unwrap` is idempotent and order-independent.
+4. **The original method is restored only when the last entry leaves**, and only
+   if the dispatcher is still the installed method. If something replaced it
+   outside the chain, the chain warns and does not restore, so as not to
+   overwrite whoever wrote on top.
+
+#### 3.5.3 Reinjection without self-observation
+
+An adapter that must apply a mutation without observing it itself — the case of
+an External Event adapter applying a mutation received from a peer without
+rebroadcasting it — uses:
+
+```javascript
+invokeSkipping(handle, args);
+```
+
+This traverses the whole chain skipping only the caller's entry.
+
+The pattern it replaces was to capture the original method at construction time
+and call it directly. That skipped not only the caller's wrapper but every
+wrapper installed **after** it, which made a documented behavior depend on
+instantiation order. Measured on the implemented adapters, with a remote
+mutation delivered through an injected channel:
+
+| Instantiation order | applied to graph | projected to Pulsar | persisted |
+|---|---|---|---|
+| External Event first | yes | no | no |
+| External Event last | yes | yes | yes |
+
+Both rows were produced by the same code. The "known limitation" was an
+artifact of montage order. `invokeSkipping` removes the dependency: the
+reinjected mutation always reaches the rest of the chain.
+
+#### 3.5.4 Scope
+
+The chain applies to any instance method an adapter wraps, not only nebula's.
+The Logging adapter wraps `pulsar.setState` through the same mechanism.
+
+Bulk loading is a separate concern and is **not** solved by the chain. The
+invariant established in `ESCENA_1_1_ARRANQUE.md` §6 — mass data loading
+happens before any adapter wraps the graph, or with the adapters explicitly
+destroyed — remains in force for the reason stated there: the cost is
+structural (2N `setState` calls, each O(N)), not a teardown-order artifact.
 
 
 ## 4. Composition Rules
@@ -94,7 +228,7 @@ Adapters that read from Pulsar should use `subscribeSelector` with the narrowest
 
 ### 4.2 With nebulaJS
 
-Adapters that observe nebula mutations do so by wrapping the eight mutation methods (`put`, `upsert`, `update`, `delete`, `link`, `unlink`, `unlinkAll`, and additionally `query` if the adapter needs to react to reads). Wrapping is done in the adapter's factory by capturing the original methods and installing wrappers that call through and then produce side effects.
+Adapters that observe nebula mutations do so by wrapping the **seven** mutation methods (`put`, `upsert`, `update`, `delete`, `link`, `unlink`, `unlinkAll`) through the chain described in §3.5. `query` is a read and is not wrapped by any first-generation adapter; an adapter that needed to react to reads would wrap it through the same mechanism and say so in its mini-spec.
 
 Adapters must respect set semantics for links (nebula Contract §2.3) — an adapter that emits change events on `link` must emit on the first insertion of a triple, not on subsequent no-op calls.
 
@@ -151,6 +285,59 @@ The **correct long-term implementation** projects reactively per entity: only th
 The initial snapshot-based version is sufficient for early applications where the entity set is small, but it does not scale. The mini-specification of the bridge will describe the correct behavior; the first implementation will document its own limitations and the path to the reactive version.
 
 
+### 5.3 Shared Adapter Infrastructure
+
+`adapter-chain.js` is **not** an adapter and does not appear in the catalog. It
+is shared infrastructure: a module with no dependencies, imported by adapters
+only, that exposes `wrap`, `unwrap`, `invokeSkipping` and `depth`. It has no
+`destroy`, holds no application state, and never references a primitive by
+import — it receives instances as arguments like any adapter does.
+
+Its position with respect to the Nexus Contract §3 hierarchy requires no change
+to that document. The Law of Hierarchy governs the four primitives; adapters
+and their infrastructure already live at Level 4, instantiated and composed by
+the application. The chain sits below the adapters and above nothing:
+
+```text
+primitives (Levels 0-3)
+     ▲
+     │ receives instances as arguments, never imports them
+adapter-chain.js        ← shared infrastructure, zero dependencies
+     ▲
+adapters                ← import the chain
+     ▲
+application (Level 4)   ← instantiates adapters
+```
+
+No primitive imports the chain. No primitive knows it exists. The enforcement
+rules of Nexus Contract §3 are unaffected.
+
+### 5.4 Effect on Previously Deferred Items
+
+`PHASE_0_DEFERRED.md` carried two items, `12-BRIDGE-INTEGRATION` and
+`12-PERSISTENCE-INTEGRATION`, recording that mutations arriving from a peer tab
+did not re-project through the Bridge nor persist in the receiving tab. Both
+are **resolved** by §3.5.3, and resolved together, as that document predicted
+they would be.
+
+Worth recording, because it bears on how the remaining deferred items are
+read: the resolution is option (c) of the three that
+`12-BRIDGE-INTEGRATION` listed — "restructuring wrappers into a single
+dispatcher chain instead of independent monkey-patches". The two options
+favored at the time, an `isRemote` flag and a shared remote-context signal,
+both required each adapter to learn something about the others. The chain needs
+none of that: skipping is by identity of the caller's own entry, and the
+adapters remain mutually ignorant, which §2 requires of them.
+
+The item was deferred waiting for "evidence of the pattern's cost in a real
+application". The evidence that arrived was of a different kind — the same root
+cause surfaced as a teardown-order defect, and fixing that dissolved this one.
+That is worth noting for its own sake: an item deferred pending evidence can be
+closed by work undertaken for another reason, and the register should be read
+with that possibility in mind rather than as a queue awaiting its predicted
+trigger.
+
+
 ## 6. Behavioral Guarantees
 
 | Guarantee | Description |
@@ -158,7 +345,10 @@ The initial snapshot-based version is sufficient for early applications where th
 | **Mandatory destroy** | Every adapter returns `destroy()`. No exceptions. |
 | **Idempotent destroy** | Calling destroy twice is safe. |
 | **Resource ownership** | Adapters release all resources they acquire, on destroy. |
-| **No primitive mutation** | Adapters do not modify the public API of consumed primitives. |
+| **Semantics preserved** | Adapters wrap methods but do not change their signature, return value, thrown errors, or effect. |
+| **Order-independent teardown** | Destroying an adapter never removes another adapter from the chain, regardless of the order relative to instantiation. |
+| **Chain reachability** | A mutation invoked on a wrapped method traverses every live wrapper installed on it. |
+| **Self-skipping reinjection** | An adapter may reapply a mutation through the chain skipping only its own entry, without any coordination with the other adapters. |
 | **No primitive creation** | Adapters do not create primitives; they receive existing instances. |
 | **No global handlers** | Adapters do not install window-level handlers except when their purpose is browser bridging (documented per adapter). |
 | **No implicit dependencies** | An adapter that depends on another adapter documents this explicitly. |
