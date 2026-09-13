@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Fase 1 — Rojo (BRIDGE-REACTIVE)</title>
+<style>
+  body { font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 2rem; max-width: 62rem; }
+  h1 { font-size: 1.1rem; }
+  h2 { font-size: 1rem; margin-top: 2rem; }
+  table { border-collapse: collapse; margin: 1rem 0; }
+  th, td { border: 1px solid #ccc; padding: .3rem .6rem; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  .ok { color: #157f3d; }
+  .rojo { color: #b3261e; font-weight: bold; }
+  .nota { color: #555; }
+  #banco { position: absolute; left: -9999px; }
+  #marcador { padding: .5rem .8rem; border: 1px solid #ccc; display: inline-block; }
+</style>
+</head>
+<body>
+
+<h1>Fase 1 — Rojo</h1>
+<p class="nota">
+  Línea base de la Fase 0, con el Bridge snapshot: 100 tokens en A con B activa
+  producen <strong>100 invocaciones y 0 repintados</strong>. T1 es esa cifra
+  convertida en aserción. Se espera <strong>exactamente una roja</strong>.
+</p>
+
+<!-- Los testigos se montan aquí, fuera de vista. Son andamio; se retiran
+     de una pieza al cerrar la Fase 4. -->
+<div id="banco"></div>
+
+<div id="salida"></div>
+
+<script type="module">
+import { createNebula } from '../../src/nebula.js';
+import { createStatePulsar } from '../../src/pulsar.js';
+import * as Chunklet from '../../src/chunklet.js';
+import { createNebulaPulsarBridge } from '../../src/adapters/nebula-pulsar-bridge.js';
+import { relojSesionFactory, NOMBRE } from './reloj-sesion.js';
+
+const TOKENS = 100;
+const salida = document.getElementById('salida');
+const banco = document.getElementById('banco');
+
+let ok = 0, rojo = 0;
+const rojas = [];
+
+function seccion(t) { const h = document.createElement('h2'); h.textContent = t; salida.appendChild(h); }
+function linea(html) { const p = document.createElement('p'); p.innerHTML = html; salida.appendChild(p); }
+function tabla(cabs, filas) {
+  const t = document.createElement('table');
+  t.innerHTML = '<tr>' + cabs.map(c => `<th>${c}</th>`).join('') + '</tr>' +
+    filas.map(f => '<tr>' + f.map(c => `<td>${c}</td>`).join('') + '</tr>').join('');
+  salida.appendChild(t);
+}
+function assert(nombre, cond, detalle) {
+  if (cond) { ok++; linea(`<span class="ok">ok</span> &nbsp; ${nombre}`); }
+  else { rojo++; rojas.push(nombre); linea(`<span class="rojo">ROJO</span> &nbsp; ${nombre} — ${detalle}`); }
+}
+
+// ---------------------------------------------------------------------------
+// Stack. Grafo poblado antes de montar el Bridge (invariante de la Escena 1.1).
+// ---------------------------------------------------------------------------
+const nebula = createNebula();
+const pulsar = createStatePulsar({ ui: {}, entities: {} });
+const ahora = Date.now();
+
+nebula.upsert('conversation:A', { titulo: 'A', creadaEn: ahora - 42000 });
+nebula.upsert('conversation:B', { titulo: 'B', creadaEn: ahora - 9000 });
+nebula.upsert('message:a1', { texto: '', creadoEn: ahora });
+nebula.link('conversation:A', 'contiene', 'message:a1');
+
+const bridge = createNebulaPulsarBridge({ nebula, pulsar }, { path: 'entities' });
+
+Chunklet.setup({ pulsar, nebula });
+Chunklet.define(NOMBRE, relojSesionFactory);
+
+// Cada test monta su propio testigo por la vía real de Chunklet y lo desmonta.
+let seq = 0;
+function conTestigo(fn) {
+  const el = document.createElement('div');
+  el.id = `testigo-${++seq}`;
+  el.setAttribute('data-chunk', NOMBRE);
+  el.setAttribute('data-modo', 'medicion');
+  el.innerHTML = '<span data-reloj></span>';
+  banco.appendChild(el);
+  Chunklet.mount(el);
+  const instrumento = el.__instrumento;
+  instrumento.reiniciar();
+  try { return fn(instrumento); }
+  finally { Chunklet.unmount(el); el.remove(); }
+}
+
+function activar(id) {
+  pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: id } });
+}
+
+/** T1 — el reloj de B no debe despertarse por lo que pase dentro de A. */
+function T1() {
+  activar('conversation:B');
+  return conTestigo((inst) => {
+    for (let i = 0; i < TOKENS; i++) nebula.update('message:a1', { texto: 'x'.repeat(i) });
+    return inst.invocaciones;
+  });
+}
+
+/** T2 — el reloj de A sí debe despertarse cuando su propia entidad cambia. */
+let renombres = 0;
+function T2() {
+  activar('conversation:A');
+  return conTestigo((inst) => {
+    nebula.update('conversation:A', { titulo: `A renombrada ${++renombres}` });
+    return inst.invocaciones;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Corrida contra el Bridge actual
+// ---------------------------------------------------------------------------
+seccion('1. Bridge snapshot — el que hay hoy');
+
+const actual = { t1: T1(), t2: T2() };
+
+tabla(['test', 'invocaciones', 'esperado'], [
+  [`T1 — reloj de B, ${TOKENS} tokens en A`, actual.t1, '0'],
+  ['T2 — reloj de A, renombrar conversation:A', actual.t2, '≥ 1'],
+]);
+
+assert('T1 — el reloj de B no despierta por tokens de A',
+  actual.t1 === 0, `despertó ${actual.t1} veces (línea base de Fase 0: ${TOKENS})`);
+
+assert('T2 — el reloj de A despierta al cambiar su propia entidad',
+  actual.t2 >= 1, `no despertó (${actual.t2})`);
+
+// ---------------------------------------------------------------------------
+// D-6 — el par tiene que discriminar
+// ---------------------------------------------------------------------------
+seccion('2. D-6 — matriz de falsación');
+linea('Un Bridge que simplemente dejara de notificar pasaría T1 sin arreglar nada. ' +
+      'El par sirve si, y sólo si, cada modo de fallo enrojece una aserción distinta.');
+linea('<span class="nota">El "Bridge mudo" no necesita código falso: destruir el Bridge ' +
+      'deja la proyección congelada en su último estado, que es exactamente esa conducta.</span>');
+
+bridge.destroy();
+const mudo = { t1: T1(), t2: T2() };
+
+const v = (t1, t2) => `${t1 === 0 ? '<span class="ok">verde</span>' : '<span class="rojo">ROJO</span>'} / ` +
+                      `${t2 >= 1 ? '<span class="ok">verde</span>' : '<span class="rojo">ROJO</span>'}`;
+
+tabla(['Bridge', 'T1 / T2', 'invocaciones T1', 'invocaciones T2'], [
+  ['snapshot (actual)', v(actual.t1, actual.t2), actual.t1, actual.t2],
+  ['mudo (no notifica nunca)', v(mudo.t1, mudo.t2), mudo.t1, mudo.t2],
+  ['reactivo (objetivo)', '<span class="ok">verde</span> / <span class="ok">verde</span>', '0', '≥ 1'],
+]);
+
+assert('D-6 — el Bridge mudo enrojece T2 y sólo T2',
+  mudo.t1 === 0 && mudo.t2 === 0, `T1=${mudo.t1}, T2=${mudo.t2}`);
+
+assert('D-6 — cada modo de fallo enrojece una aserción distinta',
+  (actual.t1 !== 0) && (mudo.t2 < 1) && (actual.t2 >= 1) && (mudo.t1 === 0),
+  'los dos modos enrojecen lo mismo: el par no discrimina');
+
+// ---------------------------------------------------------------------------
+seccion('Resultado');
+linea(`<strong>${ok} verdes, ${rojo} ${rojo === 1 ? 'roja' : 'rojas'}.</strong>`);
+if (rojo > 0) linea('Rojas: ' + rojas.join('; '));
+linea(rojo === 1 && rojas.length === 1 && rojas[0].startsWith('T1')
+  ? 'Es el punto de partida esperado: exactamente una roja, y es T1. La Fase 2 la pone verde sin tocar T2.'
+  : '<span class="rojo">Conteo inesperado.</span> Revisar antes de arrancar la Fase 2: en esta fase debe haber una sola roja, y debe ser T1.');
+</script>
+
+</body>
+</html>

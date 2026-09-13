@@ -231,6 +231,27 @@ Entonces las invocaciones del reloj de A sí cambiaron
 La cifra de partida va en un comentario del test. D-6: la aserción se ve fallar
 antes de escribir el arreglo, y se anota cuántas enrojecen.
 
+#### Resultado registrado
+
+Contra el Bridge snapshot: **1 roja de 4 aserciones**, y es T1 (100
+invocaciones donde se esperan 0). T2 ya está verde, porque renombrar la
+conversación observada despierta al testigo también hoy.
+
+Que T2 nazca verde no la hace decorativa, pero obliga a demostrar que puede
+fallar. La matriz de falsación lo hace con un "Bridge mudo", que no necesita
+código falso: destruir el Bridge deja la proyección congelada y produce
+exactamente esa conducta.
+
+| Bridge | T1 / T2 | invocaciones T1 | invocaciones T2 |
+|---|---|---|---|
+| snapshot (actual) | ROJO / verde | 100 | 1 |
+| mudo (no notifica nunca) | verde / ROJO | 0 | 0 |
+| reactivo (objetivo) | verde / verde | 0 | ≥1 |
+
+Cada modo de fallo enrojece una aserción distinta, y ninguna de las dos pasa
+por sí sola: un Bridge que dejara de notificar pasaría T1 y caería en T2. Ésa
+es la propiedad que hacía falta antes de tocar la proyección.
+
 ### Fase 2 — Migración por método
 
 **2a — `put`, `upsert`, `update`.** Conocen el id por argumento.
