@@ -6,6 +6,23 @@
 
 **When to resolve:** No later than the establishment of the Playwright-based CI environment (roadmap Fase 3a, Escena 3a.2). Items that only require harness reorganization may be resolved earlier if the opportunity arises.
 
+**Revision of Fase 1 (adapter chain).** This document was updated after the work
+that produced `adapter-chain.js` and `Nexus_Adapter_Contract_Specification.md`
+v0.4.0. Changes:
+
+- `12-BRIDGE-INTEGRATION` and `12-PERSISTENCE-INTEGRATION` are **closed**. Moved
+  to *Closed After Phase 0* with their evidence.
+- `V-T3` is **rewritten**. Its subject (`_escapeRegex`) no longer exists in
+  `voyajer.js`; the coverage gap it named does, and is where a real defect was
+  found.
+- `ADAPTER-UTILS-DEDUP` keeps its status but loses its stated blocker. The
+  decision is now open rather than waiting.
+- `PULSAR-SELECTOR-REGISTRY-SNAPSHOT`, in *Not Debt*, is **updated**: the
+  asymmetry it recorded no longer exists, on its own terms.
+- One item added: `CHAIN-HARNESS-PORT`.
+
+Net: 10 deferred items become 9.
+
 
 ## Deferred Items
 
@@ -18,13 +35,52 @@
 **Resolution path.** Playwright with a test server that serves arbitrary routes; per-test isolation guaranteed by the runner.
 
 
-### V-T3 — VoyajerJS: base with special regex characters
+### V-T3 — VoyajerJS: `base` in history mode
 
-**What it verifies.** That the `_escapeRegex` fix (v0.2.1) correctly handles regex metacharacters in the `base` option (e.g., `/app.v2/` where `.` is a metacharacter). Both application (push produces the correct pathname) and removal (parse returns the correct virtual path).
+**Rewritten during the Fase 1 adapter-chain revision.** The original item
+verified the `_escapeRegex` fix of v0.2.1 against regex metacharacters in
+`base` (e.g. `/app.v2/`). That function no longer exists: `voyajer.js` v0.2.2
+normalizes `base` once to canonical form and subtracts it by path segment, so
+metacharacters have no interpretation to escape and that failure surface is
+gone structurally rather than guarded.
 
-**Why deferred.** Same infrastructure constraint as V-T2. Requires `mode: 'history'` because `base` only applies in history mode.
+**What it verifies.** In `mode: 'history'`, for `base` values of `'/'`,
+`'/admin'`, `'/admin/'` and `'/app.v2/'`:
+- `push` produces the pathname the application expects, with no doubled
+  separator.
+- The URL virtual passed to `parse` carries the pathname with `base` removed
+  and a leading slash.
+- `push` to the route already displayed is a no-op, **including on the URL the
+  server served**, not only after a previous in-app navigation.
+- `base: '/admin'` does not match a pathname of `/administrator`.
 
-**Resolution path.** Same as V-T2. Test can be a direct copy of the intended TEST 10 in an earlier version of `voyajer.test.html`.
+**Why it still matters.** This is not a hypothetical. The trailing-slash form
+— the one used as the example in `VoyajerJS_Contract_Specification.md` §2.5 —
+produced `/admin//projects/42` on `push`, and the subtraction returned
+`projects/42` without a leading slash, so the idempotence comparison against
+the `serialize` output never matched on a server-served URL. Each `push` to the
+current route pushed a history entry and renotified. The two defects cancelled
+each other **only** after an in-app navigation, so behavior differed between
+first load and the rest of the session.
+
+The defect lived exactly in the region V-T2 and V-T3 left unexercised: `base`
+only applies in history mode, and history mode is what both items defer. The
+deferred coverage marked the spot where the defect was.
+
+**Why deferred.** Same infrastructure constraint as V-T2: the test needs a
+server that serves arbitrary routes, and leaving the browser at a nonexistent
+path after the test is a race the harness cannot close.
+
+**Interim coverage.** A Node validator exercising the real `voyajer.js` against
+a fabricated window covers the URL arithmetic (`val-A1-voyajer.mjs`). Per D-5
+this is an instrument, not the canonical record: it does not exercise
+`pushState`, `popstate` or `hashchange`. It does cover what the substitute can
+cover, which per D-5's counterweight is more than the browser harness can here
+— the browser harness cannot lend its own window without changing the URL of
+the page under test.
+
+**Resolution path.** Same as V-T2. Playwright with a test server serving
+arbitrary routes.
 
 
 ### C-T7 — ChunkletJS: enable/disable with configured `enabledPath`
@@ -112,27 +168,44 @@ Decision between A and B to be made when evidence demands it. Option A is curren
 **Trigger condition for prioritization.** Any of: (a) a real application produces snapshots >2MB with observable UI stutter on save, (b) a real application requires storing structures that JSON serialization mangles (e.g., large Maps, Sets, ArrayBuffers), (c) a real application requires querying persisted data without a full load.
 
 
-### 12-BRIDGE-INTEGRATION — External Event Adapter: remote mutations don't re-project via Bridge
+### CHAIN-HARNESS-PORT — browser-native record for the adapter chain
 
-**What it resolves.** In v0.1.0 of the External Event Adapter, remote mutations arriving from a peer tab are applied to the local nebula via the **original** method (bypassing all wrappers). This is what makes anti-echo work by construction (see external-event-adapter.spec.md §3.3). But it has a consequence: if a nebula↔Pulsar Bridge is also mounted in the receiving tab, the Bridge wrapper is bypassed too. The result: nebula in the receiving tab reflects the remote mutation, **but Pulsar's `entities.*` projection does not**. Chunklet behaviors subscribed to `entities.*` in the receiving tab will not re-render until a local mutation triggers Bridge's wrapper.
+**What it verifies.** That the behavior fixed and refactored during the Fase 1
+adapter-chain work holds in the target environment:
+- Destroying adapters in an order other than reverse instantiation does not
+  remove the surviving adapters from the chain.
+- A remote mutation reinjected with `invokeSkipping` reaches Bridge, Persistence
+  and Logging regardless of instantiation order, and produces no echo.
+- Removing the last chain entry restores the same original function reference.
+- Voyajer's `base` cases (V-T3) and the `route` replacement semantics.
+- PulsarJS's selector registry after flattening, including the R-1 group.
 
-**Empirical evidence.** The widget `widget-external-event.html` (Phase 0 Punto 6, Capa 12) sidesteps this by renderizing from nebula directly and listening to the BroadcastChannel with a second consumer to trigger re-renders. This works for the widget but is a workaround, not the intended composition pattern for real applications that use Bridge + External Event together.
+**Why it is open.** The work was validated with Node validators
+(`val-A1-voyajer.mjs`, `val-2-cadena.mjs`, `val-C-pulsar.mjs`,
+`val-B-orden-external-event.mjs`). D-5 applies without exception: a green in
+the substitute means the condition was not exercised, not that the code is
+correct. The canonical record comes from the browser harness, and it does not
+exist yet for the chain.
 
-**Why deferred.** Resolving it requires coordinated behavior across two adapters. Options include: (a) an "apply remote via wrapped" flag in the External Event Adapter that lets Bridge re-project without re-emitting; (b) a shared `isRemoteContext` signal that Bridge honors to skip re-broadcast; (c) restructuring wrappers into a single dispatcher chain instead of independent monkey-patches. All three are v0.2.0 territory that requires more evidence of the pattern's cost in a real application.
+Additionally, the five adapter harnesses that produced the 241 green assertions
+of Phase 0 have **not** been re-run against the chained versions of the
+adapters. Until they are, the count in `PHASE_0_CLOSURE.md` §1.2 describes code
+that no longer exists.
 
-**Resolution path.** Wait for Fase 1 or Fase 2 evidence. When an application couples External Event + Bridge and the manual re-render workaround becomes friction, pick between the three options based on which is least invasive at that point.
+**Why it is debt and not just pending work.** It has the shape D-7 describes.
+The chain changes no observable output for an application that tears down in
+LIFO order, which is every application written so far. An assertion on the
+result cannot tell the chained version from the previous one. Only an assertion
+that does not look at the output — destroy in a deliberately wrong order, then
+verify the survivor still observes — can.
 
+**Resolution path.** Port the four validators to browser-native harnesses
+following the established pattern, re-run the five adapter harnesses against
+the chained adapters, and register the canonical green count. No new
+infrastructure required. Must be done before the adapters are declared stable
+at v0.2.0.
 
-### 12-PERSISTENCE-INTEGRATION — External Event Adapter: remote mutations don't persist in receiver
-
-**What it resolves.** Same shape as 12-BRIDGE-INTEGRATION but for Persistence. Remote mutations applied via the original method bypass Persistence's wrapper too, so the receiving tab's `localStorage` is not updated by remote events. Practical consequence: if the emitting tab crashes before its own debounce fires, the mutation is lost to storage even though other tabs saw it live.
-
-**Empirical evidence.** Not directly demonstrated in Phase 0 (the External Event widget does not use Persistence), but derivable from the same construction. The Persistence widget alone demonstrates that localStorage is updated correctly for local mutations; combining both adapters would expose the asymmetry.
-
-**Why deferred.** Same reasons as 12-BRIDGE-INTEGRATION: requires coordinated behavior. Same resolution options apply.
-
-**Resolution path.** Same as 12-BRIDGE-INTEGRATION. Both items can be resolved together, since they share the same underlying architectural question: "how does an adapter that observes local mutations distinguish local from remote-applied, and choose to act or not act accordingly?"
-
+**Discovered.** Fase 1, during the work that produced `adapter-chain.js`.
 
 
 ### ADAPTER-UTILS-DEDUP — Shared helper for the wrapper pattern across adapters
@@ -141,7 +214,31 @@ Decision between A and B to be made when evidence demands it. Option A is curren
 
 **Empirical evidence.** Verified by direct inspection of the four adapters produced in Phase 0 Punto 5. The pattern is not incidental — it is structural to what "an adapter that observes nebula mutations" is. Any fifth or sixth adapter following this pattern will duplicate again.
 
-**Why deferred.** Deduplication requires either (a) a new shared module (`src/adapter-utils.js` or similar) that adapters import, introducing a dependency chain adapters → utils, or (b) publishing the helpers as part of nebula itself under a stable "observability API" that inverts the current no-reactivity constraint of nebula. Both options are architectural decisions that benefit from a fifth or sixth adapter's evidence to inform the exact shape of the helper. Deduplicating with only four instances risks generalizing on incomplete evidence (Article I).
+**Why it was deferred, and what changed.** The stated blocker was that
+deduplication required either (a) a new shared module that adapters import,
+introducing a dependency chain adapters → utils, or (b) publishing the helpers
+as part of nebula under an observability API that inverts its no-reactivity
+constraint. Option (b) remains undesirable. **Option (a) is no longer a cost to
+weigh: the module exists.** `adapter-chain.js` is imported by the four wrapper
+adapters, and the dependency chain adapters → infrastructure is already
+established and recorded in `Nexus_Adapter_Contract_Specification.md` §5.3.
+
+What the chain did **not** absorb is the set-semantics no-op detection.
+`_snapshotLinksOf` and `_sameShallowLinks` remain duplicated byte-for-byte in
+Bridge, Persistence, External Event and Logging. The chain handles installation
+and teardown; it knows nothing about what a wrapper does between `next()` and
+its return, and that is where the duplication lives.
+
+D-2 is satisfied with room to spare: four uses, identical, which is what the
+discipline asks for before stabilizing a helper's shape.
+
+**What remains undecided** is not whether to deduplicate but where the helper
+belongs. Two candidates: extend `adapter-chain.js` with an opt-in no-op
+detection hook, or a sibling `adapter-links.js` that only knows about the shape
+of nebula's links. The first keeps one import; the second keeps the chain
+ignorant of nebula, which is what lets it wrap `pulsar.setState` as well. The
+second is favored for that reason, but the decision is open and no evidence
+currently distinguishes them.
 
 **Resolution path.** When Fase 1 introduces additional adapters (or refactors existing ones for a v0.2.0), extract the pattern into a helper module. Recommended shape (subject to refinement by that evidence):
 
@@ -164,11 +261,19 @@ export function createSomeAdapter(context, options) {
 
 The helper handles the seven-method wrap, the snapshot-based no-op detection, and the destroy-time restoration. The adapter is left with only its own logic.
 
-**Trigger condition for prioritization.** Any of: (a) a fifth adapter is designed and would duplicate the pattern again; (b) a bug is found in the duplicated logic and needs to be fixed in four places; (c) evidence-first justification for the exact API shape arrives.
+**Trigger condition for prioritization.** Unchanged in substance, but (a) is
+now weaker than it was: the architectural objection was spent by the chain, so
+the item no longer waits on a fifth adapter to justify the existence of a
+shared module — only to choose between the two placements above. Any of: (a) a
+fifth adapter would duplicate the pattern again; (b) a defect is found in the
+duplicated logic and has to be fixed in four places; (c) the placement decision
+resolves on its own merits.
 
-**Discovered:** Phase 0 Punto 5, formalized in retrospective (SESSION_DOC.md §Lo malo #1).
+**Discovered:** Phase 0 Punto 5, formalized in retrospective (SESSION_DOC.md §Lo malo #1). Blocker re-evaluated during the Fase 1 adapter-chain work.
 
 
+
+## Closed During Phase 0
 
 The following observations were closed during Phase 0 and are recorded here only to prevent them from being re-listed as deferred:
 
@@ -177,6 +282,61 @@ The following observations were closed during Phase 0 and are recorded here only
 - **C-T1..C-T6, C-T8, C-T9** — Covered by TESTS 1-8, 12-13 of `chunklet.test.html`.
 - **All Pulsar and nebula observations** — Covered fully in their respective harnesses.
 - **12-CROSSTAB-SYNC** — Resolved by implementation of Capa 12 in Phase 0 Punto 5. Widget `widget-external-event.html` demonstrates working cross-tab bidirectional sync with anti-echo (evidence: 42/42 harness green, empirical widget test showed `out=N/in=0` on emitter, `out=0/in=N` on receiver as expected).
+
+
+## Closed After Phase 0
+
+### 12-BRIDGE-INTEGRATION and 12-PERSISTENCE-INTEGRATION — closed together
+
+**What they recorded.** Mutations arriving from a peer tab were applied to the
+local nebula through the **original** method captured at construction, which is
+what made anti-echo work. The consequence was that the wrappers of Bridge and
+Persistence were bypassed too: the receiving tab's graph reflected the remote
+mutation but its Pulsar projection did not, and nothing was written to storage.
+
+**How they were closed.** By `Nexus_Adapter_Contract_Specification.md` §3.5.3.
+Reinjection now uses `invokeSkipping(handle, args)`, which traverses the whole
+wrapper chain skipping only the caller's own entry. The mutation reaches every
+other adapter; the caller does not observe itself, so no echo can start.
+
+**Evidence.** Measured on the implemented adapters with an injected channel,
+before and after. The `before` column is the reason both items existed:
+
+| Instantiation order | applied to graph | projected | persisted | echo |
+|---|---|---|---|---|
+| External Event first — before | yes | no | no | no |
+| External Event last — before | yes | **yes** | **yes** | no |
+| Either order — after | yes | yes | yes | no |
+
+**The measurement corrected the premise of both items.** They were written as
+unconditional limitations of the adapter. They were not: with External Event
+instantiated after Bridge and Persistence, the captured "original" *was* their
+wrapper, and remote mutations already projected and persisted. The documented
+behavior depended on montage order, which no document stated and no test
+covered.
+
+**Resolution taken, against the one predicted.** `12-BRIDGE-INTEGRATION`
+listed three options. The two favored at the time — an `isRemote` flag, a
+shared remote-context signal — both required each adapter to know something
+about the others, which §2 of the Adapter Contract forbids. The one taken is
+option (c), "restructuring wrappers into a single dispatcher chain instead of
+independent monkey-patches", which needs no coordination at all because the
+skip is by identity of the caller's entry rather than by a marker travelling
+with the data.
+
+**Note on how this register should be read.** Both items were deferred pending
+"evidence of the pattern's cost in a real application". No such evidence
+arrived. They were closed by work undertaken for a different reason: the same
+root cause — each adapter holding its own captured original — also produced a
+teardown-order defect, and fixing that dissolved these. A deferred item can be
+closed by a neighbouring repair, so the register is not a queue in which each
+item waits for its own predicted trigger.
+
+**Verification pending.** Browser-native record, under `CHAIN-HARNESS-PORT`.
+The measurement above comes from a Node validator, which per D-5 is an
+instrument and not the canonical record.
+
+**Closed.** Fase 1, during the adapter-chain work.
 
 
 ## Not Debt (Recorded for Clarity)
@@ -219,6 +379,30 @@ observation ceases to be closed.
 **Discovered.** During R-1 fix work, post-Phase 0. Documented in
 `PULSAR_R1_FIX.md` §7.
 
+**Update — the asymmetry no longer exists (`pulsar.js` v0.2.3).** The entry
+foresaw a refactor as the reason it might reopen. A refactor arrived, and it
+closed the entry instead of reopening it: the selector registry was flattened
+from `Map<selectorFn, Map<id, entry>>` to `Map<id, entry>`, and `_notify` now
+snapshots that one registry the same way it snapshots the global listeners.
+There is no longer an outer loop iterating live, so there is nothing asymmetric
+to be unobservable.
+
+The refactor did surface one observable difference, in adjacent territory and
+in the direction the contract wants. If a selector listener unsubscribes
+**another** selector listener during the same pass, the unsubscribed one is now
+invoked in that pass; previously it was not. Measured: `A` before, `A,B` after.
+§6 **Reentrancy safety** promises iteration over a snapshot, and R-1's own
+comment declared that a listener present at the start of a pass is invoked. The
+grouped structure honored that within a group but not between groups — deleting
+a group while iterating the outer Map skipped it — so the guarantee held or not
+depending on whether two listeners happened to share a selector function
+reference, which a consumer neither controls nor can observe. It is now
+uniform.
+
+This entry stays in *Not Debt* rather than moving to a closed section: it never
+was debt, and the investigation it records is still the reason nobody needs to
+re-derive the conclusion from the v0.2.2 code.
+
 ---
 
 ## Summary
@@ -232,20 +416,23 @@ observation ceases to be closed.
 | BRIDGE-REACTIVE | Bridge adapter | reactive per-entity projection (73% noise quantified with N=8) | Phase 1 (Camino 2 recommended) |
 | WIDGET-COMPOSITION | Chunklet ctx | helper for entity + related | Iterative during Punto 6 and Phase 1 |
 | PERSISTENCE-INDEXEDDB | Persistence adapter | IndexedDB backend for large snapshots | v0.2.0 when evidence demands it |
-| 12-BRIDGE-INTEGRATION | External Event × Bridge | remote mutations don't re-project via Bridge in receiver | v0.2.0 coordinated fix |
-| 12-PERSISTENCE-INTEGRATION | External Event × Persistence | remote mutations don't persist in receiver | v0.2.0 coordinated fix |
-| ADAPTER-UTILS-DEDUP | All wrapper-pattern adapters | shared helper for 7-method wrap + set-semantics no-op detection | Fase 1 with 5th/6th adapter |
+| ADAPTER-UTILS-DEDUP | All wrapper-pattern adapters | shared helper for set-semantics no-op detection | Fase 1; blocker spent, placement undecided |
+| CHAIN-HARNESS-PORT | Adapter chain, Voyajer, Pulsar | browser-native record for the chain work; 241 assertions not re-run | Port validators, before adapters v0.2.0 |
 
-**Total items deferred:** 10.
+**Total items deferred:** 9.
 
 **Breakdown by nature:**
-- **Testing infrastructure (4):** V-T2, V-T3, C-T7, C-2 sym. All resolvable via dedicated harness reorganization or Playwright.
-- **Implementation quality (3):** BRIDGE-REACTIVE (evidence quantified: 73% reactive noise with N=8, empirically confirms need before Phase 1), PERSISTENCE-INDEXEDDB (evidence pending; localStorage sufficient for current target scale), and the pair 12-BRIDGE-INTEGRATION + 12-PERSISTENCE-INTEGRATION (same underlying question of local-vs-remote-applied distinction, resolved together).
+- **Testing infrastructure (5):** V-T2, V-T3, C-T7, C-2 sym, CHAIN-HARNESS-PORT. The first four resolve via dedicated harness reorganization or Playwright; the fifth needs no new infrastructure, only the work.
+- **Implementation quality (2):** BRIDGE-REACTIVE (evidence quantified: 73% reactive noise with N=8) and PERSISTENCE-INDEXEDDB (evidence pending; localStorage sufficient for current target scale).
 - **Emerging capability (1):** WIDGET-COMPOSITION. Discovered while validating the bridge; form to be discovered by widget construction, not by advance specification.
-- **Cross-adapter composition (2, counted above):** 12-BRIDGE-INTEGRATION and 12-PERSISTENCE-INTEGRATION share the same architectural question and are expected to be resolved as a pair.
-- **Code consolidation (1):** ADAPTER-UTILS-DEDUP. ~80 lines of duplication across four adapters. Waits for a fifth adapter's evidence to inform the exact helper shape.
+- **Code consolidation (1):** ADAPTER-UTILS-DEDUP. ~80 lines were duplication across four adapters; the chain absorbed the installation and teardown half, leaving the set-semantics detection. No longer blocked, only undecided.
+
+**Cross-adapter composition (0).** The two items in this category are closed. See *Closed After Phase 0*.
 
 **All identified in-scope observations from Phase 0 have been either closed or deferred with explicit resolution paths.** No item is in "unresolved" or "unknown" status.
 
 
-*This document is complete as of the closing of Phase 0 Point 3. It should be updated (items removed as they are closed, new items added if any emerge) as the roadmap advances.*
+*This document was complete as of the closing of Phase 0 Point 3 and was revised
+during Fase 1, in the work that produced `adapter-chain.js`. It should keep being
+updated — items removed as they close, new items added as they emerge — as the
+roadmap advances.*
