@@ -7,9 +7,11 @@
  * Es el primer sitio donde se ve la forma que WIDGET-COMPOSITION querrá
  * resolver: la fila necesita la entidad que le corresponde y además reaccionar
  * a estado de interfaz sobre esa misma entidad. Hoy son dos accesos distintos
- * — `ctx.entity(id)` contra Graphlet y `subscribeSelector` contra Pulsar — y
+ * — `ctx.entity(id)` contra nebula y `subscribeSelector` contra Pulsar — y
  * el widget los cose a mano.
  */
+
+import { fijarUi } from './zonas.js';
 
 export function conversationItem(elemento, ctx) {
   const id = elemento.dataset.entity;
@@ -24,7 +26,7 @@ export function conversationItem(elemento, ctx) {
 
   const zonaTitulo = elemento.querySelector('[data-zona="titulo"]');
 
-  // Lectura del modelo. Graphlet no es reactivo por contrato, así que esto
+  // Lectura del modelo. nebula no es reactivo por contrato, así que esto
   // es una foto del momento del montaje. Cuando el título cambia, quien
   // repinta es `conversation-list`, que sí está suscrito a la proyección.
   const entidad = ctx.entity(id);
@@ -45,7 +47,7 @@ export function conversationItem(elemento, ctx) {
   );
 
   ctx.listen(elemento, 'click', () => {
-    ctx.setState({ ui: { ...ctx.getState().ui, activeConversation: id } });
+    fijarUi(ctx, { activeConversation: id });
   });
 
   // Teclado: la fila es un elemento interactivo y debe poder alcanzarse sin
@@ -53,7 +55,7 @@ export function conversationItem(elemento, ctx) {
   ctx.listen(elemento, 'keydown', (evento) => {
     if (evento.key === 'Enter' || evento.key === ' ') {
       evento.preventDefault();
-      ctx.setState({ ui: { ...ctx.getState().ui, activeConversation: id } });
+      fijarUi(ctx, { activeConversation: id });
     }
   });
 }

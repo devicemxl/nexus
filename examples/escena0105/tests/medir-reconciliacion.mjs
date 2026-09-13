@@ -34,12 +34,12 @@ document.body.innerHTML = `
   </template>
 </main>`;
 const raiz = document.getElementById('raiz');
-const { graphlet, pulsar } = crearPrimitivas();
-const datos = arrancarDatos({ graphlet, pulsar, storage: stg(), clave:'t', debounceMs: 1e6 });
+const { nebula, pulsar } = crearPrimitivas();
+const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave:'t', debounceMs: 1e6 });
 
 let asa = null;
-montarInterfaz({ graphlet, pulsar, voyajer: datos.voyajer,
-  provider: crearMockProvider({ graphlet }, {}), raiz: document.createElement('div') });
+montarInterfaz({ nebula, pulsar, voyajer: datos.voyajer,
+  provider: crearMockProvider({ nebula }, {}), raiz: document.createElement('div') });
 Chunklet.define('conversation-messages', (el, c) => (asa = conversationMessages(el, c)));
 Chunklet.mount(raiz);
 
@@ -48,16 +48,16 @@ console.log('   mensajes previos   creados   destruidos   movidos   total');
 console.log('  ' + '-'.repeat(60));
 
 for (const M of [10, 50, 200, 500]) {
-  const conv = modelo.crearConversacion(graphlet, { titulo: 'C' });
+  const conv = modelo.crearConversacion(nebula, { titulo: 'C' });
   pulsar.setState({ ui: { activeConversation: conv } });
-  for (let i = 0; i < M; i++) modelo.agregarMensaje(graphlet, conv, { rol:'user', texto:`previo ${i}` });
+  for (let i = 0; i < M; i++) modelo.agregarMensaje(nebula, conv, { rol:'user', texto:`previo ${i}` });
 
   const p = planificador();
-  const prov = crearMockProvider({ graphlet }, { programar:p.programar, cancelar:p.cancelar,
+  const prov = crearMockProvider({ nebula }, { programar:p.programar, cancelar:p.cancelar,
     respuestas:['uno dos tres cuatro cinco seis siete ocho'] });
 
   asa.reiniciarCuenta();
-  modelo.agregarMensaje(graphlet, conv, { rol:'user', texto:'mi pregunta' });
+  modelo.agregarMensaje(nebula, conv, { rol:'user', texto:'mi pregunta' });
   prov.responder(conv);
   p.agotar();
   const c = asa.cuenta;

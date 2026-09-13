@@ -60,45 +60,45 @@ function planificador() {
 // ==================================================================
 console.log('\n  Modelo — mensajes');
 {
-  const { graphlet } = crearPrimitivas();
-  const conv = modelo.crearConversacion(graphlet, { titulo: 'C' });
-  const m1 = modelo.agregarMensaje(graphlet, conv, { rol: 'user', texto: 'hola' });
+  const { nebula } = crearPrimitivas();
+  const conv = modelo.crearConversacion(nebula, { titulo: 'C' });
+  const m1 = modelo.agregarMensaje(nebula, conv, { rol: 'user', texto: 'hola' });
 
-  ok('el mensaje existe', graphlet.get(m1) !== null);
+  ok('el mensaje existe', nebula.get(m1) !== null);
   eq('conserva rol y texto',
-    [graphlet.get(m1).properties.rol, graphlet.get(m1).properties.texto], ['user', 'hola']);
-  eq('nace completo por defecto', graphlet.get(m1).properties.estado, modelo.ESTADO_COMPLETO);
+    [nebula.get(m1).properties.rol, nebula.get(m1).properties.texto], ['user', 'hola']);
+  eq('nace completo por defecto', nebula.get(m1).properties.estado, modelo.ESTADO_COMPLETO);
   eq('queda enlazado desde la conversación',
-    graphlet.get(conv).links[modelo.RELACION_CONTIENE], [m1]);
+    nebula.get(conv).links[modelo.RELACION_CONTIENE], [m1]);
 
   lanza('agregar a una conversación inexistente lanza',
-    () => modelo.agregarMensaje(graphlet, 'conversation:fantasma', { rol: 'user' }));
+    () => modelo.agregarMensaje(nebula, 'conversation:fantasma', { rol: 'user' }));
   lanza('un rol inválido lanza',
-    () => modelo.agregarMensaje(graphlet, conv, { rol: 'sistema' }));
+    () => modelo.agregarMensaje(nebula, conv, { rol: 'sistema' }));
 }
 {
-  const { graphlet } = crearPrimitivas();
-  const conv = modelo.crearConversacion(graphlet, { titulo: 'C' });
-  const antes = graphlet.get(conv).properties.actualizadaEn;
-  const m = modelo.agregarMensaje(graphlet, conv, { rol: 'user', texto: 'x' });
+  const { nebula } = crearPrimitivas();
+  const conv = modelo.crearConversacion(nebula, { titulo: 'C' });
+  const antes = nebula.get(conv).properties.actualizadaEn;
+  const m = modelo.agregarMensaje(nebula, conv, { rol: 'user', texto: 'x' });
   ok('agregar un mensaje sube la conversación en la lista',
-    graphlet.get(conv).properties.actualizadaEn > antes);
+    nebula.get(conv).properties.actualizadaEn > antes);
 
-  const trasCrear = graphlet.get(conv).properties.actualizadaEn;
-  modelo.anexarTexto(graphlet, m, ' más');
+  const trasCrear = nebula.get(conv).properties.actualizadaEn;
+  modelo.anexarTexto(nebula, m, ' más');
   eq('anexar texto NO vuelve a tocar la conversación',
-    graphlet.get(conv).properties.actualizadaEn, trasCrear);
-  eq('anexar concatena', graphlet.get(m).properties.texto, 'x más');
+    nebula.get(conv).properties.actualizadaEn, trasCrear);
+  eq('anexar concatena', nebula.get(m).properties.texto, 'x más');
 }
 {
-  const { graphlet } = crearPrimitivas();
-  const conv = modelo.crearConversacion(graphlet);
+  const { nebula } = crearPrimitivas();
+  const conv = modelo.crearConversacion(nebula);
   const ids = [];
   for (let i = 0; i < 5; i++) {
-    ids.push(modelo.agregarMensaje(graphlet, conv, { rol: i % 2 ? 'assistant' : 'user', texto: `m${i}` }));
+    ids.push(modelo.agregarMensaje(nebula, conv, { rol: i % 2 ? 'assistant' : 'user', texto: `m${i}` }));
   }
   const entities = {};
-  for (const id of graphlet.allIds()) entities[id] = graphlet.get(id);
+  for (const id of nebula.allIds()) entities[id] = nebula.get(id);
 
   eq('los mensajes se listan del más antiguo al más reciente',
     modelo.listarMensajes(entities, conv).map((m) => m.id), ids);
@@ -141,47 +141,47 @@ console.log('\n  Firma estructural');
 
 console.log('\n  Mock provider');
 {
-  const { graphlet } = crearPrimitivas();
-  const conv = modelo.crearConversacion(graphlet);
+  const { nebula } = crearPrimitivas();
+  const conv = modelo.crearConversacion(nebula);
   const p = planificador();
-  const provider = crearMockProvider({ graphlet }, { programar: p.programar, cancelar: p.cancelar, respuestas: ['uno dos tres'] });
+  const provider = crearMockProvider({ nebula }, { programar: p.programar, cancelar: p.cancelar, respuestas: ['uno dos tres'] });
 
   const asa = provider.responder(conv);
   eq('nace en vuelo y vacío',
-    [graphlet.get(asa.mensajeId).properties.estado, graphlet.get(asa.mensajeId).properties.texto],
+    [nebula.get(asa.mensajeId).properties.estado, nebula.get(asa.mensajeId).properties.texto],
     [modelo.ESTADO_EN_VUELO, '']);
   ok('el asa reporta actividad', asa.activo);
 
   p.avanzar(1);
-  eq('el primer token llega', graphlet.get(asa.mensajeId).properties.texto, 'uno');
+  eq('el primer token llega', nebula.get(asa.mensajeId).properties.texto, 'uno');
   p.agotar();
   eq('al agotarse queda el texto completo',
-    graphlet.get(asa.mensajeId).properties.texto, 'uno dos tres');
+    nebula.get(asa.mensajeId).properties.texto, 'uno dos tres');
   eq('y el estado pasa a completo',
-    graphlet.get(asa.mensajeId).properties.estado, modelo.ESTADO_COMPLETO);
+    nebula.get(asa.mensajeId).properties.estado, modelo.ESTADO_COMPLETO);
   ok('el asa deja de reportar actividad', !asa.activo);
   eq('no quedan temporizadores pendientes', p.pendientes(), 0);
 }
 {
-  const { graphlet } = crearPrimitivas();
-  const conv = modelo.crearConversacion(graphlet);
+  const { nebula } = crearPrimitivas();
+  const conv = modelo.crearConversacion(nebula);
   const p = planificador();
-  const provider = crearMockProvider({ graphlet }, { programar: p.programar, cancelar: p.cancelar, respuestas: ['uno dos tres cuatro cinco'] });
+  const provider = crearMockProvider({ nebula }, { programar: p.programar, cancelar: p.cancelar, respuestas: ['uno dos tres cuatro cinco'] });
 
   const asa = provider.responder(conv);
   p.avanzar(3);
-  const parcial = graphlet.get(asa.mensajeId).properties.texto;
+  const parcial = nebula.get(asa.mensajeId).properties.texto;
   asa.detener();
 
   eq('detener deja el mensaje interrumpido',
-    graphlet.get(asa.mensajeId).properties.estado, modelo.ESTADO_INTERRUMPIDO);
-  eq('detener conserva lo ya recibido', graphlet.get(asa.mensajeId).properties.texto, parcial);
+    nebula.get(asa.mensajeId).properties.estado, modelo.ESTADO_INTERRUMPIDO);
+  eq('detener conserva lo ya recibido', nebula.get(asa.mensajeId).properties.texto, parcial);
   eq('detener libera el temporizador', p.pendientes(), 0);
   ok('el asa queda inactiva', !asa.activo);
 
   asa.detener();
   eq('detener dos veces no altera el estado',
-    graphlet.get(asa.mensajeId).properties.estado, modelo.ESTADO_INTERRUMPIDO);
+    nebula.get(asa.mensajeId).properties.estado, modelo.ESTADO_INTERRUMPIDO);
 }
 
 // ==================================================================
@@ -208,8 +208,8 @@ console.log('\n  Widget sobre DOM');
   </div>`;
 
   const raiz = document.getElementById('raiz');
-  const { graphlet, pulsar } = crearPrimitivas();
-  const datos = arrancarDatos({ graphlet, pulsar, storage: stg(), clave: 'nexus.test' });
+  const { nebula, pulsar } = crearPrimitivas();
+  const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 'nexus.test' });
 
   // Envoltura de factory (Chunklet Contract §8) para capturar el asa del
   // widget sin que el código de producción tenga que exponerla.
@@ -217,7 +217,7 @@ console.log('\n  Widget sobre DOM');
   const original = conversationMessages;
   Chunklet.define; // no-op: el registro ocurre dentro de montarInterfaz
 
-  montarInterfaz({ graphlet, pulsar, raiz, modoRuta: 'hash' });
+  montarInterfaz({ nebula, pulsar, raiz, modoRuta: 'hash' });
   // Re-registro envuelto y remontaje sólo del main, para capturar el asa.
   const main = raiz.querySelector('[data-chunk="conversation-messages"]');
   Chunklet.unmount(main);
@@ -233,11 +233,11 @@ console.log('\n  Widget sobre DOM');
   eq('sin conversación activa no hay mensajes', zona.children.length, 0);
   eq('el aviso de vacío está visible', sinMensajes.hidden, false);
 
-  const conv = modelo.crearConversacion(graphlet, { titulo: 'C' });
+  const conv = modelo.crearConversacion(nebula, { titulo: 'C' });
   pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv } });
   eq('seleccionar una conversación vacía no pinta mensajes', zona.children.length, 0);
 
-  const m1 = modelo.agregarMensaje(graphlet, conv, { rol: 'user', texto: 'Hola' });
+  const m1 = modelo.agregarMensaje(nebula, conv, { rol: 'user', texto: 'Hola' });
   eq('un mensaje se pinta', zona.children.length, 1);
   eq('el nodo lleva el id del modelo', zona.children[0].dataset.entity, m1);
   eq('el nodo lleva el rol', zona.children[0].dataset.rol, 'user');
@@ -247,7 +247,7 @@ console.log('\n  Widget sobre DOM');
 
   // --- LA ASERCIÓN CENTRAL DE LA ESCENA ---
   const p = planificador();
-  const provider = crearMockProvider({ graphlet }, {
+  const provider = crearMockProvider({ nebula }, {
     programar: p.programar, cancelar: p.cancelar,
     respuestas: ['uno dos tres cuatro cinco seis siete ocho nueve diez'],
   });
@@ -294,7 +294,7 @@ console.log('\n  Widget sobre DOM');
   eq('interrumpir no deja temporizadores', p.pendientes(), 0);
 
   // --- cambio de conversación ---
-  const conv2 = modelo.crearConversacion(graphlet, { titulo: 'Otra' });
+  const conv2 = modelo.crearConversacion(nebula, { titulo: 'Otra' });
   pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv2 } });
   eq('cambiar de conversación vacía la vista', zona.children.length, 0);
   pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv } });
@@ -304,7 +304,7 @@ console.log('\n  Widget sobre DOM');
   Chunklet.unmount(main);
   eq('desmontar vacía la zona', zona.children.length, 0);
   const antesHuerfano = zona.children.length;
-  modelo.agregarMensaje(graphlet, conv, { rol: 'user', texto: 'tras desmontar' });
+  modelo.agregarMensaje(nebula, conv, { rol: 'user', texto: 'tras desmontar' });
   eq('tras desmontar el DOM ya no reacciona', zona.children.length, antesHuerfano);
 
   datos.destruir({ guardarPendiente: false });

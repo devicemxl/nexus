@@ -2,7 +2,7 @@
  * Provider simulado — Escena 1.3.
  *
  * Emite una respuesta token a token para ejercitar el streaming sin depender
- * de un LLM real. No conoce el DOM ni Chunklet: recibe `graphlet` y opera
+ * de un LLM real. No conoce el DOM ni Chunklet: recibe `nebula` y opera
  * sobre el modelo, igual que lo hará el provider real de la Escena 1.6.
  *
  * Esa equivalencia de interfaz es la razón de que esto sea un módulo aparte y
@@ -36,15 +36,15 @@ function trocear(texto) {
 
 /**
  * @param {object} dependencias
- * @param {GraphletInstance} dependencias.graphlet
+ * @param {nebulaInstance} dependencias.nebula
  * @param {object} [opciones]
  * @param {number} [opciones.intervaloMs=35] - Separación entre tokens.
  * @param {function} [opciones.programar=setTimeout] - Planificador inyectable.
  * @param {function} [opciones.cancelar=clearTimeout]
  * @param {string[]} [opciones.respuestas] - Banco de respuestas.
  */
-export function crearMockProvider({ graphlet }, opciones = {}) {
-  if (!graphlet) throw new TypeError('[mock-provider] falta graphlet');
+export function crearMockProvider({ nebula }, opciones = {}) {
+  if (!nebula) throw new TypeError('[mock-provider] falta nebula');
 
   const intervaloMs = opciones.intervaloMs !== undefined ? opciones.intervaloMs : 35;
   // El planificador se inyecta para que las pruebas puedan avanzar el stream
@@ -69,7 +69,7 @@ export function crearMockProvider({ graphlet }, opciones = {}) {
     const texto = opcionesRespuesta.texto || respuestas[cuenta++ % respuestas.length];
     const tokens = trocear(texto);
 
-    const mensajeId = agregarMensaje(graphlet, conversacionId, {
+    const mensajeId = agregarMensaje(nebula, conversacionId, {
       rol: 'assistant',
       texto: '',
       estado: ESTADO_EN_VUELO,
@@ -85,14 +85,24 @@ export function crearMockProvider({ graphlet }, opciones = {}) {
 
       if (indice >= tokens.length) {
         terminado = true;
-        finalizarMensaje(graphlet, mensajeId, ESTADO_COMPLETO);
+        finalizarMensaje(nebula, mensajeId, ESTADO_COMPLETO);
         if (typeof opcionesRespuesta.alTerminar === 'function') {
           opcionesRespuesta.alTerminar(mensajeId);
         }
         return;
       }
 
-      anexarTexto(graphlet, mensajeId, tokens[indice++]);
+      anexarTexto(nebula, mensajeId, tokens[indice++]);
+
+      // `anexarTexto` notifica de forma síncrona, así que cualquier suscriptor
+      // puede haber llamado a `detener()` mientras corría. En ese momento
+      // `handle` ya era null —se anula al entrar en `paso`— así que `detener()`
+      // no tuvo nada que cancelar. Sin esta comprobación se agendaría un
+      // temporizador nuevo después de haber parado: no es una fuga, porque
+      // moriría solo al ver `terminado`, pero es un disparo que este módulo
+      // promete no dejar vivo.
+      if (terminado) return;
+
       handle = programar(paso, intervaloMs);
     }
 
@@ -105,7 +115,7 @@ export function crearMockProvider({ graphlet }, opciones = {}) {
         if (terminado) return;
         terminado = true;
         if (handle !== null) { cancelar(handle); handle = null; }
-        finalizarMensaje(graphlet, mensajeId, ESTADO_INTERRUMPIDO);
+        finalizarMensaje(nebula, mensajeId, ESTADO_INTERRUMPIDO);
       },
     };
   }

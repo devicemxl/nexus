@@ -11,14 +11,14 @@ const stg=()=>{const m=new Map();return{getItem:k=>m.get(k)??null,setItem:(k,v)=
 
 // Simula streaming: T mutaciones sobre UNA entidad, con N entidades en el grafo.
 function medir(N, T) {
-  const { graphlet, pulsar } = crearPrimitivas();
-  const datos = arrancarDatos({ graphlet, pulsar, storage: stg(), clave:'t', debounceMs: 100000 });
+  const { nebula, pulsar } = crearPrimitivas();
+  const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave:'t', debounceMs: 100000 });
 
-  const conv = modelo.crearConversacion(graphlet, { titulo:'C' });
-  for (let i = 0; i < N - 1; i++) graphlet.put(`message:previo${i}`, { texto:'x'.repeat(40), rol:'user' });
+  const conv = modelo.crearConversacion(nebula, { titulo:'C' });
+  for (let i = 0; i < N - 1; i++) nebula.put(`message:previo${i}`, { texto:'x'.repeat(40), rol:'user' });
 
   const idStream = 'message:enVuelo';
-  graphlet.put(idStream, { texto:'', rol:'assistant' });
+  nebula.put(idStream, { texto:'', rol:'assistant' });
 
   let notificaciones = 0;
   pulsar.subscribe(() => { notificaciones++; });
@@ -27,7 +27,7 @@ function medir(N, T) {
   const t0 = performance.now();
   for (let i = 0; i < T; i++) {
     texto += 'token ';
-    graphlet.update(idStream, { texto });
+    nebula.update(idStream, { texto });
   }
   const ms = performance.now() - t0;
   datos.destruir({ guardarPendiente:false });

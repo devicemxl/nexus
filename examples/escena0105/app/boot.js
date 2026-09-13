@@ -19,11 +19,11 @@
  * necesita instanciado antes de que ningún widget monte.
  */
 
-import { createGraphlet } from '../../../src/graphlet.js';
+import { createNebula } from '../../../src/nebula.js';
 import { createStatePulsar } from '../../../src/pulsar.js';
 import { createVoyajer } from '../../../src/voyajer.js';
 import { createHydrationAdapter } from '../../../src/adapters/hydration-adapter.js';
-import { createGraphletPulsarBridge } from '../../../src/adapters/graphlet-pulsar-bridge.js';
+import { createNebulaPulsarBridge } from '../../../src/adapters/nebula-pulsar-bridge.js';
 import { createPersistenceAdapter } from '../../../src/adapters/persistence-adapter.js';
 import Chunklet from '../../../src/chunklet.js';
 
@@ -47,7 +47,7 @@ export function estadoInicial() {
 
 export function crearPrimitivas() {
   return {
-    graphlet: createGraphlet(),
+    nebula: createNebula(),
     pulsar: createStatePulsar(estadoInicial()),
   };
 }
@@ -61,9 +61,9 @@ export function crearPrimitivas() {
  * durante el arranque es la aserción que protege el invariante de orden.
  */
 export function arrancarDatos(opciones = {}) {
-  const { graphlet, pulsar } = opciones;
-  if (!graphlet || !pulsar) {
-    throw new TypeError('[boot] arrancarDatos requiere graphlet y pulsar');
+  const { nebula, pulsar } = opciones;
+  if (!nebula || !pulsar) {
+    throw new TypeError('[boot] arrancarDatos requiere nebula y pulsar');
   }
 
   const storage = resolverStorage(opciones.storage);
@@ -82,7 +82,7 @@ export function arrancarDatos(opciones = {}) {
 
   if (hidratacion.estado === 'ok') {
     createHydrationAdapter(
-      { graphlet },
+      { nebula },
       { snapshot: hidratacion.snapshot, mode: 'merge', onMissingTarget: 'skip' }
     );
   }
@@ -90,13 +90,13 @@ export function arrancarDatos(opciones = {}) {
   // ----------------------------------------------------------------
   // 2. Bridge. Una sola proyección de todo lo hidratado.
   // ----------------------------------------------------------------
-  const bridge = createGraphletPulsarBridge({ graphlet, pulsar }, { path: 'entities' });
+  const bridge = createNebulaPulsarBridge({ nebula, pulsar }, { path: 'entities' });
 
   // ----------------------------------------------------------------
   // 3. Persistence. `writeOnInit: false`: acabamos de leer de ahí.
   // ----------------------------------------------------------------
   const persistence = createPersistenceAdapter(
-    { graphlet },
+    { nebula },
     { key: clave, mode: 'debounced', debounceMs, writeOnInit: false, storage }
   );
 
@@ -112,7 +112,7 @@ export function arrancarDatos(opciones = {}) {
     : createVoyajer(pulsar, { ...opcionesVoyajer, ...(opciones.opcionesVoyajer || {}) });
 
   const rutaAdapter = voyajer
-    ? crearRutaAdapter({ pulsar, graphlet, voyajer })
+    ? crearRutaAdapter({ pulsar, nebula, voyajer })
     : null;
 
   /**
@@ -140,10 +140,10 @@ export function arrancarDatos(opciones = {}) {
  * dos veces en la misma página.
  */
 export function montarInterfaz(opciones = {}) {
-  const { graphlet, pulsar, voyajer, provider } = opciones;
+  const { nebula, pulsar, voyajer, provider } = opciones;
   const raiz = opciones.raiz || document.body;
 
-  const stack = Chunklet.setup({ pulsar, graphlet, voyajer });
+  const stack = Chunklet.setup({ pulsar, nebula, voyajer });
 
   Chunklet.define('app-shell', appShell);
   Chunklet.define('conversation-list', conversationList);
@@ -169,19 +169,19 @@ export function montarInterfaz(opciones = {}) {
  *   funcionar. Encenderlo a voluntad, nunca por costumbre.
  */
 export function arrancar(opciones = {}) {
-  const { graphlet, pulsar } = crearPrimitivas();
+  const { nebula, pulsar } = crearPrimitivas();
 
-  const datos = arrancarDatos({ graphlet, pulsar, ...opciones });
-  const provider = crearMockProvider({ graphlet }, opciones.provider || {});
+  const datos = arrancarDatos({ nebula, pulsar, ...opciones });
+  const provider = crearMockProvider({ nebula }, opciones.provider || {});
 
   const stack = montarInterfaz({
-    graphlet, pulsar, provider,
+    nebula, pulsar, provider,
     voyajer: datos.voyajer,
     raiz: opciones.raiz,
   });
 
   const nexus = {
-    graphlet: stack.graphlet,
+    nebula: stack.nebula,
     pulsar: stack.pulsar,
     voyajer: stack.voyajer,
     bridge: datos.bridge,

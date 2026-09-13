@@ -72,13 +72,13 @@ export const opcionesVoyajer = { mode: 'hash', parse, serialize };
  *
  * @param {object} dependencias
  * @param {PulsarInstance} dependencias.pulsar
- * @param {GraphletInstance} dependencias.graphlet
+ * @param {nebulaInstance} dependencias.nebula
  * @param {VoyajerInstance} dependencias.voyajer
  * @returns {{destroy: function}}
  */
-export function crearRutaAdapter({ pulsar, graphlet, voyajer }) {
-  if (!pulsar || !graphlet || !voyajer) {
-    throw new TypeError('[ruta-adapter] faltan pulsar, graphlet o voyajer');
+export function crearRutaAdapter({ pulsar, nebula, voyajer }) {
+  if (!pulsar || !nebula || !voyajer) {
+    throw new TypeError('[ruta-adapter] faltan pulsar, nebula o voyajer');
   }
 
   // ----------------------------------------------------------------
@@ -102,15 +102,34 @@ export function crearRutaAdapter({ pulsar, graphlet, voyajer }) {
       return ruta && ruta.vista === 'conversacion' ? ruta.conversacionId : null;
     },
     (idDeRuta) => {
-      const actual = pulsar.getState().ui && pulsar.getState().ui.activeConversation;
-      if (idDeRuta === actual) return;
+      const ui = pulsar.getState().ui || {};
+      const actual = ui.activeConversation || null;
+      const objetivo = idDeRuta || null;
 
-      if (idDeRuta && !graphlet.get(idDeRuta)) {
+      // La comparación contra la selección actual NO corta el bucle —eso lo
+      // hacen la idempotencia de `push` y la equality del selector— sino que
+      // ahorra un `setState` redundante por selección. Pero no puede saltarse
+      // la limpieza de `rutaNoEncontrada`: si la ruta anterior no existía y la
+      // nueva sí, la selección puede coincidir ya y aun así habría que borrar
+      // la constancia. Salir antes dejaría el aviso pegado para siempre.
+      if (objetivo === actual && !ui.rutaNoEncontrada) return;
+
+      if (idDeRuta && !nebula.get(idDeRuta)) {
+        // La URL no se reescribe. Es lo que el usuario tecleó o pegó, y
+        // sustituirla borraría la evidencia de qué intentaba abrir — además de
+        // cambiarle la barra de direcciones sin pedirlo.
+        //
+        // Lo que sí se hace es dejar constancia en `ui.*` para que la interfaz
+        // pueda decirlo. Un `console.warn` es invisible para quien usa la
+        // aplicación, que es precisamente quien necesita enterarse.
         console.warn(`[ruta-adapter] la URL apunta a ${idDeRuta}, que no existe`);
+        pulsar.setState({
+          ui: { ...ui, activeConversation: null, rutaNoEncontrada: idDeRuta },
+        });
         return;
       }
       pulsar.setState({
-        ui: { ...pulsar.getState().ui, activeConversation: idDeRuta || null },
+        ui: { ...ui, activeConversation: objetivo, rutaNoEncontrada: null },
       });
     },
     { immediate: true }
@@ -127,6 +146,17 @@ export function crearRutaAdapter({ pulsar, graphlet, voyajer }) {
   const desuscribirSeleccion = pulsar.subscribeSelector(
     (estado) => (estado.ui && estado.ui.activeConversation) || null,
     (id) => {
+      // Si la URL apunta a algo que no existe, no se reescribe.
+      //
+      // Sin esta comprobación la rama de arriba deja `activeConversation` en
+      // null, ésta lo interpreta como "no hay nada abierto" y empuja `inicio`,
+      // que sustituye la URL del usuario por la raíz. El aviso se borra junto
+      // con la evidencia de qué intentaba abrir, y el mensaje de error nunca
+      // llega a verse.
+      //
+      // Es la misma promesa que hace la rama de arriba: la URL es del usuario.
+      if (!id && pulsar.getState().ui && pulsar.getState().ui.rutaNoEncontrada) return;
+
       voyajer.push(
         id
           ? { vista: 'conversacion', conversacionId: id }

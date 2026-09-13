@@ -86,6 +86,16 @@ export function conversationMessages(elemento, ctx) {
   // Suscripción de contenido
   // ----------------------------------------------------------------
   //
+  // ORDEN DE REGISTRO: esta suscripción DEBE registrarse después de la
+  // estructural. Pulsar invoca a los listeners en orden de registro, así que
+  // cuando llega el primer token de un mensaje recién abierto, la estructural
+  // ya creó su nodo y `lista.zonaDe` lo encuentra. Al revés, el primer token
+  // se perdería hasta la siguiente notificación.
+  //
+  // Es una dependencia implícita en el orden de dos líneas de este archivo.
+  // Hay una aserción que la protege: el primer token de un mensaje nuevo debe
+  // aparecer en el DOM en esa misma notificación.
+  //
   // Deriva la lista una segunda vez por notificación. Es trabajo duplicado y
   // consciente: la alternativa era denormalizar el id en vuelo dentro de
   // `ui.*`, que desincroniza dos fuentes para la misma verdad. La medición de

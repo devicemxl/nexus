@@ -16,7 +16,7 @@ export function appShell(elemento, ctx) {
   // introduce la navegación y será ella quien lo requiera.
   const faltantes = [];
   if (!ctx.pulsar) faltantes.push('pulsar');
-  if (!ctx.graphlet) faltantes.push('graphlet');
+  if (!ctx.nebula) faltantes.push('nebula');
 
   if (faltantes.length > 0) {
     throw new Error(
@@ -24,8 +24,10 @@ export function appShell(elemento, ctx) {
     );
   }
 
+  // `hueco-mensajes` existió en la Escena 1.3 como marcador de posición del
+  // widget de mensajes. Desde 1.4 ese hueco lo ocupa `conversation-messages`,
+  // así que la referencia se retira en vez de dejarla defendida por un `if`.
   const zonaTitulo = elemento.querySelector('[data-zona="titulo-activo"]');
-  const zonaHueco = elemento.querySelector('[data-zona="hueco-mensajes"]');
 
   ctx.setState({
     ui: { ...ctx.getState().ui, shellMontado: true },
@@ -40,14 +42,12 @@ export function appShell(elemento, ctx) {
     (id, _previo, estado) => {
       if (!id) {
         if (zonaTitulo) zonaTitulo.textContent = 'Ninguna conversación seleccionada';
-        if (zonaHueco) zonaHueco.hidden = true;
         return;
       }
       const entidad = estado.entities?.[id];
       if (zonaTitulo) {
         zonaTitulo.textContent = entidad?.properties?.titulo || '(sin título)';
       }
-      if (zonaHueco) zonaHueco.hidden = false;
     },
     { immediate: true }
   );

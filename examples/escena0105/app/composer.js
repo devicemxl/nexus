@@ -11,10 +11,12 @@
 
 import {
   crearConversacion,
+  renombrarConversacion,
   agregarMensaje,
   listarMensajes,
   mensajeEnVuelo,
 } from './modelo.js';
+import { fijarUi } from './zonas.js';
 
 export function composer(elemento, ctx, opciones = {}) {
   const provider = opciones.provider;
@@ -44,16 +46,31 @@ export function composer(elemento, ctx, opciones = {}) {
     // Sin conversación activa, escribir crea una. Es lo que un usuario espera
     // al abrir la aplicación y ponerse a escribir.
     if (!conversacion || !ctx.entity(conversacion)) {
-      conversacion = crearConversacion(ctx.graphlet, { titulo: tituloDesde(texto) });
-      ctx.setState({ ui: { ...ctx.getState().ui, activeConversation: conversacion } });
+      conversacion = crearConversacion(ctx.nebula);
+      fijarUi(ctx, { activeConversation: conversacion });
     }
 
-    agregarMensaje(ctx.graphlet, conversacion, { rol: 'user', texto });
+    // El título sale del primer mensaje, venga la conversación de donde venga.
+    //
+    // Antes sólo se derivaba al crearla aquí, así que "Nueva conversación" y
+    // luego escribir dejaba el título por defecto mientras que abrir y escribir
+    // daba uno bueno. Dos caminos al mismo sitio con resultados distintos es
+    // una incoherencia, no una optimización.
+    const yaHabiaMensajes = listarMensajes(ctx.getState().entities, conversacion).length > 0;
+
+    agregarMensaje(ctx.nebula, conversacion, { rol: 'user', texto });
+
+    if (!yaHabiaMensajes) {
+      renombrarConversacion(ctx.nebula, conversacion, tituloDesde(texto));
+    }
     entrada.value = '';
     ajustarAltura();
 
     conversacionDelStream = conversacion;
-    enCurso = provider.responder(conversacion, { texto: opciones.respuesta });
+    // El provider elige la respuesta. El composer no la inyecta: el parámetro
+    // existía y nunca se pasaba, que es la peor combinación — parece una vía de
+    // configuración y no lo es.
+    enCurso = provider.responder(conversacion);
   }
 
   function detener() {

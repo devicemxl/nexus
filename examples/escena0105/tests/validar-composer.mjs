@@ -138,9 +138,9 @@ console.log('\n  Formato de URL');
 
 console.log('\n  Puente entre ruta e interfaz');
 {
-  const { graphlet, pulsar } = crearPrimitivas();
-  const datos = arrancarDatos({ graphlet, pulsar, storage: stg(), clave: 't' });
-  const conv = modelo.crearConversacion(graphlet, { titulo: 'Una' });
+  const { nebula, pulsar } = crearPrimitivas();
+  const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 't' });
+  const conv = modelo.crearConversacion(nebula, { titulo: 'Una' });
 
   historia.empujes = 0;
   pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv } });
@@ -157,33 +157,33 @@ console.log('\n  Puente entre ruta e interfaz');
 }
 {
   // --- URL -> interfaz ---
-  const { graphlet, pulsar } = crearPrimitivas();
-  const conv = modelo.crearConversacion(graphlet, { titulo: 'Destino' });
+  const { nebula, pulsar } = crearPrimitivas();
+  const conv = modelo.crearConversacion(nebula, { titulo: 'Destino' });
   const slug = conv.split(':')[1];
   fijarHash('#/c/' + slug);
 
-  const datos = arrancarDatos({ graphlet, pulsar, storage: stg(), clave: 't' });
+  const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 't' });
   eq('arrancar con una URL de conversación la selecciona',
     pulsar.getState().ui.activeConversation, conv);
   datos.destruir({ guardarPendiente: false });
 }
 {
   // --- deep link a algo inexistente ---
-  const { graphlet, pulsar } = crearPrimitivas();
+  const { nebula, pulsar } = crearPrimitivas();
   fijarHash('#/c/noexiste');
-  const datos = callado(() => arrancarDatos({ graphlet, pulsar, storage: stg(), clave: 't' }));
+  const datos = callado(() => arrancarDatos({ nebula, pulsar, storage: stg(), clave: 't' }));
   eq('una URL a una conversación inexistente no selecciona nada',
     pulsar.getState().ui.activeConversation || null, null);
-  eq('y no la crea', graphlet.allIds(), []);
+  eq('y no la crea', nebula.allIds(), []);
   datos.destruir({ guardarPendiente: false });
   fijarHash('');
 }
 {
   // --- LA ASERCIÓN CENTRAL: convergencia sin bucle ---
-  const { graphlet, pulsar } = crearPrimitivas();
-  const datos = arrancarDatos({ graphlet, pulsar, storage: stg(), clave: 't' });
-  const a = modelo.crearConversacion(graphlet, { titulo: 'A' });
-  const b = modelo.crearConversacion(graphlet, { titulo: 'B' });
+  const { nebula, pulsar } = crearPrimitivas();
+  const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 't' });
+  const a = modelo.crearConversacion(nebula, { titulo: 'A' });
+  const b = modelo.crearConversacion(nebula, { titulo: 'B' });
 
   let notificaciones = 0;
   pulsar.subscribe(() => { notificaciones++; });
@@ -249,14 +249,14 @@ console.log('\n  Composer');
   </div>`;
 
   const raiz = document.getElementById('raiz');
-  const { graphlet, pulsar } = crearPrimitivas();
-  const datos = arrancarDatos({ graphlet, pulsar, storage: stg(), clave: 'nexus.test' });
+  const { nebula, pulsar } = crearPrimitivas();
+  const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 'nexus.test' });
   const p = planificador();
-  const provider = crearMockProvider({ graphlet }, {
+  const provider = crearMockProvider({ nebula }, {
     programar: p.programar, cancelar: p.cancelar, respuestas: ['uno dos tres cuatro cinco'],
   });
 
-  montarInterfaz({ graphlet, pulsar, voyajer: datos.voyajer, provider, raiz });
+  montarInterfaz({ nebula, pulsar, voyajer: datos.voyajer, provider, raiz });
 
   const entrada = raiz.querySelector('[data-zona="entrada"]');
   const boton = raiz.querySelector('[data-accion="enviar"]');
@@ -271,7 +271,7 @@ console.log('\n  Composer');
   const conv = pulsar.getState().ui.activeConversation;
   ok('enviar sin conversación activa crea una', !!conv, String(conv));
   eq('el título sale del primer mensaje',
-    graphlet.get(conv).properties.titulo, 'Hola, esto es una prueba');
+    nebula.get(conv).properties.titulo, 'Hola, esto es una prueba');
   eq('se pintan el mensaje del usuario y el del asistente', mensajes.children.length, 2);
   eq('el primero es del usuario', mensajes.children[0].dataset.rol, 'user');
   eq('el campo se vacía tras enviar', entrada.value, '');
@@ -316,7 +316,7 @@ console.log('\n  Composer');
   eq('el botón vuelve a enviar', boton.dataset.modo, 'enviar');
 
   // --- cambiar de conversación con un stream vivo ---
-  const otra = modelo.crearConversacion(graphlet, { titulo: 'Otra' });
+  const otra = modelo.crearConversacion(nebula, { titulo: 'Otra' });
   pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv } });
   entrada.value = 'Empiezo aquí y me voy';
   boton.dispatchEvent(new w.Event('click', { bubbles: true }));
@@ -332,6 +332,29 @@ console.log('\n  Composer');
   ok('el mensaje queda marcado como interrumpido', interrumpidos.length >= 1);
 
   // --- teardown con stream vivo ---
+// R-2: el título debe salir del primer mensaje también cuando la
+  // conversación la creó el botón. Dos caminos al mismo sitio, mismo
+  // resultado.
+  const previa = modelo.crearConversacion(nebula);
+  const porDefecto = nebula.get(previa).properties.titulo;
+  pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: previa } });
+  entrada.value = 'Mensaje de una conversación ya creada';
+  boton.dispatchEvent(new w.Event('click', { bubbles: true }));
+  eq('una conversación creada aparte también toma título del primer mensaje',
+    nebula.get(previa).properties.titulo,
+    'Mensaje de una conversación ya creada');
+  ok('y ya no conserva el título por defecto',
+    nebula.get(previa).properties.titulo !== porDefecto);
+  p.agotar();
+
+  const conTitulo = nebula.get(previa).properties.titulo;
+  entrada.value = 'Segundo mensaje, no debe renombrar';
+  boton.dispatchEvent(new w.Event('click', { bubbles: true }));
+  eq('el segundo mensaje no renombra la conversación',
+    nebula.get(previa).properties.titulo, conTitulo);
+  p.agotar();
+  pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv } });
+
   const form = raiz.querySelector('[data-chunk="composer"]');
   entrada.value = 'Uno más antes de desmontar';
   boton.dispatchEvent(new w.Event('click', { bubbles: true }));
@@ -340,6 +363,66 @@ console.log('\n  Composer');
   Chunklet.unmount(form);
   eq('desmontar el composer detiene el stream', p.pendientes(), 0);
 
+  datos.destruir({ guardarPendiente: false });
+}
+
+console.log('\n  Hallazgos de la revisión externa');
+{
+  // R-1: detener() dentro de una notificación no debe dejar un temporizador.
+  const { nebula, pulsar } = crearPrimitivas();
+  const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 't', debounceMs: 1e6 });
+  const conv = modelo.crearConversacion(nebula);
+  const p = planificador();
+  const provider = crearMockProvider({ nebula }, {
+    programar: p.programar, cancelar: p.cancelar, respuestas: ['uno dos tres cuatro cinco seis'],
+  });
+
+  const asa = provider.responder(conv);
+  let detenido = false;
+  pulsar.subscribe(() => {
+    if (!detenido && nebula.get(asa.mensajeId).properties.texto.includes('dos')) {
+      detenido = true;
+      asa.detener();
+    }
+  });
+  let vueltas = 0;
+  while (p.pendientes() && !detenido && vueltas < 50) { p.avanzar(1); vueltas++; }
+
+  ok('detener() llegó a correr dentro de la notificación', detenido);
+  eq('y no queda ningún temporizador agendado después', p.pendientes(), 0);
+  eq('el mensaje queda interrumpido',
+    nebula.get(asa.mensajeId).properties.estado, modelo.ESTADO_INTERRUMPIDO);
+  datos.destruir({ guardarPendiente: false });
+}
+{
+  // R-5: una ruta inexistente deja constancia en ui, no sólo en consola.
+  const { nebula, pulsar } = crearPrimitivas();
+  fijarHash('#/c/noexiste');
+  const datos = callado(() => arrancarDatos({ nebula, pulsar, storage: stg(), clave: 't' }));
+  eq('una ruta inexistente queda registrada en ui',
+    pulsar.getState().ui.rutaNoEncontrada, 'conversation:noexiste');
+  eq('y no hay conversación seleccionada',
+    pulsar.getState().ui.activeConversation || null, null);
+  eq('la URL del usuario no se reescribe', w.location.hash, '#/c/noexiste');
+
+  const conv = modelo.crearConversacion(nebula, { titulo: 'Existe' });
+  pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv } });
+  eq('navegar a una ruta válida limpia la constancia',
+    pulsar.getState().ui.rutaNoEncontrada, null);
+  datos.destruir({ guardarPendiente: false });
+  fijarHash('');
+}
+{
+  // R-4: un snapshot con properties malformadas se detecta antes de hidratar.
+  const storage = stg();
+  storage.setItem('t', JSON.stringify({
+    entities: { 'conversation:x': { properties: 'no soy objeto' } },
+  }));
+  const { nebula, pulsar } = crearPrimitivas();
+  const datos = callado(() => arrancarDatos({ nebula, pulsar, storage, clave: 't' }));
+  eq('properties malformadas se reportan como snapshot corrupto',
+    datos.hidratacion.estado, 'corrupto');
+  eq('y el grafo real queda intacto', nebula.allIds(), []);
   datos.destruir({ guardarPendiente: false });
 }
 

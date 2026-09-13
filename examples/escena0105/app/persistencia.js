@@ -8,7 +8,7 @@
  * Escena 1.1 — Fase 1.
  */
 
-import { createGraphlet } from '../../../src/graphlet.js';
+import { createNebula } from '../../../src/nebula.js';
 import { createHydrationAdapter } from '../../../src/adapters/hydration-adapter.js';
 
 /**
@@ -40,6 +40,12 @@ function _problemaDeForma(datos) {
     if (entrada === null || typeof entrada !== 'object' || Array.isArray(entrada)) {
       return `la entrada "${id}" no es un objeto`;
     }
+    if (entrada.properties !== undefined) {
+      if (entrada.properties === null || typeof entrada.properties !== 'object'
+          || Array.isArray(entrada.properties)) {
+        return `las properties de "${id}" no son un objeto`;
+      }
+    }
     if (entrada.links !== undefined) {
       if (entrada.links === null || typeof entrada.links !== 'object' || Array.isArray(entrada.links)) {
         return `los links de "${id}" no son un objeto`;
@@ -70,7 +76,7 @@ function _problemaDeForma(datos) {
 function _ensayarHidratacion(snapshot) {
   try {
     createHydrationAdapter(
-      { graphlet: createGraphlet() },
+      { nebula: createNebula() },
       { snapshot, onMissingTarget: 'skip' }
     );
     return null;

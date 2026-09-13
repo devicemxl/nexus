@@ -152,11 +152,11 @@ function ejecutarCasos() {
     'Lo que corta el bucle es la idempotencia de push más la equality del ' +
     'selector. La guarda del adapter no lo corta: ahorra un setState por selección.');
   {
-    const { graphlet, pulsar } = crearPrimitivas();
+    const { nebula, pulsar } = crearPrimitivas();
     const voyajer = voyajerSimulado(pulsar);
-    const datos = arrancarDatos({ graphlet, pulsar, storage: stg(), clave: 't', voyajer });
-    const a = modelo.crearConversacion(graphlet, { titulo: 'A' });
-    const b = modelo.crearConversacion(graphlet, { titulo: 'B' });
+    const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 't', voyajer });
+    const a = modelo.crearConversacion(nebula, { titulo: 'A' });
+    const b = modelo.crearConversacion(nebula, { titulo: 'B' });
 
     let setStates = 0;
     const orig = pulsar.setState.bind(pulsar);
@@ -184,23 +184,23 @@ function ejecutarCasos() {
     datos.destruir({ guardarPendiente: false });
   }
   {
-    const { graphlet, pulsar } = crearPrimitivas();
-    const conv = modelo.crearConversacion(graphlet, { titulo: 'Destino' });
+    const { nebula, pulsar } = crearPrimitivas();
+    const conv = modelo.crearConversacion(nebula, { titulo: 'Destino' });
     const voyajer = voyajerSimulado(pulsar);
     pulsar.setState({ route: ruta.parse({ pathname: '/c/' + conv.split(':')[1] }) });
-    const datos = arrancarDatos({ graphlet, pulsar, storage: stg(), clave: 't', voyajer });
+    const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 't', voyajer });
     eq('arrancar con una ruta de conversación la selecciona',
       pulsar.getState().ui.activeConversation, conv);
     datos.destruir({ guardarPendiente: false });
   }
   {
-    const { graphlet, pulsar } = crearPrimitivas();
+    const { nebula, pulsar } = crearPrimitivas();
     const voyajer = voyajerSimulado(pulsar);
     pulsar.setState({ route: ruta.parse({ pathname: '/c/noexiste' }) });
-    const datos = callado(() => arrancarDatos({ graphlet, pulsar, storage: stg(), clave: 't', voyajer }));
+    const datos = callado(() => arrancarDatos({ nebula, pulsar, storage: stg(), clave: 't', voyajer }));
     eq('una ruta a una conversación inexistente no selecciona nada',
       pulsar.getState().ui.activeConversation || null, null);
-    eq('y no la crea', graphlet.allIds(), []);
+    eq('y no la crea', nebula.allIds(), []);
     datos.destruir({ guardarPendiente: false });
   }
 
@@ -235,15 +235,15 @@ function ejecutarCasos() {
       </div>`;
 
     const raiz = document.getElementById('raiz');
-    const { graphlet, pulsar } = crearPrimitivas();
+    const { nebula, pulsar } = crearPrimitivas();
     const voyajer = voyajerSimulado(pulsar);
-    const datos = arrancarDatos({ graphlet, pulsar, storage: stg(), clave: 'nexus.test', voyajer });
+    const datos = arrancarDatos({ nebula, pulsar, storage: stg(), clave: 'nexus.test', voyajer });
     const p = planificador();
-    const provider = crearMockProvider({ graphlet }, {
+    const provider = crearMockProvider({ nebula }, {
       programar: p.programar, cancelar: p.cancelar, respuestas: ['uno dos tres cuatro cinco'],
     });
 
-    montarInterfaz({ graphlet, pulsar, voyajer, provider, raiz });
+    montarInterfaz({ nebula, pulsar, voyajer, provider, raiz });
 
     const entrada = raiz.querySelector('[data-zona="entrada"]');
     const boton = raiz.querySelector('[data-accion="enviar"]');
@@ -256,7 +256,7 @@ function ejecutarCasos() {
     const conv = pulsar.getState().ui.activeConversation;
     ok('enviar sin conversación activa crea una', !!conv);
     eq('el título sale del primer mensaje',
-      graphlet.get(conv).properties.titulo, 'Hola, esto es una prueba');
+      nebula.get(conv).properties.titulo, 'Hola, esto es una prueba');
     eq('se pintan el mensaje del usuario y el del asistente', mensajes.children.length, 2);
     eq('el primero es del usuario', mensajes.children[0].dataset.rol, 'user');
     eq('el campo se vacía tras enviar', entrada.value, '');
@@ -296,7 +296,7 @@ function ejecutarCasos() {
     eq('detener libera los temporizadores', p.pendientes(), 0);
     eq('el botón vuelve a enviar', boton.dataset.modo, 'enviar');
 
-    const otra = modelo.crearConversacion(graphlet, { titulo: 'Otra' });
+    const otra = modelo.crearConversacion(nebula, { titulo: 'Otra' });
     pulsar.setState({ ui: { ...pulsar.getState().ui, activeConversation: conv } });
     entrada.value = 'Empiezo aquí y me voy';
     boton.click();
