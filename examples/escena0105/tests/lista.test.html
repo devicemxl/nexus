@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escena 1.5 — harness de la factory de listas</title>
+<style>
+  :root{--papel:#F1F3EF;--superf:#FBFCFA;--tinta:#1A1F1C;--tenue:#5C6660;--regla:#CBD2CB;
+        --verde:#3D7A4E;--oxido:#A8342A;--pizarra:#43617F;
+        --sans:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+        --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace}
+  *{box-sizing:border-box}
+  body{margin:0;padding:3rem 1.5rem 6rem;background:var(--papel);color:var(--tinta);
+       font-family:var(--sans);font-size:15px;line-height:1.55}
+  main{max-width:62rem;margin:0 auto}
+  h1{font-size:1.45rem;font-weight:600;letter-spacing:-.011em;margin:0 0 .4rem}
+  .subtitulo{color:var(--tenue);max-width:46rem;margin:0 0 2rem}
+  .subtitulo code{font-family:var(--mono);font-size:.88em}
+  .barra{display:flex;align-items:baseline;gap:1.25rem;flex-wrap:wrap;padding:.9rem 0;
+         border-top:1px solid var(--regla);border-bottom:1px solid var(--regla);margin-bottom:2.5rem}
+  button{font:inherit;font-weight:500;color:var(--superf);background:var(--tinta);border:none;
+         border-radius:3px;padding:.45rem 1.1rem;cursor:pointer}
+  button:hover{background:#2B332D}
+  button[disabled]{opacity:.45;cursor:default}
+  .marcador{font-family:var(--mono);font-size:.95rem}
+  .marcador .cifra{font-weight:600}
+  .marcador.ok .cifra{color:var(--verde)}
+  .marcador.mal .cifra{color:var(--oxido)}
+  .reloj{font-family:var(--mono);color:var(--tenue);font-size:.9rem}
+  .traza{background:var(--superf);border:1px solid var(--regla);border-radius:4px;
+         padding:1.4rem 1.5rem;margin-bottom:2.5rem}
+  .traza h2{font-size:.98rem;font-weight:600;margin:0 0 .3rem}
+  .traza p{margin:0 0 1.2rem;color:var(--tenue);font-size:.9rem;max-width:44rem}
+  .traza p.remate{margin:1.1rem 0 0;font-size:.86rem}
+  table.medicion{border-collapse:collapse;font-family:var(--mono);font-size:.87rem}
+  table.medicion th{text-align:right;font-weight:500;color:var(--tenue);font-family:var(--sans);
+                    font-size:.8rem;padding:.3rem 1.1rem .3rem 0}
+  table.medicion td{text-align:right;padding:.3rem 1.1rem .3rem 0}
+  table.medicion td b{color:var(--pizarra)}
+  table.medicion td.bien{color:var(--verde);font-weight:600}
+  table.medicion tr+tr td{border-top:1px dotted var(--regla)}
+  section.grupo{margin-bottom:2.25rem}
+  section.grupo>h2{font-size:.98rem;font-weight:600;margin:0 0 .15rem}
+  section.grupo>.nota{color:var(--tenue);font-size:.88rem;margin:0 0 .8rem;max-width:46rem}
+  ul.asserts{list-style:none;margin:0;padding:0}
+  ul.asserts li{display:grid;grid-template-columns:4.2rem 1fr;gap:.75rem;align-items:baseline;
+                padding:.32rem 0;border-bottom:1px solid rgba(203,210,203,.5)}
+  .veredicto{font-family:var(--mono);font-size:.76rem;letter-spacing:.02em}
+  .veredicto.ok{color:var(--verde)}
+  .veredicto.mal{color:var(--oxido);font-weight:600}
+  .detalle{grid-column:2;font-family:var(--mono);font-size:.82rem;color:var(--oxido);
+           background:rgba(168,52,42,.06);border-left:2px solid var(--oxido);
+           padding:.4rem .7rem;margin-top:.35rem;white-space:pre-wrap}
+  /* El fixture debe ser enfocable de verdad, así que no puede estar oculto. */
+  /* El fixture tiene que poder recibir foco: nada de display:none,
+     visibility:hidden ni pointer-events:none, que lo impiden. Se aparta
+     visualmente sin sacarlo del flujo de accesibilidad. */
+  #fixture{position:fixed;left:0;bottom:0;width:22rem;height:9rem;overflow:auto;
+           opacity:.03;z-index:0}
+  @media(max-width:34rem){ul.asserts li{grid-template-columns:3.4rem 1fr}.detalle{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Escena 1.5 — harness de la factory de listas</h1>
+  <p class="subtitulo">
+    Verifica la reconciliación con clave que resuelve
+    <code>RECONCILIACION-CON-CLAVE</code>. La aserción central cuenta
+    operaciones de DOM: el resultado es idéntico se haya llegado a él
+    recreando todo o moviendo un nodo. La que cierra la deuda es otra —
+    <strong>el foco sobrevive</strong> a cambios en otras entidades, y eso
+    sólo se puede comprobar en un navegador.
+  </p>
+
+  <div class="barra">
+    <button id="correr">Correr el harness</button>
+    <span class="marcador" id="marcador">sin ejecutar</span>
+    <span class="reloj" id="reloj"></span>
+  </div>
+
+  <div class="traza">
+    <h2>Coste de un turno de conversación</h2>
+    <p>
+      Un turno produce tres cambios estructurales: añadir el mensaje del
+      usuario, abrir el del asistente y cerrarlo. Se compara la reconciliación
+      con la reconstrucción completa que hacía el widget antes de esta escena.
+    </p>
+    <table class="medicion" id="medicion"><tr><td>pendiente</td></tr></table>
+    <p class="remate" id="veredicto"></p>
+  </div>
+
+  <div id="resultados"></div>
+</main>
+
+<div id="fixture"></div>
+
+<script type="module">
+import { createStatePulsar } from '../../../src/pulsar.js';
+import { crearListaDeEntidades } from '../app/lista-de-entidades.js';
+import { zonas, plantilla, fijarUi } from '../app/zonas.js';
+import Chunklet from '../../../src/chunklet.js';
+
+const grupos = []; let g = null;
+function grupo(t, n) { g = { titulo: t, nota: n, casos: [] }; grupos.push(g); }
+function eq(etiqueta, actual, esperado) {
+  const a = JSON.stringify(actual), e = JSON.stringify(esperado);
+  g.casos.push({ etiqueta, ok: a === e, actual: a, esperado: e });
+}
+function ok(etiqueta, cond, detalle = '') {
+  g.casos.push({ etiqueta, ok: !!cond, actual: cond ? 'true' : `false${detalle ? ' — ' + detalle : ''}`, esperado: 'true' });
+}
+function lanza(etiqueta, fn) {
+  let l = false; try { fn(); } catch { l = true; }
+  g.casos.push({ etiqueta, ok: l, actual: l ? 'lanzó' : 'no lanzó', esperado: 'lanzó' });
+}
+
+const HTML = `
+  <div id="w">
+    <p data-zona="vacio">vacío</p>
+    <ul data-zona="items" style="list-style:none;margin:0;padding:0"></ul>
+    <template data-plantilla="fila">
+      <li data-fila><span data-zona="titulo"></span><input data-zona="campo"></li>
+    </template>
+  </div>`;
+
+function contextoDe(pulsar) {
+  const liberadores = [];
+  return {
+    ctx: {
+      pulsar,
+      getState: () => pulsar.getState(),
+      setState: (p) => pulsar.setState(p),
+      subscribeSelector: (sel, fn, o) => { liberadores.push(pulsar.subscribeSelector(sel, fn, o)); },
+      listen: () => {},
+      cleanup: (fn) => liberadores.push(fn),
+    },
+    liberar: () => { for (const f of liberadores.reverse()) f(); },
+  };
+}
+
+function montar(iniciales = [], extra = {}) {
+  const fixture = document.getElementById('fixture');
+  fixture.innerHTML = HTML;
+  const elemento = document.getElementById('w');
+  const pulsar = createStatePulsar({ ui: {}, lista: iniciales });
+  const { ctx, liberar } = contextoDe(pulsar);
+  const lista = crearListaDeEntidades(elemento, ctx, {
+    nombre: 'prueba', contenedor: 'items', plantilla: 'fila', vacio: 'vacio',
+    raizDelClon: '[data-fila]',
+    selector: (estado) => estado.lista || [],
+    equality: (a, b) => a === b,
+    atributos: (e) => ({ marca: e.marca }),
+    zonas: { titulo: (e) => e.titulo },
+    ...extra,
+  });
+  return {
+    elemento, pulsar, lista,
+    contenedor: elemento.querySelector('[data-zona="items"]'),
+    fijar: (arr) => pulsar.setState({ lista: arr }),
+    liberar,
+  };
+}
+const ids = (c) => [...c.children].map((n) => n.dataset.entity);
+const medicion = [];
+
+// ==================================================================
+function ejecutarCasos() {
+  grupos.length = 0; medicion.length = 0;
+
+  grupo('Ayudas menores',
+    'Lo único que los cinco widgets comparten. El inventario de la escena no ' +
+    'encontró nada más, y extraer de más habría sido inventar vocabulario.');
+  {
+    const fixture = document.getElementById('fixture');
+    fixture.innerHTML = HTML;
+    const el = document.getElementById('w');
+    const z = zonas(el, { items: true, vacio: false, inexistente: false }, 'prueba');
+    ok('localiza las zonas presentes', z.items !== null && z.vacio !== null);
+    eq('una zona opcional ausente queda en null', z.inexistente, null);
+    lanza('una zona obligatoria ausente lanza', () => zonas(el, { noEstoy: true }, 'prueba'));
+    ok('el mensaje nombra al widget y la zona', (() => {
+      try { zonas(el, { noEstoy: true }, 'mi-widget'); return false; }
+      catch (e) { return e.message.includes('mi-widget') && e.message.includes('noEstoy'); }
+    })());
+    ok('localiza la plantilla', plantilla(el, 'fila', 'prueba') !== null);
+    lanza('una plantilla ausente lanza', () => plantilla(el, 'noEstoy', 'prueba'));
+
+    const pulsar = createStatePulsar({ ui: { a: 1, b: 2 }, otra: {} });
+    const ctx = { getState: () => pulsar.getState(), setState: (p) => pulsar.setState(p) };
+    fijarUi(ctx, { b: 3 });
+    eq('fijarUi conserva lo que ya había en ui', pulsar.getState().ui, { a: 1, b: 3 });
+    eq('y no toca otros espacios de nombres', pulsar.getState().otra, {});
+  }
+
+  grupo('Pintado inicial', 'Lo que la factory hace la primera vez.');
+  {
+    const { lista, contenedor, liberar } = montar([
+      { id: 'a', titulo: 'Alfa' }, { id: 'b', titulo: 'Beta' }]);
+    eq('pinta un nodo por entidad', contenedor.children.length, 2);
+    eq('en el orden de la lista', ids(contenedor), ['a', 'b']);
+    eq('las zonas se rellenan',
+      contenedor.children[1].querySelector('[data-zona="titulo"]').textContent, 'Beta');
+    eq('crea dos nodos y no destruye ninguno',
+      [lista.cuenta.creados, lista.cuenta.destruidos], [2, 0]);
+    liberar();
+  }
+  {
+    const { contenedor, elemento, fijar, liberar } = montar([]);
+    const vacio = elemento.querySelector('[data-zona="vacio"]');
+    eq('con lista vacía no hay nodos', contenedor.children.length, 0);
+    eq('el aviso de vacío está visible', vacio.hidden, false);
+    fijar([{ id: 'a', titulo: 'A' }]);
+    eq('al llegar una entidad el aviso se oculta', vacio.hidden, true);
+    fijar([]);
+    eq('al vaciarse vuelve a aparecer', vacio.hidden, false);
+    liberar();
+  }
+
+  grupo('Reconciliación — el mínimo de operaciones',
+    'El DOM resultante es idéntico se haya llegado a él recreando todo o ' +
+    'moviendo un nodo. Sin contar operaciones, no hay forma de distinguirlo.');
+  {
+    const { lista, contenedor, fijar, liberar } = montar([
+      { id: 'a', titulo: 'A' }, { id: 'b', titulo: 'B' }, { id: 'c', titulo: 'C' }]);
+
+    lista.reiniciarCuenta();
+    fijar([{ id: 'a', titulo: 'A' }, { id: 'b', titulo: 'B' }, { id: 'c', titulo: 'C' }, { id: 'd', titulo: 'D' }]);
+    eq('añadir al final crea un nodo y no toca los demás',
+      [lista.cuenta.creados, lista.cuenta.destruidos, lista.cuenta.movidos], [1, 0, 0]);
+    eq('el nodo nuevo queda al final', ids(contenedor), ['a', 'b', 'c', 'd']);
+
+    lista.reiniciarCuenta();
+    fijar([{ id: 'z', titulo: 'Z' }, { id: 'a', titulo: 'A' }, { id: 'b', titulo: 'B' },
+           { id: 'c', titulo: 'C' }, { id: 'd', titulo: 'D' }]);
+    eq('insertar al principio crea uno y no mueve los existentes',
+      [lista.cuenta.creados, lista.cuenta.destruidos, lista.cuenta.movidos], [1, 0, 0]);
+    eq('queda en su posición', ids(contenedor), ['z', 'a', 'b', 'c', 'd']);
+
+    lista.reiniciarCuenta();
+    fijar([{ id: 'z', titulo: 'Z' }, { id: 'b', titulo: 'B' }, { id: 'd', titulo: 'D' }]);
+    eq('eliminar destruye sólo los ausentes',
+      [lista.cuenta.creados, lista.cuenta.destruidos], [0, 2]);
+    eq('los supervivientes conservan su orden', ids(contenedor), ['z', 'b', 'd']);
+
+    lista.reiniciarCuenta();
+    fijar([{ id: 'd', titulo: 'D' }, { id: 'z', titulo: 'Z' }, { id: 'b', titulo: 'B' }]);
+    eq('reordenar mueve sin crear ni destruir',
+      [lista.cuenta.creados, lista.cuenta.destruidos], [0, 0]);
+    ok('se mueve algún nodo', lista.cuenta.movidos > 0, `movidos: ${lista.cuenta.movidos}`);
+    eq('el orden nuevo es el pedido', ids(contenedor), ['d', 'z', 'b']);
+
+    lista.reiniciarCuenta();
+    fijar([{ id: 'd', titulo: 'D renombrada' }, { id: 'z', titulo: 'Z' }, { id: 'b', titulo: 'B' }]);
+    eq('cambiar una propiedad no crea, destruye ni mueve',
+      [lista.cuenta.creados, lista.cuenta.destruidos, lista.cuenta.movidos], [0, 0, 0]);
+    eq('la zona se actualiza',
+      contenedor.children[0].querySelector('[data-zona="titulo"]').textContent, 'D renombrada');
+    liberar();
+  }
+
+  grupo('Identidad de nodo — lo que cierra la deuda',
+    'El estado que vive en el DOM y no en el modelo se pierde si el nodo se ' +
+    'recrea. Ésa era la condición que convertía la deuda de coste en defecto.');
+  {
+    const { lista, fijar, liberar } = montar([
+      { id: 'a', titulo: 'A' }, { id: 'b', titulo: 'B' }]);
+
+    const nodoA = lista.nodoDe('a');
+    fijar([{ id: 'a', titulo: 'A' }, { id: 'b', titulo: 'B cambiada' }]);
+    ok('el nodo de una entidad intacta es el MISMO objeto', lista.nodoDe('a') === nodoA);
+
+    // Foco real: sólo el navegador puede responder esto.
+    // Estas tres aserciones son incondicionales a propósito.
+    //
+    // Estuvieron envueltas en `if (teniaFoco)` por prudencia, y esa prudencia
+    // era un error: una aserción que puede no ejecutarse no protege nada, y el
+    // marcador no distingue "pasó" de "no corrió". Son además las que sostienen
+    // la afirmación central de la escena. Si el entorno no puede dar foco, eso
+    // tiene que verse en rojo, no desaparecer.
+    const campo = nodoA.querySelector('[data-zona="campo"]');
+    campo.value = 'escrito por el usuario';
+    campo.focus();
+    try { campo.setSelectionRange(7, 10); } catch { /* se verá en su aserción */ }
+    ok('el campo tomó el foco', document.activeElement === campo,
+      `activeElement: ${document.activeElement && document.activeElement.tagName}`);
+
+    fijar([{ id: 'a', titulo: 'A' }, { id: 'b', titulo: 'B otra vez' }, { id: 'c', titulo: 'C nueva' }]);
+    eq('el texto escrito sobrevive a cambios en otras entidades',
+      nodoA.querySelector('[data-zona="campo"]').value, 'escrito por el usuario');
+    ok('el FOCO sobrevive a cambios en otras entidades', document.activeElement === campo,
+      `activeElement: ${document.activeElement && document.activeElement.tagName}`);
+    eq('y también la selección dentro del campo',
+      [campo.selectionStart, campo.selectionEnd], [7, 10]);
+
+    fijar([{ id: 'c', titulo: 'C nueva' }, { id: 'a', titulo: 'A' }]);
+    ok('sigue siendo el mismo nodo tras reordenar', lista.nodoDe('a') === nodoA);
+    eq('y el texto sigue ahí',
+      lista.nodoDe('a').querySelector('[data-zona="campo"]').value, 'escrito por el usuario');
+    liberar();
+  }
+
+  grupo('Chunklets anidados',
+    'Se desmontan exactamente cuando su nodo se retira, ni antes ni después.');
+  {
+    const fixture = document.getElementById('fixture');
+    fixture.innerHTML = `
+      <div id="w2">
+        <ul data-zona="items"></ul>
+        <template data-plantilla="fila">
+          <li data-chunk="hijo"><span data-zona="titulo"></span></li>
+        </template>
+      </div>`;
+    const elemento = document.getElementById('w2');
+    const pulsar = createStatePulsar({ ui: {}, lista: [] });
+    const { ctx, liberar } = contextoDe(pulsar);
+
+    let montados = 0, desmontados = 0;
+    Chunklet.setup({ pulsar });
+    Chunklet.define('hijo', (el, c) => { montados++; c.cleanup(() => { desmontados++; }); });
+
+    crearListaDeEntidades(elemento, ctx, {
+      nombre: 'anidada', contenedor: 'items', plantilla: 'fila',
+      raizDelClon: '[data-chunk]',
+      selector: (estado) => estado.lista || [],
+      equality: (a, b) => a === b,
+      zonas: { titulo: (e) => e.titulo },
+      montarAnidados: true,
+    });
+    const contenedor = elemento.querySelector('[data-zona="items"]');
+    const fijar = (arr) => pulsar.setState({ lista: arr });
+
+    fijar([{ id: 'a', titulo: 'A' }, { id: 'b', titulo: 'B' }]);
+    eq('se monta un Chunklet por nodo creado', montados, 2);
+    eq('y no se desmonta ninguno todavía', desmontados, 0);
+    fijar([{ id: 'a', titulo: 'A cambiada' }, { id: 'b', titulo: 'B' }]);
+    eq('actualizar no remonta ni desmonta', [montados, desmontados], [2, 0]);
+    fijar([{ id: 'b', titulo: 'B' }, { id: 'a', titulo: 'A cambiada' }]);
+    eq('reordenar tampoco', [montados, desmontados], [2, 0]);
+    fijar([{ id: 'b', titulo: 'B' }]);
+    eq('retirar una entidad desmonta exactamente su Chunklet', [montados, desmontados], [2, 1]);
+    liberar();
+    eq('liberar el widget desmonta lo que quedaba', desmontados, 2);
+    eq('y vacía el contenedor', contenedor.children.length, 0);
+  }
+
+  grupo('Coste de un turno',
+    'Tres cambios estructurales por turno. Se compara con la reconstrucción ' +
+    'completa que hacía el widget antes de esta escena.');
+  {
+    for (const M of [10, 50, 200, 500]) {
+      const previos = [];
+      for (let i = 0; i < M; i++) previos.push({ id: `m${i}`, titulo: `previo ${i}` });
+
+      const { lista, contenedor, fijar, liberar } = montar(previos);
+      lista.reiniciarCuenta();
+      fijar([...previos, { id: 'u', titulo: 'mi pregunta' }]);
+      fijar([...previos, { id: 'u', titulo: 'mi pregunta' }, { id: 'a', titulo: '', marca: 'en-vuelo' }]);
+      fijar([...previos, { id: 'u', titulo: 'mi pregunta' }, { id: 'a', titulo: 'respuesta', marca: 'completo' }]);
+      const c = lista.cuenta;
+      liberar();
+
+      // Control: lo que costaba reconstruir tres veces.
+      const antes = 3 * (M + 2) + 3 * (M + 1);
+      medicion.push({ M, reconciliado: c.creados + c.destruidos + c.movidos, antes });
+    }
+    ok('el coste por turno no crece con el número de mensajes',
+      medicion.every((m) => m.reconciliado === medicion[0].reconciliado),
+      medicion.map((m) => m.reconciliado).join(', '));
+    eq('un turno cuesta dos operaciones de DOM', medicion[0].reconciliado, 2);
+  }
+
+  grupo('Ganchos', 'Los usa el widget de mensajes para conservar el desplazamiento.');
+  {
+    const orden = [];
+    const { fijar, liberar } = montar([{ id: 'a', titulo: 'A' }], {
+      antesDePintar: () => { orden.push('antes'); return 'testigo'; },
+      despuesDePintar: (previo, lista) => { orden.push(`despues:${previo}:${lista.length}`); },
+    });
+    eq('corren en orden y el previo se propaga', orden, ['antes', 'despues:testigo:1']);
+    orden.length = 0;
+    fijar([{ id: 'a', titulo: 'A' }, { id: 'b', titulo: 'B' }]);
+    eq('y vuelven a correr en cada reconciliación', orden, ['antes', 'despues:testigo:2']);
+    liberar();
+  }
+
+  document.getElementById('fixture').innerHTML = '';
+}
+
+// ------------------------------------------------------------------
+const $m = document.getElementById('medicion');
+const $v = document.getElementById('veredicto');
+const $r = document.getElementById('resultados');
+const $mc = document.getElementById('marcador');
+const $rl = document.getElementById('reloj');
+const $b = document.getElementById('correr');
+
+function pintarMedicion() {
+  if (!medicion.length) { $m.innerHTML = '<tr><td>sin datos</td></tr>'; return; }
+  $m.innerHTML =
+    '<tr><th>mensajes previos</th>' + medicion.map((m) => `<td>${m.M}</td>`).join('') + '</tr>' +
+    '<tr><th>antes: reconstrucción completa</th>' + medicion.map((m) => `<td>${m.antes}</td>`).join('') + '</tr>' +
+    '<tr><th>ahora: reconciliación</th>' + medicion.map((m) => `<td class="bien"><b>${m.reconciliado}</b></td>`).join('') + '</tr>';
+  const peor = medicion[medicion.length - 1];
+  $v.textContent =
+    `A ${peor.M} mensajes, un turno pasa de ${peor.antes} operaciones de DOM a ` +
+    `${peor.reconciliado}. El coste antiguo crecía linealmente con el tamaño de la ` +
+    `conversación; el nuevo es constante.`;
+}
+
+function pintarResultados() {
+  let total = 0, fallos = 0;
+  $r.innerHTML = grupos.map((gr) => {
+    const items = gr.casos.map((c) => {
+      total++; if (!c.ok) fallos++;
+      const d = c.ok ? '' : `<div class="detalle">esperado  ${c.esperado}\nobtenido  ${c.actual}</div>`;
+      return `<li><span class="veredicto ${c.ok ? 'ok' : 'mal'}">${c.ok ? 'verde' : 'ROJO'}</span><span>${c.etiqueta}</span>${d}</li>`;
+    }).join('');
+    return `<section class="grupo"><h2>${gr.titulo}</h2><p class="nota">${gr.nota}</p><ul class="asserts">${items}</ul></section>`;
+  }).join('');
+  return { total, fallos };
+}
+
+let yaCorrio = false;
+function ejecutar() {
+  $b.disabled = true;
+  const t0 = performance.now();
+  ejecutarCasos();
+  pintarMedicion();
+  const { total, fallos } = pintarResultados();
+  $mc.className = 'marcador ' + (fallos === 0 ? 'ok' : 'mal');
+  $mc.innerHTML = fallos === 0
+    ? `<span class="cifra">${total}/${total}</span> aserciones verdes`
+    : `<span class="cifra">${total - fallos}/${total}</span> verdes · ${fallos} en rojo`;
+  $rl.textContent = `${(performance.now() - t0).toFixed(0)} ms`;
+  if (yaCorrio) return;
+  yaCorrio = true;
+  $b.textContent = 'Recargar para correr de nuevo';
+  $b.addEventListener('click', () => location.reload());
+  $b.disabled = false;
+}
+ejecutar();
+</script>
+</body>
+</html>
