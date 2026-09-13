@@ -1,8 +1,11 @@
 /**
  * Logging / Observability Adapter (initial implementation)
  *
- * Contrato: adapters/logging-adapter.spec.md v0.1.0
- * Implementation version: 0.1.0
+ * Contrato: adapters/logging-adapter.spec.md v0.2.0
+ * Implementation version: 0.2.0
+ *
+ * Cambios respecto a v0.1.0 (sin cambio de API pública):
+ * - Wrappers instalados vía `adapter-chain.js`.
  *
  * Observa mutaciones en nebula y/o transiciones en Pulsar,
  * emitiendo eventos estructurados a un sink pluggable. Estrictamente
@@ -26,6 +29,8 @@
  *   // ... vida útil ...
  *   log.destroy();
  */
+
+import { wrap, unwrap } from './adapter-chain.js';
 
 // ============================================
 // UTILIDADES PRIVADAS
@@ -154,20 +159,11 @@ export function createLoggingAdapter(context, options = {}) {
   const { nebula, pulsar } = context;
 
   // ---------- Estado interno ----------
+  // Handles de la cadena de wrappers (adapter-chain.js). El adapter es
+  // read-only respecto a la conducta observada, pero su instalación es
+  // un wrapper como cualquier otro y comparte la misma disciplina.
   let _destroyed = false;
-  const _nebulaOriginals = hasnebula ? {
-    put: nebula.put,
-    upsert: nebula.upsert,
-    update: nebula.update,
-    delete: nebula.delete,
-    link: nebula.link,
-    unlink: nebula.unlink,
-    unlinkAll: nebula.unlinkAll,
-  } : null;
-
-  const _pulsarOriginals = hasPulsar ? {
-    setState: pulsar.setState,
-  } : null;
+  const _handles = [];
 
   // ============================================
   // EMISIÓN
@@ -248,63 +244,60 @@ export function createLoggingAdapter(context, options = {}) {
   // ============================================
 
   if (hasnebula) {
-    nebula.put = function(id, properties) {
-      const result = _nebulaOriginals.put.call(nebula, id, properties);
+    _handles.push(wrap(nebula, 'put', function (next, id, properties) {
+      const result = next(id, properties);
       _emit('nebula', 'put', [id, properties]);
       return result;
-    };
+    }));
 
-    nebula.upsert = function(id, properties) {
-      const result = _nebulaOriginals.upsert.call(nebula, id, properties);
+    _handles.push(wrap(nebula, 'upsert', function (next, id, properties) {
+      const result = next(id, properties);
       _emit('nebula', 'upsert', [id, properties]);
       return result;
-    };
+    }));
 
-    nebula.update = function(id, patch) {
-      const result = _nebulaOriginals.update.call(nebula, id, patch);
+    _handles.push(wrap(nebula, 'update', function (next, id, patch) {
+      const result = next(id, patch);
       _emit('nebula', 'update', [id, patch]);
       return result;
-    };
+    }));
 
-    nebula.delete = function(id) {
-      const result = _nebulaOriginals.delete.call(nebula, id);
+    _handles.push(wrap(nebula, 'delete', function (next, id) {
+      const result = next(id);
       _emit('nebula', 'delete', [id]);
       return result;
-    };
+    }));
 
-    nebula.link = function(sourceId, relation, targetId) {
+    // Set semantics: no emitir si la mutación fue no-op de nebula.
+    _handles.push(wrap(nebula, 'link', function (next, sourceId, relation, targetId) {
       const before = _snapshotLinksOf(sourceId);
-      const result = _nebulaOriginals.link.call(nebula, sourceId, relation, targetId);
+      const result = next(sourceId, relation, targetId);
       const after = _snapshotLinksOf(sourceId);
-
-      // Set semantics: no emitir si fue no-op de nebula
       if (!_sameShallowLinks(before, after)) {
         _emit('nebula', 'link', [sourceId, relation, targetId]);
       }
       return result;
-    };
+    }));
 
-    nebula.unlink = function(sourceId, relation, targetId) {
+    _handles.push(wrap(nebula, 'unlink', function (next, sourceId, relation, targetId) {
       const before = _snapshotLinksOf(sourceId);
-      const result = _nebulaOriginals.unlink.call(nebula, sourceId, relation, targetId);
+      const result = next(sourceId, relation, targetId);
       const after = _snapshotLinksOf(sourceId);
-
       if (!_sameShallowLinks(before, after)) {
         _emit('nebula', 'unlink', [sourceId, relation, targetId]);
       }
       return result;
-    };
+    }));
 
-    nebula.unlinkAll = function(sourceId, relation) {
+    _handles.push(wrap(nebula, 'unlinkAll', function (next, sourceId, relation) {
       const before = _snapshotLinksOf(sourceId);
-      const result = _nebulaOriginals.unlinkAll.call(nebula, sourceId, relation);
+      const result = next(sourceId, relation);
       const after = _snapshotLinksOf(sourceId);
-
       if (!_sameShallowLinks(before, after)) {
         _emit('nebula', 'unlinkAll', [sourceId, relation]);
       }
       return result;
-    };
+    }));
   }
 
   // ============================================
@@ -312,11 +305,11 @@ export function createLoggingAdapter(context, options = {}) {
   // ============================================
 
   if (hasPulsar) {
-    pulsar.setState = function(partial) {
-      const result = _pulsarOriginals.setState.call(pulsar, partial);
+    _handles.push(wrap(pulsar, 'setState', function (next, partial) {
+      const result = next(partial);
       _emit('pulsar', 'setState', [partial]);
       return result;
-    };
+    }));
   }
 
   // ============================================
@@ -327,19 +320,8 @@ export function createLoggingAdapter(context, options = {}) {
     if (_destroyed) return;
     _destroyed = true;
 
-    if (hasnebula && _nebulaOriginals) {
-      nebula.put = _nebulaOriginals.put;
-      nebula.upsert = _nebulaOriginals.upsert;
-      nebula.update = _nebulaOriginals.update;
-      nebula.delete = _nebulaOriginals.delete;
-      nebula.link = _nebulaOriginals.link;
-      nebula.unlink = _nebulaOriginals.unlink;
-      nebula.unlinkAll = _nebulaOriginals.unlinkAll;
-    }
-
-    if (hasPulsar && _pulsarOriginals) {
-      pulsar.setState = _pulsarOriginals.setState;
-    }
+    for (const handle of _handles) unwrap(handle);
+    _handles.length = 0;
   }
 
   return {

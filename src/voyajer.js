@@ -1,6 +1,19 @@
 /**
- * VoyajerJS - URL routing (Contrato v0.2.1, código v0.2.1)
+ * VoyajerJS - URL routing (Contrato v0.2.2, código v0.2.2)
  * Integración con Pulsar para sincronización bidireccional.
+ *
+ * Cambios respecto a v0.2.1:
+ * - Fix A: `base` se normaliza una sola vez a forma canónica
+ *   ('/' o '/prefijo' sin slash final). Antes, un `base` con slash
+ *   final producía doble slash al navegar y rompía la idempotencia de
+ *   `push`/`replace` sobre la URL servida por el servidor. La
+ *   sustracción de `base` pasa a compararse por segmento, lo que
+ *   además cierra el caso frontera '/admin' vs '/administrator'.
+ * - Fix 1 (breaking en conducta, no en API): `_writeToStore` REEMPLAZA
+ *   la clave de navegación en lugar de fusionarla. Se alinea con el
+ *   contrato de `parse`, que retorna estado completo. Consecuencia para
+ *   consumidores: un `parse` que retorne parches parciales ya no
+ *   acumula; debe retornar la forma completa de la ruta.
  *
  * Cambios respecto a v0.2.0:
  * - Default de `mode` cambia de 'hash' a 'history', alineado con
@@ -28,11 +41,35 @@ export function createVoyajer(pulsarStore, options = {}) {
     throw new TypeError('[Voyajer] pulsarStore debe tener getState y setState');
   }
 
+  /**
+   * Normaliza `base` a una forma canónica única: o bien '/' (sin base),
+   * o bien una ruta con slash inicial y SIN slash final ('/admin').
+   *
+   * Motivo (fix A, v0.2.2): la versión anterior usaba `base` verbatim en
+   * dos lugares con convenciones incompatibles. Con `base: '/admin/'`:
+   *   - al construir:  '/admin/' + '/projects/42' = '/admin//projects/42'
+   *   - al sustraer:   '/admin/projects/42' → 'projects/42' (sin slash
+   *     inicial), que nunca iguala al '/projects/42' que produce
+   *     `serialize`, de modo que la idempotencia de push/replace no
+   *     disparaba jamás sobre una URL servida por el servidor.
+   * Los dos defectos se cancelaban entre sí SÓLO después de una
+   * navegación propia, así que la conducta difería entre la carga
+   * inicial y el resto de la sesión. Normalizar una vez elimina las dos.
+   */
+  function _normalizeBase(base) {
+    if (typeof base !== 'string') return '/';
+    let b = base.trim();
+    if (b === '' || b === '/') return '/';
+    if (!b.startsWith('/')) b = '/' + b;
+    while (b.length > 1 && b.endsWith('/')) b = b.slice(0, -1);
+    return b;
+  }
+
   // Configuración
   const config = {
     key: options.key || 'route',
     mode: options.mode || 'history', // 'history' o 'hash'
-    base: options.base || '/',
+    base: _normalizeBase(options.base),
     parse: options.parse || _defaultParse,
     serialize: options.serialize || _defaultSerialize,
     writeOnInit: options.writeOnInit !== undefined ? options.writeOnInit : true,
@@ -64,8 +101,22 @@ export function createVoyajer(pulsarStore, options = {}) {
     return `${path}${search}${hash}`;
   }
 
-  function _escapeRegex(str) {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  /**
+   * Sustrae `base` de un pathname respetando el límite de segmento y
+   * garantizando que el resultado empieza con '/'.
+   *
+   * La sustracción por regex de la versión anterior tenía además un
+   * fallo de frontera: con `base: '/admin'`, el pathname
+   * '/administrator' quedaba convertido en 'istrator'. Comparar por
+   * segmento lo cierra sin necesidad de escapar nada.
+   */
+  function _stripBase(pathname) {
+    if (config.base === '/') return pathname || '/';
+    if (pathname === config.base) return '/';
+    if (pathname.startsWith(config.base + '/')) {
+      return pathname.slice(config.base.length) || '/';
+    }
+    return pathname || '/';
   }
 
   /**
@@ -78,11 +129,8 @@ export function createVoyajer(pulsarStore, options = {}) {
       const hash = window.location.hash.substring(1);
       return hash || '/';
     } else {
-      let path = window.location.pathname;
-      if (config.base && config.base !== '/') {
-        path = path.replace(new RegExp(`^${_escapeRegex(config.base)}`), '');
-      }
-      return (path || '/') + window.location.search + window.location.hash;
+      const path = _stripBase(window.location.pathname);
+      return path + window.location.search + window.location.hash;
     }
   }
 
@@ -103,11 +151,8 @@ export function createVoyajer(pulsarStore, options = {}) {
       return new URL(hashContent, realURL.origin);
     }
 
-    if (config.base && config.base !== '/') {
-      const trimmedPath = realURL.pathname.replace(
-        new RegExp(`^${_escapeRegex(config.base)}`),
-        ''
-      ) || '/';
+    if (config.base !== '/') {
+      const trimmedPath = _stripBase(realURL.pathname);
       return new URL(trimmedPath + realURL.search + realURL.hash, realURL.origin);
     }
 
@@ -121,10 +166,21 @@ export function createVoyajer(pulsarStore, options = {}) {
       return;
     }
 
-    const currentState = pulsarStore.getState();
-    pulsarStore.setState({
-      [config.key]: { ...(currentState[config.key] || {}), ...navigationState }
-    });
+    // REEMPLAZO, no fusión (fix 1, v0.2.2).
+    //
+    // El contrato de `parse` (§5.2) es que retorna EL estado de
+    // navegación, no un parche: `_defaultParse` devuelve siempre las tres
+    // claves, y la garantía de simetría `serialize(parse(url)) === url`
+    // sólo se sostiene si el estado es completo. Fusionar contradecía ese
+    // contrato y dejaba claves fantasma: navegar de /c/abc
+    // ({vista, conversacionId}) a / ({vista}) conservaba conversacionId
+    // apuntando a una conversación que ya no es la ruta actual.
+    //
+    // Reemplazar la clave entera es seguro porque `config.key` es
+    // namespace exclusivo de Voyajer por la convención del Nexus Contract
+    // (`route.*`). Ningún otro productor escribe ahí; si una aplicación
+    // necesita guardar algo propio junto a la ruta, va en otra clave.
+    pulsarStore.setState({ [config.key]: navigationState });
   }
 
   /**

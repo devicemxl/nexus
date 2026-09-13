@@ -1,17 +1,24 @@
 /**
  * External Event Adapter (initial implementation, BroadcastChannel-based)
  *
- * Contrato: adapters/external-event-adapter.spec.md v0.1.0
- * Implementation version: 0.1.0
+ * Contrato: adapters/external-event-adapter.spec.md v0.2.0
+ * Implementation version: 0.2.0
  *
  * Sincronización bidireccional cross-tab de mutaciones de nebula vía
  * BroadcastChannel, con anti-eco explícito por origin+original.
  *
- * Limitaciones documentadas (mini-spec §4.1, §4.2, §6):
- * - No re-proyecta a Pulsar en el tab receptor (Bridge no se dispara).
- * - No persiste en el tab receptor (Persistence no se dispara).
+ * Cambios respecto a v0.1.0:
+ * - Wrappers vía `adapter-chain.js`; las mutaciones remotas se aplican
+ *   con `invokeSkipping`, que salta sólo la entrada de este adapter.
+ * - Queda retirada la limitación "no re-proyecta ni persiste en el tab
+ *   receptor": era un artefacto del orden de instanciación, no una
+ *   propiedad del adapter. Con la cadena, una mutación remota atraviesa
+ *   Bridge, Persistence y Logging con independencia del orden de montaje.
+ *
+ * Limitaciones vigentes (mini-spec §6):
  * - No ordena eventos entre tabs; no resuelve conflictos.
- * Ambas limitaciones son deuda técnica documentada; ver §7 de la spec.
+ * - Ambos tabs escriben la misma clave de storage al aplicar la misma
+ *   mutación remota. El contenido converge, el trabajo se duplica.
  *
  * Uso:
  *   import { createExternalEventAdapter } from './adapters/external-event-adapter.js';
@@ -22,6 +29,8 @@
  *   // ... vida útil ...
  *   ev.destroy();
  */
+
+import { wrap, unwrap, invokeSkipping } from './adapter-chain.js';
 
 // ============================================
 // UTILIDADES PRIVADAS
@@ -147,15 +156,11 @@ export function createExternalEventAdapter(context, options = {}) {
   const origin = _generateOrigin();
 
   // ---------- Estado interno ----------
-  const _originals = {
-    put: nebula.put,
-    upsert: nebula.upsert,
-    update: nebula.update,
-    delete: nebula.delete,
-    link: nebula.link,
-    unlink: nebula.unlink,
-    unlinkAll: nebula.unlinkAll,
-  };
+  // op -> handle de la cadena (adapter-chain.js). Reemplaza al antiguo
+  // `_originals`, cuya captura en el constructor hacía que la conducta
+  // del adapter dependiera del orden de instanciación: ver el bloque
+  // INBOUND para el detalle.
+  const _handleByOp = new Map();
 
   let _destroyed = false;
 
@@ -222,72 +227,63 @@ export function createExternalEventAdapter(context, options = {}) {
   // WRAPPERS DE MUTACIÓN (outbound)
   // ============================================
 
-  nebula.put = function(id, properties) {
-    if (_destroyed) return _originals.put.call(nebula, id, properties);
-    const result = _originals.put.call(nebula, id, properties);
+  function _wrapOp(op, fn) {
+    _handleByOp.set(op, wrap(nebula, op, fn));
+  }
+
+  _wrapOp('put', function (next, id, properties) {
+    const result = next(id, properties);
     _broadcast('put', [id, properties]);
     return result;
-  };
+  });
 
-  nebula.upsert = function(id, properties) {
-    if (_destroyed) return _originals.upsert.call(nebula, id, properties);
-    const result = _originals.upsert.call(nebula, id, properties);
+  _wrapOp('upsert', function (next, id, properties) {
+    const result = next(id, properties);
     _broadcast('upsert', [id, properties]);
     return result;
-  };
+  });
 
-  nebula.update = function(id, patch) {
-    if (_destroyed) return _originals.update.call(nebula, id, patch);
-    const result = _originals.update.call(nebula, id, patch);
+  _wrapOp('update', function (next, id, patch) {
+    const result = next(id, patch);
     _broadcast('update', [id, patch]);
     return result;
-  };
+  });
 
-  nebula.delete = function(id) {
-    if (_destroyed) return _originals.delete.call(nebula, id);
-    const result = _originals.delete.call(nebula, id);
+  _wrapOp('delete', function (next, id) {
+    const result = next(id);
     _broadcast('delete', [id]);
     return result;
-  };
+  });
 
-  nebula.link = function(sourceId, relation, targetId) {
-    if (_destroyed) return _originals.link.call(nebula, sourceId, relation, targetId);
-
+  _wrapOp('link', function (next, sourceId, relation, targetId) {
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.link.call(nebula, sourceId, relation, targetId);
+    const result = next(sourceId, relation, targetId);
     const after = _snapshotLinksOf(sourceId);
-
     if (!_sameShallowLinks(before, after)) {
       _broadcast('link', [sourceId, relation, targetId]);
     }
     return result;
-  };
+  });
 
-  nebula.unlink = function(sourceId, relation, targetId) {
-    if (_destroyed) return _originals.unlink.call(nebula, sourceId, relation, targetId);
-
+  _wrapOp('unlink', function (next, sourceId, relation, targetId) {
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.unlink.call(nebula, sourceId, relation, targetId);
+    const result = next(sourceId, relation, targetId);
     const after = _snapshotLinksOf(sourceId);
-
     if (!_sameShallowLinks(before, after)) {
       _broadcast('unlink', [sourceId, relation, targetId]);
     }
     return result;
-  };
+  });
 
-  nebula.unlinkAll = function(sourceId, relation) {
-    if (_destroyed) return _originals.unlinkAll.call(nebula, sourceId, relation);
-
+  _wrapOp('unlinkAll', function (next, sourceId, relation) {
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.unlinkAll.call(nebula, sourceId, relation);
+    const result = next(sourceId, relation);
     const after = _snapshotLinksOf(sourceId);
-
     if (!_sameShallowLinks(before, after)) {
       _broadcast('unlinkAll', [sourceId, relation]);
     }
     return result;
-  };
+  });
 
   // ============================================
   // INBOUND: aplicar mutaciones remotas
@@ -305,7 +301,7 @@ export function createExternalEventAdapter(context, options = {}) {
     if (payload.origin === origin) return;
 
     // Verificar que op es un método conocido antes de intentar aplicar.
-    if (!(payload.op in _originals)) {
+    if (!_handleByOp.has(payload.op)) {
       // Op desconocido: no lanzamos, no aplicamos. Podría ser una versión
       // futura del adapter emitiendo ops adicionales. Registramos en la
       // vía de errores para diagnóstico.
@@ -316,11 +312,23 @@ export function createExternalEventAdapter(context, options = {}) {
       return;
     }
 
-    // Aplicar vía el ORIGINAL — bypassa nuestro wrapper. Este es el
-    // mecanismo primario de anti-eco: si aplicáramos vía el wrapped,
-    // re-broadcastearíamos y crearíamos un loop.
+    // Aplicar SALTÁNDOSE nuestra propia entrada de la cadena, pero
+    // atravesando la de todos los demás adapters. Éste es el mecanismo
+    // primario de anti-eco: aplicar vía el método envuelto por nosotros
+    // re-broadcastearía y crearía un loop.
+    //
+    // La versión anterior llamaba a `_originals[op]`, capturado en el
+    // constructor. Eso saltaba no sólo nuestro wrapper sino el de todo
+    // adapter montado DESPUÉS de nosotros, de modo que si este adapter
+    // se instanciaba antes que Bridge y Persistence, una mutación remota
+    // entraba al grafo pero no se proyectaba a Pulsar ni se persistía —
+    // y si se instanciaba después, sí. Medido en los dos órdenes: la
+    // "limitación conocida" del tab receptor era en realidad un efecto
+    // del orden de montaje. `invokeSkipping` la elimina: la mutación
+    // remota alcanza siempre al resto de la cadena, se haya montado
+    // antes o después.
     try {
-      _originals[payload.op].apply(nebula, payload.args);
+      invokeSkipping(_handleByOp.get(payload.op), payload.args);
     } catch (error) {
       onRemoteError(error, payload);
     }
@@ -336,14 +344,10 @@ export function createExternalEventAdapter(context, options = {}) {
     if (_destroyed) return;
     _destroyed = true;
 
-    // Restaurar métodos originales
-    nebula.put = _originals.put;
-    nebula.upsert = _originals.upsert;
-    nebula.update = _originals.update;
-    nebula.delete = _originals.delete;
-    nebula.link = _originals.link;
-    nebula.unlink = _originals.unlink;
-    nebula.unlinkAll = _originals.unlinkAll;
+    // Retirar nuestras entradas de la cadena (en cualquier orden
+    // respecto a los demás adapters).
+    for (const handle of _handleByOp.values()) unwrap(handle);
+    _handleByOp.clear();
 
     // Desconectar listener
     channel.removeEventListener('message', _handleMessage);

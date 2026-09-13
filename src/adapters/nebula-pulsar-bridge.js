@@ -1,8 +1,13 @@
 /**
  * nebula ↔ Pulsar Bridge (implementación inicial, snapshot-based)
  *
- * Contrato: adapters/nebula-pulsar-bridge.spec.md v0.1.0
- * Implementation version: 0.1.0
+ * Contrato: adapters/nebula-pulsar-bridge.spec.md v0.2.0
+ *
+ * Cambios respecto a v0.1.0 (sin cambio de API pública):
+ * - Los wrappers se instalan vía `adapter-chain.js` en vez de capturar
+ *   y restaurar `nebula.put` etc. directamente. Destruir adapters en
+ *   cualquier orden deja de romper la cadena en silencio.
+ * Implementation version: 0.2.0
  * Status: initial (snapshot-based, NOT the reactive per-entity version)
  *
  * Cumple el contrato externo de la mini-spec pero con perfil de coste
@@ -19,6 +24,8 @@
  *   // ... vida útil de la aplicación ...
  *   bridge.destroy();
  */
+
+import { wrap, unwrap } from './adapter-chain.js';
 
 // ============================================
 // UTILIDADES PRIVADAS (compartidas con Chunklet en filosofía)
@@ -111,16 +118,10 @@ export function createNebulaPulsarBridge(context, options = {}) {
   const path = (options.path && typeof options.path === 'string') ? options.path : 'entities';
   const skipInitialSync = options.skipInitialSync === true;
 
-  // Guardar referencias a los métodos originales para restaurar en destroy.
-  const _originals = {
-    put: nebula.put,
-    upsert: nebula.upsert,
-    update: nebula.update,
-    delete: nebula.delete,
-    link: nebula.link,
-    unlink: nebula.unlink,
-    unlinkAll: nebula.unlinkAll,
-  };
+  // Handles de la cadena de wrappers (adapter-chain.js). Sustituyen al
+  // antiguo `_originals`: la cadena se empalma al retirar una entrada,
+  // de modo que el orden de `destroy` entre adapters deja de importar.
+  const _handles = [];
 
   let _destroyed = false;
 
@@ -158,80 +159,55 @@ export function createNebulaPulsarBridge(context, options = {}) {
   // Para `unlink`, análogamente: si el target no estaba, no se
   // re-proyecta.
 
-  nebula.put = function(id, properties) {
-    if (_destroyed) {
-      // El adapter fue destruido pero alguien tiene aún la referencia
-      // wrappeada. Delega al original si aún existe en _originals.
-      // (En destroy restauramos los originals, así que esto solo
-      // sucede si otro código guardó la referencia wrappeada.)
-      return _originals.put.call(nebula, id, properties);
-    }
-    const result = _originals.put.call(nebula, id, properties);
+  _handles.push(wrap(nebula, 'put', function (next, id, properties) {
+    const result = next(id, properties);
     _reprojectAll();
     return result;
-  };
+  }));
 
-  nebula.upsert = function(id, properties) {
-    if (_destroyed) return _originals.upsert.call(nebula, id, properties);
-    const result = _originals.upsert.call(nebula, id, properties);
+  _handles.push(wrap(nebula, 'upsert', function (next, id, properties) {
+    const result = next(id, properties);
     _reprojectAll();
     return result;
-  };
+  }));
 
-  nebula.update = function(id, patch) {
-    if (_destroyed) return _originals.update.call(nebula, id, patch);
-    const result = _originals.update.call(nebula, id, patch);
+  _handles.push(wrap(nebula, 'update', function (next, id, patch) {
+    const result = next(id, patch);
     _reprojectAll();
     return result;
-  };
+  }));
 
-  nebula.delete = function(id) {
-    if (_destroyed) return _originals.delete.call(nebula, id);
-    const result = _originals.delete.call(nebula, id);
+  _handles.push(wrap(nebula, 'delete', function (next, id) {
+    const result = next(id);
     _reprojectAll();
     return result;
-  };
+  }));
 
-  nebula.link = function(sourceId, relation, targetId) {
-    if (_destroyed) return _originals.link.call(nebula, sourceId, relation, targetId);
-
-    // Set semantics detection: capturar el shape del source antes.
-    // Si no cambia después, era un no-op y no re-proyectamos.
+  // Set semantics detection: si el shape de links del source no cambia,
+  // la mutación fue no-op de nebula (G-0) y no se re-proyecta.
+  _handles.push(wrap(nebula, 'link', function (next, sourceId, relation, targetId) {
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.link.call(nebula, sourceId, relation, targetId);
+    const result = next(sourceId, relation, targetId);
     const after = _snapshotLinksOf(sourceId);
-
-    if (!_sameShallowLinks(before, after)) {
-      _reprojectAll();
-    }
+    if (!_sameShallowLinks(before, after)) _reprojectAll();
     return result;
-  };
+  }));
 
-  nebula.unlink = function(sourceId, relation, targetId) {
-    if (_destroyed) return _originals.unlink.call(nebula, sourceId, relation, targetId);
-
+  _handles.push(wrap(nebula, 'unlink', function (next, sourceId, relation, targetId) {
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.unlink.call(nebula, sourceId, relation, targetId);
+    const result = next(sourceId, relation, targetId);
     const after = _snapshotLinksOf(sourceId);
-
-    if (!_sameShallowLinks(before, after)) {
-      _reprojectAll();
-    }
+    if (!_sameShallowLinks(before, after)) _reprojectAll();
     return result;
-  };
+  }));
 
-  nebula.unlinkAll = function(sourceId, relation) {
-    if (_destroyed) return _originals.unlinkAll.call(nebula, sourceId, relation);
-
+  _handles.push(wrap(nebula, 'unlinkAll', function (next, sourceId, relation) {
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.unlinkAll.call(nebula, sourceId, relation);
+    const result = next(sourceId, relation);
     const after = _snapshotLinksOf(sourceId);
-
-    if (!_sameShallowLinks(before, after)) {
-      _reprojectAll();
-    }
+    if (!_sameShallowLinks(before, after)) _reprojectAll();
     return result;
-  };
+  }));
 
   // ============================================
   // HELPERS PARA SET SEMANTICS DETECTION
@@ -289,15 +265,11 @@ export function createNebulaPulsarBridge(context, options = {}) {
     if (_destroyed) return; // Idempotente
     _destroyed = true;
 
-    // Restaurar los métodos originales en la instancia de nebula.
-    // A partir de este punto, las mutaciones no producen re-proyección.
-    nebula.put = _originals.put;
-    nebula.upsert = _originals.upsert;
-    nebula.update = _originals.update;
-    nebula.delete = _originals.delete;
-    nebula.link = _originals.link;
-    nebula.unlink = _originals.unlink;
-    nebula.unlinkAll = _originals.unlinkAll;
+    // Retirar las entradas de la cadena. Los demás adapters montados
+    // sobre la misma nebula siguen operativos, se hayan montado antes o
+    // después de éste.
+    for (const handle of _handles) unwrap(handle);
+    _handles.length = 0;
 
     // No tocamos Pulsar state. La proyección permanece; la aplicación
     // decide si limpiarla.

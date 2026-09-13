@@ -1,8 +1,12 @@
 /**
  * Persistence Adapter (initial implementation)
  *
- * Contrato: adapters/persistence-adapter.spec.md v0.1.0
- * Implementation version: 0.1.0
+ * Contrato: adapters/persistence-adapter.spec.md v0.2.0
+ * Implementation version: 0.2.0
+ *
+ * Cambios respecto a v0.1.0 (sin cambio de API pública):
+ * - Wrappers instalados vía `adapter-chain.js`; destroy en cualquier
+ *   orden respecto a los demás adapters ya no rompe la cadena.
  *
  * Observa mutaciones en nebula y persiste el grafo completo a un
  * backend de storage (por defecto localStorage) en la forma canónica
@@ -22,6 +26,8 @@
  *   p.flush();   // guardar ya, cancela debounce pendiente
  *   p.destroy(); // desmontar (NO hace flush implícito)
  */
+
+import { wrap, unwrap } from './adapter-chain.js';
 
 // ============================================
 // UTILIDADES PRIVADAS
@@ -139,15 +145,9 @@ export function createPersistenceAdapter(context, options = {}) {
   const key = options.key;
 
   // ---------- Estado interno ----------
-  const _originals = {
-    put: nebula.put,
-    upsert: nebula.upsert,
-    update: nebula.update,
-    delete: nebula.delete,
-    link: nebula.link,
-    unlink: nebula.unlink,
-    unlinkAll: nebula.unlinkAll,
-  };
+  // Handles de la cadena de wrappers (adapter-chain.js): el orden de
+  // destroy entre adapters deja de ser una invariante global.
+  const _handles = [];
 
   let _destroyed = false;
   let _pendingTimer = null;
@@ -258,72 +258,53 @@ export function createPersistenceAdapter(context, options = {}) {
   // WRAPPERS DE MUTACIÓN
   // ============================================
 
-  nebula.put = function(id, properties) {
-    if (_destroyed) return _originals.put.call(nebula, id, properties);
-    const result = _originals.put.call(nebula, id, properties);
+  _handles.push(wrap(nebula, 'put', function (next, id, properties) {
+    const result = next(id, properties);
     _scheduleWrite();
     return result;
-  };
+  }));
 
-  nebula.upsert = function(id, properties) {
-    if (_destroyed) return _originals.upsert.call(nebula, id, properties);
-    const result = _originals.upsert.call(nebula, id, properties);
+  _handles.push(wrap(nebula, 'upsert', function (next, id, properties) {
+    const result = next(id, properties);
     _scheduleWrite();
     return result;
-  };
+  }));
 
-  nebula.update = function(id, patch) {
-    if (_destroyed) return _originals.update.call(nebula, id, patch);
-    const result = _originals.update.call(nebula, id, patch);
+  _handles.push(wrap(nebula, 'update', function (next, id, patch) {
+    const result = next(id, patch);
     _scheduleWrite();
     return result;
-  };
+  }));
 
-  nebula.delete = function(id) {
-    if (_destroyed) return _originals.delete.call(nebula, id);
-    const result = _originals.delete.call(nebula, id);
+  _handles.push(wrap(nebula, 'delete', function (next, id) {
+    const result = next(id);
     _scheduleWrite();
     return result;
-  };
+  }));
 
-  nebula.link = function(sourceId, relation, targetId) {
-    if (_destroyed) return _originals.link.call(nebula, sourceId, relation, targetId);
-
+  _handles.push(wrap(nebula, 'link', function (next, sourceId, relation, targetId) {
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.link.call(nebula, sourceId, relation, targetId);
+    const result = next(sourceId, relation, targetId);
     const after = _snapshotLinksOf(sourceId);
-
-    if (!_sameShallowLinks(before, after)) {
-      _scheduleWrite();
-    }
+    if (!_sameShallowLinks(before, after)) _scheduleWrite();
     return result;
-  };
+  }));
 
-  nebula.unlink = function(sourceId, relation, targetId) {
-    if (_destroyed) return _originals.unlink.call(nebula, sourceId, relation, targetId);
-
+  _handles.push(wrap(nebula, 'unlink', function (next, sourceId, relation, targetId) {
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.unlink.call(nebula, sourceId, relation, targetId);
+    const result = next(sourceId, relation, targetId);
     const after = _snapshotLinksOf(sourceId);
-
-    if (!_sameShallowLinks(before, after)) {
-      _scheduleWrite();
-    }
+    if (!_sameShallowLinks(before, after)) _scheduleWrite();
     return result;
-  };
+  }));
 
-  nebula.unlinkAll = function(sourceId, relation) {
-    if (_destroyed) return _originals.unlinkAll.call(nebula, sourceId, relation);
-
+  _handles.push(wrap(nebula, 'unlinkAll', function (next, sourceId, relation) {
     const before = _snapshotLinksOf(sourceId);
-    const result = _originals.unlinkAll.call(nebula, sourceId, relation);
+    const result = next(sourceId, relation);
     const after = _snapshotLinksOf(sourceId);
-
-    if (!_sameShallowLinks(before, after)) {
-      _scheduleWrite();
-    }
+    if (!_sameShallowLinks(before, after)) _scheduleWrite();
     return result;
-  };
+  }));
 
   // ============================================
   // INICIALIZACIÓN
@@ -359,8 +340,8 @@ export function createPersistenceAdapter(context, options = {}) {
   }
 
   /**
-   * Restaura los métodos originales de nebula, cancela cualquier
-   * escritura pendiente y marca el adapter como inerte.
+   * Retira los wrappers de la cadena, cancela cualquier escritura
+   * pendiente y marca el adapter como inerte.
    *
    * NO llama a flush() implícitamente. El caller que quiera "guardar
    * antes de cerrar" debe hacer explícito:
@@ -375,13 +356,8 @@ export function createPersistenceAdapter(context, options = {}) {
       _pendingTimer = null;
     }
 
-    nebula.put = _originals.put;
-    nebula.upsert = _originals.upsert;
-    nebula.update = _originals.update;
-    nebula.delete = _originals.delete;
-    nebula.link = _originals.link;
-    nebula.unlink = _originals.unlink;
-    nebula.unlinkAll = _originals.unlinkAll;
+    for (const handle of _handles) unwrap(handle);
+    _handles.length = 0;
   }
 
   return {

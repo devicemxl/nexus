@@ -1,8 +1,26 @@
 /**
  * Hydration Adapter (initial implementation)
  *
- * Contrato: adapters/hydration-adapter.spec.md v0.1.0
- * Implementation version: 0.1.0
+ * Contrato: adapters/hydration-adapter.spec.md v0.2.0
+ * Implementation version: 0.2.0
+ *
+ * Cambios respecto a v0.1.0 (breaking):
+ * - `mode: 'replace'` se renombra a `mode: 'replaceProps'`. El nombre
+ *   anterior prometía "deja la entidad como en el snapshot" y no es lo
+ *   que ocurre: `nebula.put` reemplaza `properties` y deja `links`
+ *   intactos por diseño, de modo que sobre un grafo ya poblado los
+ *   links previos sobreviven y la pasada 2 sólo agrega.
+ *
+ *   La asimetría no se arregla limpiando links en la pasada 2, porque
+ *   NO es expresable a escala de entidad: los links entrantes hacia una
+ *   entidad viven en los records de OTRAS entidades, que el snapshot
+ *   puede no declarar. "Dejar el grafo como en el snapshot" sólo tiene
+ *   sentido a escala de grafo — hidratar sobre uno vacío. El fix
+ *   honesto es por tanto el nombre, no la conducta.
+ *
+ *   `'replace'` no se acepta como alias: lanza con el mensaje que
+ *   explica el renombre. Un alias silencioso dejaría en producción la
+ *   misma expectativa equivocada que motivó el cambio.
  *
  * Popula un nebula a partir de un snapshot, en el arranque de la
  * aplicación, para que el primer ciclo de mount de Chunklet vea
@@ -57,8 +75,9 @@ function _isnebulaInstance(value) {
  *   transforme a canónica.
  * @param {Function} [options.parse] - Transformador opcional
  *   `(input) => canonicalSnapshot`. Por defecto: identidad.
- * @param {'merge'|'replace'} [options.mode='merge'] - Cómo tratar
- *   entidades preexistentes: 'merge' usa upsert, 'replace' usa put.
+ * @param {'merge'|'replaceProps'} [options.mode='merge'] - Cómo tratar
+ *   entidades preexistentes: 'merge' usa upsert, 'replaceProps' usa put
+ *   (reemplaza properties, deja links intactos — ver cabecera).
  * @param {'throw'|'skip'} [options.onMissingTarget='throw'] - Qué
  *   hacer si un link referencia un target ausente.
  * @returns {{destroy: () => void}}
@@ -85,9 +104,20 @@ export function createHydrationAdapter(context, options = {}) {
   }
 
   const mode = options.mode !== undefined ? options.mode : 'merge';
-  if (mode !== 'merge' && mode !== 'replace') {
+  if (mode === 'replace') {
+    // Fallo explícito, no alias silencioso: el nombre anterior prometía
+    // una conducta que el adapter no puede cumplir (ver cabecera).
     throw new TypeError(
-      `[HydrationAdapter] options.mode debe ser 'merge' o 'replace', recibido: '${mode}'`
+      "[HydrationAdapter] options.mode 'replace' se renombró a 'replaceProps' en v0.2.0. " +
+      'El modo reemplaza properties pero NO toca links, y esa asimetría es intrínseca: ' +
+      'los links entrantes hacia una entidad viven en los records de otras entidades, ' +
+      'que el snapshot puede no incluir. Use "replaceProps" si esa es la conducta que ' +
+      'quiere, o hidrate sobre un grafo vacío si quiere equivalencia exacta con el snapshot.'
+    );
+  }
+  if (mode !== 'merge' && mode !== 'replaceProps') {
+    throw new TypeError(
+      `[HydrationAdapter] options.mode debe ser 'merge' o 'replaceProps', recibido: '${mode}'`
     );
   }
 
@@ -101,7 +131,7 @@ export function createHydrationAdapter(context, options = {}) {
   }
 
   const { nebula } = context;
-  const writeMethod = mode === 'replace' ? 'put' : 'upsert';
+  const writeMethod = mode === 'replaceProps' ? 'put' : 'upsert';
 
   // ============================================
   // EJECUCIÓN SÍNCRONA DE LA HIDRATACIÓN
