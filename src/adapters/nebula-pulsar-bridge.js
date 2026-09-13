@@ -1,19 +1,24 @@
 /**
  * nebula ↔ Pulsar Bridge (implementación inicial, snapshot-based)
  *
- * Contrato: adapters/nebula-pulsar-bridge.spec.md v0.2.0
+ * Contrato: adapters/nebula-pulsar-bridge.spec.md v0.3.0
+ * Implementation version: 0.3.0
+ * Status: reactive per-entity projection (Camino 2)
+ *
+ * Cambios respecto a v0.2.0 (sin cambio de API pública):
+ * - Proyección por entidad. Ninguna ruta de mutación llama a
+ *   `_reprojectAll`; queda reservado para la sincronización inicial.
+ *   Las entidades no afectadas conservan su referencia, de modo que un
+ *   consumidor suscrito a `entities[X]` con `Object.is` deja de
+ *   despertarse por mutaciones ajenas a X. Cierra `BRIDGE-REACTIVE`.
+ * - `delete` escanea los links entrantes antes de borrar y proyecta el
+ *   conjunto `[id, ...afectados]` en un solo `setState`. Es el único
+ *   método con coste O(N), tal como anticipaba el Camino 2.
  *
  * Cambios respecto a v0.1.0 (sin cambio de API pública):
  * - Los wrappers se instalan vía `adapter-chain.js` en vez de capturar
  *   y restaurar `nebula.put` etc. directamente. Destruir adapters en
  *   cualquier orden deja de romper la cadena en silencio.
- * Implementation version: 0.2.0
- * Status: initial (snapshot-based, NOT the reactive per-entity version)
- *
- * Cumple el contrato externo de la mini-spec pero con perfil de coste
- * distinto al ideal: cada mutación re-proyecta todas las entidades.
- * Aceptable para aplicaciones tempranas con conjuntos pequeños.
- * La versión reactiva por-entidad queda diferida (ver §7 de la mini-spec).
  *
  * Uso:
  *   import { createNebulaPulsarBridge } from './adapters/nebula-pulsar-bridge.js';
@@ -130,9 +135,18 @@ export function createNebulaPulsarBridge(context, options = {}) {
   // ============================================
 
   /**
-   * Re-proyecta TODAS las entidades de nebula en Pulsar bajo `path`.
-   * Es O(N) donde N = número de entidades. Aceptable para conjuntos
-   * pequeños; la versión reactiva por-entidad reduce a O(1).
+   * Proyecta TODAS las entidades de nebula bajo `path`.
+   *
+   * Desde v0.3.0 esta función se usa ÚNICAMENTE en la sincronización
+   * inicial, que es donde un barrido completo siempre fue lo correcto.
+   * Ninguna ruta de mutación la llama.
+   *
+   * Es también el mecanismo de reconciliación completa disponible para la
+   * aplicación, sin API nueva: `bridge.destroy()` seguido de un
+   * `createNebulaPulsarBridge` nuevo con `skipInitialSync: false` rehace la
+   * proyección desde cero. Efecto lateral a tener en cuenta: recrear el
+   * bridge lo coloca como wrapper más externo de la cadena, así que cambia
+   * el orden de emisión respecto a Persistence y Logging.
    */
   function _reprojectAll() {
     if (_destroyed) return;
@@ -149,6 +163,61 @@ export function createNebulaPulsarBridge(context, options = {}) {
     pulsar.setState(nextState);
   }
 
+  /**
+   * Proyecta UNA entidad. Si dejó de existir, la retira de la proyección.
+   *
+   * Las N-1 entidades no tocadas conservan su referencia, que es la
+   * propiedad que compra el Camino 2: un consumidor suscrito a
+   * `entities[X]` con `Object.is` deja de despertarse por mutaciones
+   * ajenas a X.
+   *
+   * Sobre el coste: el spread copia N punteros y no hay forma de evitarlo
+   * sin romper la inmutabilidad de Pulsar. Lo que baja de N a 1 es el
+   * número de llamadas a `nebula.get`, el número de objetos que
+   * `deepFreeze` recorre — 3 por entidad más 2 fijos, medido — y el
+   * número de listeners de entidad que se invocan. No el trabajo total.
+   */
+  function _projectEntity(id) {
+    if (_destroyed) return;
+    _projectMany([id]);
+  }
+
+  /**
+   * Proyecta un conjunto acotado de entidades en un solo `setState`, para
+   * que no haya ventana intermedia en la que Pulsar describa un grafo que
+   * nunca existió.
+   */
+  function _projectMany(ids) {
+    if (_destroyed) return;
+
+    const currentState = pulsar.getState();
+    const actuales = _getByPath(currentState, path) || {};
+    const siguientes = { ...actuales };
+
+    for (const id of ids) {
+      const entidad = nebula.get(id);
+      if (entidad) siguientes[id] = entidad;
+      else delete siguientes[id];
+    }
+
+    pulsar.setState(_setByPath(currentState, path, siguientes));
+  }
+
+  /**
+   * Ids de entidades con un link entrante hacia `objetivo`. Es el escaneo
+   * O(N) que el Camino 2 acepta pagar sólo en `delete`, porque nebula no
+   * mantiene índice inverso y el borrado limpia esas referencias.
+   */
+  function _idsQueApuntanA(objetivo) {
+    return nebula.query((id, _props, links) => {
+      if (id === objetivo) return false;
+      for (const targets of Object.values(links)) {
+        if (targets.includes(objetivo)) return true;
+      }
+      return false;
+    });
+  }
+
   // ============================================
   // WRAPPERS DE MUTACIÓN
   // ============================================
@@ -159,37 +228,36 @@ export function createNebulaPulsarBridge(context, options = {}) {
   // Para `unlink`, análogamente: si el target no estaba, no se
   // re-proyecta.
 
+  // --- 2a: conocen el id afectado por argumento ---
+
   _handles.push(wrap(nebula, 'put', function (next, id, properties) {
     const result = next(id, properties);
-    _reprojectAll();
+    _projectEntity(id);
     return result;
   }));
 
   _handles.push(wrap(nebula, 'upsert', function (next, id, properties) {
     const result = next(id, properties);
-    _reprojectAll();
+    _projectEntity(id);
     return result;
   }));
 
   _handles.push(wrap(nebula, 'update', function (next, id, patch) {
     const result = next(id, patch);
-    _reprojectAll();
+    _projectEntity(id);
     return result;
   }));
 
-  _handles.push(wrap(nebula, 'delete', function (next, id) {
-    const result = next(id);
-    _reprojectAll();
-    return result;
-  }));
+  // --- 2b: mutan los links del source ---
+  //
+  // Set semantics detection: si el shape de links del source no cambia, la
+  // mutación fue no-op de nebula (G-0) y no se proyecta nada.
 
-  // Set semantics detection: si el shape de links del source no cambia,
-  // la mutación fue no-op de nebula (G-0) y no se re-proyecta.
   _handles.push(wrap(nebula, 'link', function (next, sourceId, relation, targetId) {
     const before = _snapshotLinksOf(sourceId);
     const result = next(sourceId, relation, targetId);
     const after = _snapshotLinksOf(sourceId);
-    if (!_sameShallowLinks(before, after)) _reprojectAll();
+    if (!_sameShallowLinks(before, after)) _projectEntity(sourceId);
     return result;
   }));
 
@@ -197,7 +265,7 @@ export function createNebulaPulsarBridge(context, options = {}) {
     const before = _snapshotLinksOf(sourceId);
     const result = next(sourceId, relation, targetId);
     const after = _snapshotLinksOf(sourceId);
-    if (!_sameShallowLinks(before, after)) _reprojectAll();
+    if (!_sameShallowLinks(before, after)) _projectEntity(sourceId);
     return result;
   }));
 
@@ -205,7 +273,28 @@ export function createNebulaPulsarBridge(context, options = {}) {
     const before = _snapshotLinksOf(sourceId);
     const result = next(sourceId, relation);
     const after = _snapshotLinksOf(sourceId);
-    if (!_sameShallowLinks(before, after)) _reprojectAll();
+    if (!_sameShallowLinks(before, after)) _projectEntity(sourceId);
+    return result;
+  }));
+
+  // --- 2c: el único que no conoce a todos los afectados ---
+  //
+  // El orden es load-bearing y por eso está escrito paso a paso:
+  //
+  //   1. escanear y capturar los afectados, ANTES de borrar (después ya no
+  //      hay forma de saber quién apuntaba a la entidad);
+  //   2. delegar;
+  //   3. proyectar SÓLO si (2) retornó.
+  //
+  // `nebula.delete` lanza si la entidad no existe. Con `_reprojectAll` esto
+  // era gratis porque nunca se llegaba a proyectar; con la lista capturada
+  // de antemano es fácil proyectar un borrado que no ocurrió y dejar Pulsar
+  // describiendo un grafo distinto del real.
+
+  _handles.push(wrap(nebula, 'delete', function (next, id) {
+    const afectados = _idsQueApuntanA(id);
+    const result = next(id);
+    _projectMany([id, ...afectados]);
     return result;
   }));
 

@@ -280,6 +280,57 @@ El test pasa al terminar 2a, porque 100 tokens son 100 `update`. **No es el
 cierre.** La propiedad tiene que ser uniforme en los siete métodos, o el
 siguiente widget la encontrará rota en la rama que nadie migró.
 
+#### Resultado registrado
+
+**Comportamiento.** T1 pasa a verde sin tocar T2: 4/4 en `validar-reloj.mjs`.
+La batería específica de los siete métodos da **32/32** en
+`validar-bridge-reactivo.mjs`, cubriendo sync inicial, `skipInitialSync`, los
+no-op de G-0, el `delete` con afectados, el `delete` que lanza, el `path`
+punteado (R3) y la coherencia del mapa con `nebula.allIds()`.
+
+**D-6 sobre la batería nueva.** Tres mutaciones deliberadas, y qué enrojece
+cada una:
+
+| mutación | rojas | cuáles |
+|---|---|---|
+| `delete` olvida a los afectados | 2 | el link colgante y la coherencia con `nebula.get` |
+| `delete` proyecta antes de delegar | 6 | las cuatro de `delete`, más las dos de coherencia |
+| `link` vuelve a `_reprojectAll` | 2 | preservación de referencia del target y de los ajenos |
+
+Las dos de los extremos están bien particionadas. La del medio enrojece seis
+porque proyectar antes de delegar no rompe una propiedad sino la semántica
+entera de `delete`: la entidad sigue existiendo en el momento de proyectar, así
+que el borrado no se refleja. Seis es honesto ahí, no señal de aserciones
+dependientes.
+
+**Medición.** Las tres magnitudes que el Camino 2 debía comprar, compradas:
+
+| magnitud por mutación | snapshot | reactivo |
+|---|---|---|
+| `nebula.get` | N | **1** |
+| `Object.freeze` | 3N+2 | **5** |
+| invocaciones del testigo (200 tokens) | 200 | **0** |
+| ms/mutación a N=1000 | 0.580 | 0.429 |
+
+**El tiempo mejora sólo un 26 % a N=1000, y eso merece explicación.** Quedan
+dos costes O(N) que el Camino 2 no toca y que ahora dominan:
+
+1. El spread `{...actuales}` copia N punteros. Es inevitable sin romper la
+   inmutabilidad de Pulsar, y el plan ya lo anticipaba.
+2. **`_deepFreeze` sigue recorriendo N claves aunque sólo congele 5.** El mapa
+   `entities` nuevo no está congelado, así que `_deepFreeze` lo congela e itera
+   sus N claves; cada hija ya está congelada y la guarda `Object.isFrozen`
+   corta de inmediato. Congelar cayó a O(1); **recorrer sigue siendo O(N)**.
+
+El contador de `Object.freeze` no veía el punto 2, porque cuenta congelados y
+no visitas. Es un recordatorio de que un contador mide lo que cuenta y no lo
+que uno cree que cuenta.
+
+Nada de esto invalida el cierre: `BRIDGE-REACTIVE` era sobre ruido reactivo, y
+el ruido pasó de 200 de 200 a 0 de 200. Pero confirma que la frase "O(1)" del
+registro de deuda hay que corregirla en los términos de la Fase 4, y con más
+razón de la prevista.
+
 ### Fase 3 — Arneses, en dos corridas separadas
 
 Las dos variables no se mezclan; un rojo tiene que decir cuál de los dos cambios
