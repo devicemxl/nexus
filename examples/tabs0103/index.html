@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Tabs — fragmentado</title>
+  <style>
+    /* Sólo lo del documento. El CSS de cada región viaja con su fragmento. */
+    body { font-family: system-ui, sans-serif; background: #f0f2f5;
+           padding: 2rem; max-width: 800px; margin: 0 auto; }
+    header { background: #fff; border: 1px solid #d1d5db;
+             border-radius: 10px 10px 0 0; padding: 0 1.5rem; }
+    #comprobacion { margin-top: 1rem; font-family: ui-monospace, monospace;
+                    font-size: .85rem; white-space: pre-wrap; }
+    .fallo { color: #b91c1c; }
+  </style>
+</head>
+<body>
+
+<!--
+  Tres fuentes externas, tres papeles distintos:
+
+    tabs.json                 qué pestañas hay y en qué orden   -> nebula
+    fragmentos/*-nav|container  las regiones de layout          -> DOM
+    fragmentos/tab_*.html     el contenido de cada pestaña      -> DOM (ranura)
+
+  Regla que define qué puede llevar un fragmento: `innerHTML` **sí** aplica
+  los `<style>` que encuentra y **nunca** ejecuta los `<script>`. Así que un
+  fragmento lleva markup y CSS; la conducta llega siempre por `data-chunk`.
+-->
+
+<header data-fragmento="tabs-nav"></header>
+<div data-fragmento="panel-container"></div>
+
+<div id="comprobacion"></div>
+
+<script type="module">
+import { createNebula } from '../../src/nebula.js';
+import { createHydrationAdapter } from '../../src/adapters/hydration-adapter.js';
+import * as Chunklet from '../../src/chunklet.js';
+
+const FUENTE = './tabs.json';
+const FRAGMENTOS = './fragmentos';
+
+async function traer(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${url}: ${r.status} ${r.statusText}`);
+  return r;
+}
+
+function reportarFallo(error) {
+  document.getElementById('comprobacion').innerHTML =
+    `<span class="fallo">✗ ${error.message}</span>`;
+}
+
+// ---------------------------------------------------------------------------
+// 1. Modelo: hidratar sobre el grafo crudo, antes de cablear nada.
+// ---------------------------------------------------------------------------
+const nebula = createNebula();
+
+try {
+  createHydrationAdapter(
+    { nebula },
+    { snapshot: await (await traer(FUENTE)).json(), mode: 'merge', onMissingTarget: 'skip' }
+  );
+} catch (error) {
+  reportarFallo(error);
+  throw error;
+}
+
+// El orden sale de una propiedad explícita, no del orden de claves del JSON.
+const CLAVES = nebula.allIds()
+  .filter((id) => id.startsWith('tab:'))
+  .map((id) => ({ clave: nebula.get(id).properties.tab, orden: nebula.get(id).properties.orden ?? 0 }))
+  .sort((a, b) => a.orden - b.orden)
+  .map((t) => t.clave);
+
+if (CLAVES.length === 0) throw new Error(`[tabs] ${FUENTE} no trajo entidades "tab:*"`);
+
+const stack = Chunklet.setup({
+  pulsar: { initialState: { route: {}, entities: {}, ui: {}, net: {} } },
+  nebula,
+});
+
+// ---------------------------------------------------------------------------
+// 2. Behaviors.
+// ---------------------------------------------------------------------------
+Chunklet.define('tab-button', (boton, ctx) => {
+  const clave = boton.dataset.tabKey;
+
+  // La etiqueta sale de la clave. Si el texto visible tiene que diferir del
+  // identificador, va como propiedad `etiqueta` en el JSON — derivarlo aquí
+  // ata la presentación al id, que es justo lo que el modelo evita.
+  boton.textContent = clave[0].toUpperCase() + clave.slice(1);
+
+  ctx.subscribeSelector(
+    (estado) => estado.route.tab,
+    (activa) => boton.classList.toggle('is-active', activa === clave),
+    { immediate: true }
+  );
+
+  ctx.listen(boton, 'click', () => ctx.navigate({ view: 'tabs', tab: clave }));
+});
+
+Chunklet.define('tab-panel', (panel, ctx) => {
+  const clave = panel.dataset.tabPanel;
+  const ranura = panel.querySelector('[data-zona="contenido"]');
+
+  // El panel carga su propio fragmento. Es lo que hace que añadir una pestaña
+  // sea añadir una entrada al JSON y un archivo, sin tocar este script.
+  //
+  // `vivo` existe porque el fetch puede resolver después de que el panel se
+  // desmonte: escribir entonces sería tocar un elemento ya retirado. Para
+  // hacerlo perezoso —cargar en la primera activación— este bloque se mueve
+  // dentro del listener de visibilidad, con una guarda de "ya cargado".
+  let vivo = true;
+  ctx.cleanup(() => { vivo = false; });
+
+  marcar(clave, 'cargando');
+
+  traer(`${FRAGMENTOS}/tab_${clave}.html`)
+    .then((r) => r.text())
+    .then((html) => {
+      if (!vivo) return;
+      ranura.innerHTML = html;
+      marcar(clave, 'listo');
+    })
+    .catch((error) => {
+      if (!vivo) return;
+      ranura.innerHTML = `<span class="fallo">✗ ${error.message}</span>`;
+      marcar(clave, 'error');
+    });
+
+  ctx.subscribeSelector(
+    (estado) => estado.route.tab,
+    (activa) => panel.classList.toggle('is-active', activa === clave),
+    { immediate: true }
+  );
+});
+
+/**
+ * `net.*` es el espacio que el Nexus Contract §5.1 reserva para estados de
+ * petición, y hasta ahora no lo escribía nadie. Esto es su primer productor.
+ */
+function marcar(clave, estado) {
+  const net = stack.pulsar.getState().net;
+  stack.pulsar.setState({
+    net: { ...net, fragmentos: { ...net.fragmentos, [clave]: estado } },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 3. Layout: cada punto de anclaje se llena con su fragmento.
+//
+//    Los fragmentos de layout se traen en paralelo; son independientes.
+// ---------------------------------------------------------------------------
+try {
+  await Promise.all([...document.querySelectorAll('[data-fragmento]')].map(
+    async (destino) => {
+      const html = await (await traer(`${FRAGMENTOS}/${destino.dataset.fragmento}.html`)).text();
+      // Seguro porque el destino está vacío. Para reemplazar contenido ya
+      // montado: `Chunklet.unmount(destino)` primero, o dejar que el
+      // observador procese la retirada.
+      destino.innerHTML = html;
+    }
+  ));
+} catch (error) {
+  reportarFallo(error);
+  throw error;
+}
+
+// ---------------------------------------------------------------------------
+// 4. Botones y paneles, derivados del modelo. El observador los monta.
+// ---------------------------------------------------------------------------
+Chunklet.observe(document.body);
+
+document.getElementById('tabs-nav').innerHTML = CLAVES.map((clave) => `
+  <button class="tab-button" data-tab-key="${clave}"
+          data-entity="tab:${clave}" data-chunk="tab-button"></button>`).join('');
+
+document.getElementById('panel-container').innerHTML = CLAVES.map((clave) => `
+  <section class="tab-panel" data-tab-panel="${clave}"
+           data-entity="tab:${clave}" data-chunk="tab-panel">
+    <div data-zona="contenido"></div>
+  </section>`).join('');
+
+await new Promise(queueMicrotask);
+
+// ---------------------------------------------------------------------------
+// 5. Voyajer, con las rutas derivadas de los datos.
+// ---------------------------------------------------------------------------
+Chunklet.configure({
+  voyajer: {
+    mode: 'hash',
+    parse(url) {
+      const clave = CLAVES.find((c) => url.pathname === `/tab/${c}`);
+      if (clave) return { view: 'tabs', tab: clave };
+      if (url.pathname === '/' || url.pathname === '/tab') return { view: 'tabs', tab: CLAVES[0] };
+      return null;
+    },
+    serialize(estado) {
+      return estado.view === 'tabs' && CLAVES.includes(estado.tab)
+        ? `/tab/${estado.tab}` : null;
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 6. Comprobación. Espera a que los paneles resuelvan su fragmento leyendo
+//    `net.*`, que es exactamente para lo que ese espacio existe.
+// ---------------------------------------------------------------------------
+await new Promise((resolver) => {
+  const completo = (s) => CLAVES.every((c) => ['listo', 'error'].includes(s.net.fragmentos?.[c]));
+  if (completo(stack.pulsar.getState())) return resolver();
+  const cancelar = stack.pulsar.subscribe((s) => { if (completo(s)) { cancelar(); resolver(); } });
+});
+
+const esperada = CLAVES[0];
+const pruebas = [
+  [`${CLAVES.length} pestañas hidratadas desde ${FUENTE}`, CLAVES.length === 3],
+  ['regiones de layout insertadas', !!document.getElementById('tabs-nav') && !!document.getElementById('panel-container')],
+  ['CSS del fragmento aplicado', getComputedStyle(document.getElementById('tabs-nav')).display === 'flex'],
+  ['ruta sincronizada por configure()', stack.pulsar.getState().route.tab === esperada],
+  ['botón activo sin haber hecho clic',
+   document.querySelector('.tab-button.is-active')?.dataset.tabKey === esperada],
+  ['los 3 fragmentos de contenido cargados',
+   CLAVES.every((c) => stack.pulsar.getState().net.fragmentos[c] === 'listo')],
+  ['panel visible con contenido',
+   (document.querySelector('.tab-panel.is-active [data-zona="contenido"]')?.textContent ?? '').trim().length > 0],
+];
+
+document.getElementById('comprobacion').textContent = pruebas
+  .map(([nombre, ok]) => `${ok ? '✓' : '✗'} ${nombre}`)
+  .join('\n');
+</script>
+</body>
+</html>

@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Tabs — contenido hidratado desde JSON</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f0f2f5;
+           padding: 2rem; max-width: 800px; margin: 0 auto; }
+
+    header { background: #fff; border: 1px solid #d1d5db;
+             border-radius: 10px 10px 0 0; padding: 0 1.5rem; }
+    .tabs-nav { display: flex; gap: 1.5rem; min-height: 3.5rem; }
+
+    .tab-button { background: none; border: none; padding: 1rem 0;
+                  font: inherit; font-weight: 500; color: #6b7280;
+                  cursor: pointer; border-bottom: 3px solid transparent; }
+    .tab-button:hover { color: #111827; }
+    .tab-button.is-active { color: #111827; border-bottom-color: #111827; }
+
+    main { background: #fff; border: 1px solid #d1d5db; border-top: none;
+           border-radius: 0 0 10px 10px; padding: 1.5rem; min-height: 6rem; }
+
+    .tab-panel { display: none; }
+    .tab-panel.is-active { display: block; }
+    .tab-panel h3 { margin-top: 0; }
+    .tab-panel p { color: #4b5563; line-height: 1.6; }
+
+    #comprobacion { margin-top: 1rem; font-family: ui-monospace, monospace;
+                    font-size: .85rem; white-space: pre-wrap; }
+    #fallo { color: #b91c1c; }
+  </style>
+</head>
+<body>
+
+<!--
+  Qué demuestra este archivo:
+  1. El modelo se hidrata desde un JSON externo, sin mutación posterior.
+  2. `configure()` introduce Voyajer DESPUÉS de montar, y los behaviors ya
+     montados lo ven.
+  3. `observe()` monta lo que se inserta en el DOM más tarde.
+
+  La versión anterior difería Voyajer para demostrar que se podía. Aquí no
+  queda alternativa: las rutas se derivan de los datos, así que no existen
+  hasta que el fetch resuelve. El ejemplo dejó de ser artificial.
+-->
+
+<header>
+  <nav class="tabs-nav" id="tabs-nav"></nav>
+</header>
+
+<main id="panel-container"></main>
+
+<div id="comprobacion"></div>
+
+<script type="module">
+import { createNebula } from '../../src/nebula.js';
+import { createHydrationAdapter } from '../../src/adapters/hydration-adapter.js';
+import * as Chunklet from '../../src/chunklet.js';
+
+const FUENTE = './contenido.json';
+
+// ---------------------------------------------------------------------------
+// 1. Hidratar sobre el grafo CRUDO, antes de cablear nada.
+//
+//    Aquí no hay Bridge, así que el orden no cuesta nada hoy. Se respeta
+//    igualmente porque el día que aparezca, hidratar después convierte el
+//    arranque en O(N²) sin fallar ni avisar.
+// ---------------------------------------------------------------------------
+const nebula = createNebula();
+
+try {
+  const respuesta = await fetch(FUENTE);
+  if (!respuesta.ok) throw new Error(`${respuesta.status} ${respuesta.statusText}`);
+
+  createHydrationAdapter(
+    { nebula },
+    { snapshot: await respuesta.json(), mode: 'merge', onMissingTarget: 'skip' }
+  );
+} catch (error) {
+  document.getElementById('comprobacion').innerHTML =
+    `<span id="fallo">✗ no se pudo cargar ${FUENTE}: ${error.message}</span>`;
+  throw error;
+}
+
+// ---------------------------------------------------------------------------
+// 2. Derivar la lista de pestañas del modelo.
+//
+//    El orden sale de una propiedad explícita, nunca del orden de claves del
+//    JSON ni del identificador: son comodidades del formato, no garantías.
+// ---------------------------------------------------------------------------
+const CLAVES = nebula.allIds()
+  .filter((id) => id.startsWith('tab:'))
+  .map((id) => ({ clave: id.slice('tab:'.length), orden: nebula.get(id).properties.orden ?? 0 }))
+  .sort((a, b) => a.orden - b.orden)
+  .map((t) => t.clave);
+
+if (CLAVES.length === 0) {
+  throw new Error(`[tabs] ${FUENTE} no trajo ninguna entidad "tab:*"`);
+}
+
+// ---------------------------------------------------------------------------
+// 3. Setup con el grafo ya poblado. Sin Voyajer todavía.
+// ---------------------------------------------------------------------------
+const stack = Chunklet.setup({
+  pulsar: { initialState: { route: {}, entities: {}, ui: {}, net: {} } },
+  nebula,
+});
+
+// ---------------------------------------------------------------------------
+// 4. Behaviors.
+// ---------------------------------------------------------------------------
+Chunklet.define('tab-button', (boton, ctx) => {
+  const clave = boton.dataset.tabKey;
+
+  const entidad = ctx.entity(boton.dataset.entity);
+  if (entidad) boton.textContent = entidad.properties.title.replace(' Content', '');
+
+  ctx.subscribeSelector(
+    (estado) => estado.route.tab,
+    (activa) => boton.classList.toggle('is-active', activa === clave),
+    { immediate: true }
+  );
+
+  ctx.listen(boton, 'click', () => ctx.navigate({ view: 'tabs', tab: clave }));
+});
+
+Chunklet.define('tab-panel', (panel, ctx) => {
+  const clave = panel.dataset.tabPanel;
+
+  const entidad = ctx.entity(panel.dataset.entity);
+  if (entidad) {
+    panel.querySelector('[data-field="title"]').textContent = entidad.properties.title;
+    panel.querySelector('[data-field="body"]').textContent = entidad.properties.body;
+  }
+
+  ctx.subscribeSelector(
+    (estado) => estado.route.tab,
+    (activa) => panel.classList.toggle('is-active', activa === clave),
+    { immediate: true }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// 5. Botones y paneles: ambos derivados del modelo.
+//
+//    El observador se instala antes de insertar, y monta las dos zonas.
+// ---------------------------------------------------------------------------
+Chunklet.observe(document.body);
+
+document.getElementById('tabs-nav').innerHTML = CLAVES.map((clave) => `
+  <button class="tab-button" data-tab-key="${clave}"
+          data-entity="tab:${clave}" data-chunk="tab-button"></button>`).join('');
+
+document.getElementById('panel-container').innerHTML = CLAVES.map((clave) => `
+  <section class="tab-panel" data-tab-panel="${clave}"
+           data-entity="tab:${clave}" data-chunk="tab-panel">
+    <h3 data-field="title"></h3>
+    <p data-field="body"></p>
+  </section>`).join('');
+
+await new Promise(queueMicrotask);
+
+// ---------------------------------------------------------------------------
+// 6. Voyajer, con las rutas derivadas de los datos.
+// ---------------------------------------------------------------------------
+Chunklet.configure({
+  voyajer: {
+    mode: 'hash',
+    parse(url) {
+      const clave = CLAVES.find((c) => url.pathname === `/tab/${c}`);
+      if (clave) return { view: 'tabs', tab: clave };
+      if (url.pathname === '/' || url.pathname === '/tab') {
+        return { view: 'tabs', tab: CLAVES[0] };
+      }
+      return null;
+    },
+    serialize(estado) {
+      return estado.view === 'tabs' && CLAVES.includes(estado.tab)
+        ? `/tab/${estado.tab}`
+        : null;
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 7. Comprobación.
+// ---------------------------------------------------------------------------
+const esperada = CLAVES[0];
+const titulo = nebula.get(`tab:${esperada}`).properties.title;
+
+const pruebas = [
+  [`${CLAVES.length} entidades hidratadas desde ${FUENTE}`, CLAVES.length === 3],
+  ['ruta sincronizada por configure()', stack.pulsar.getState().route.tab === esperada],
+  ['botón activo sin haber hecho clic',
+   document.querySelector('.tab-button.is-active')?.dataset.tabKey === esperada],
+  ['botones y paneles montó el observador',
+   document.querySelectorAll('.tab-button').length === 3 &&
+   document.querySelectorAll('.tab-panel').length === 3],
+  ['panel visible poblado desde el modelo',
+   document.querySelector('.tab-panel.is-active [data-field="title"]')?.textContent === titulo],
+];
+
+document.getElementById('comprobacion').textContent = pruebas
+  .map(([nombre, ok]) => `${ok ? '✓' : '✗'} ${nombre}`)
+  .join('\n');
+</script>
+</body>
+</html>

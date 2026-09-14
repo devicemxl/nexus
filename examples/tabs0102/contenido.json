@@ -1,0 +1,25 @@
+{
+  "entities": {
+    "tab:overview": {
+      "properties": {
+        "orden": 10,
+        "title": "Overview Content",
+        "body": "Patrón de interfaz mínimo, útil como estructura de layout."
+      }
+    },
+    "tab:features": {
+      "properties": {
+        "orden": 20,
+        "title": "Features Content",
+        "body": "Cero dependencias, huella ligera, comportamiento responsivo."
+      }
+    },
+    "tab:settings": {
+      "properties": {
+        "orden": 30,
+        "title": "Settings Content",
+        "body": "Los acentos se ajustan en el bloque de variables CSS."
+      }
+    }
+  }
+}

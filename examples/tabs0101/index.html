@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Tabs — configuración diferida</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f0f2f5;
+           padding: 2rem; max-width: 800px; margin: 0 auto; }
+
+    header { background: #fff; border: 1px solid #d1d5db;
+             border-radius: 10px 10px 0 0; padding: 0 1.5rem; }
+    .tabs-nav { display: flex; gap: 1.5rem; }
+
+    .tab-button { background: none; border: none; padding: 1rem 0;
+                  font: inherit; font-weight: 500; color: #6b7280;
+                  cursor: pointer; border-bottom: 3px solid transparent; }
+    .tab-button:hover { color: #111827; }
+    .tab-button.is-active { color: #111827; border-bottom-color: #111827; }
+
+    main { background: #fff; border: 1px solid #d1d5db; border-top: none;
+           border-radius: 0 0 10px 10px; padding: 1.5rem; min-height: 6rem; }
+
+    .tab-panel { display: none; }
+    .tab-panel.is-active { display: block; }
+    .tab-panel h3 { margin-top: 0; }
+    .tab-panel p { color: #4b5563; line-height: 1.6; }
+
+    #comprobacion { margin-top: 1rem; font-family: ui-monospace, monospace;
+                    font-size: .85rem; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+
+<!--
+  Qué demuestra este archivo:
+  1. `configure()` introduce Voyajer DESPUÉS de montar, y los behaviors ya
+     montados lo ven (los accesores de `ctx` son getters).
+  2. `observe()` monta lo que se inserta en el DOM más tarde.
+
+  Los botones están escritos a mano y se montan al principio; los paneles se
+  insertan después y los monta el observador. El contraste es el ejemplo.
+-->
+
+<header>
+  <nav class="tabs-nav">
+    <button class="tab-button" data-tab-key="overview" data-chunk="tab-button">Overview</button>
+    <button class="tab-button" data-tab-key="features" data-chunk="tab-button">Features</button>
+    <button class="tab-button" data-tab-key="settings" data-chunk="tab-button">Settings</button>
+  </nav>
+</header>
+
+<br>
+<p>Los paneles se insertan en el DOM después de montar, y el observador los monta.</p>
+<main id="panel-container"></main>
+
+<div id="comprobacion"></div>
+
+<script type="module">
+import * as Chunklet from '../src/chunklet.js';
+
+// Una sola lista. Antes estaba triplicada: en `parse`, en `serialize` y en el
+// markup de los paneles.
+const PESTANAS = ['overview', 'features', 'settings'];
+
+const CONTENIDO = {
+  overview: ['Overview Content', 'Patrón de interfaz mínimo, útil como estructura de layout.'],
+  features: ['Features Content', 'Cero dependencias, huella ligera, comportamiento responsivo.'],
+  settings: ['Settings Content', 'Los acentos se ajustan en el bloque de variables CSS.'],
+};
+
+// ---------------------------------------------------------------------------
+// 1. Setup. Sin Voyajer todavía.
+//
+//    Los cuatro espacios del Nexus Contract §5.1 se declaran desde el inicio:
+//    así `state.route.tab` no necesita guardas y un selector no confunde la
+//    aparición de la rama con un cambio de valor.
+// ---------------------------------------------------------------------------
+const stack = Chunklet.setup({
+  pulsar: { initialState: { route: {}, entities: {}, ui: {}, net: {} } },
+});
+
+// ---------------------------------------------------------------------------
+// 2. Contenido en nebula.
+// ---------------------------------------------------------------------------
+for (const clave of PESTANAS) {
+  const [title, body] = CONTENIDO[clave];
+  stack.nebula.put(`tab:${clave}`, { title, body });
+}
+
+// ---------------------------------------------------------------------------
+// 3. Behaviors.
+// ---------------------------------------------------------------------------
+Chunklet.define('tab-button', (boton, ctx) => {
+  const clave = boton.dataset.tabKey;
+
+  ctx.subscribeSelector(
+    (estado) => estado.route.tab,
+    (activa) => boton.classList.toggle('is-active', activa === clave),
+    { immediate: true }
+  );
+
+  // `ctx.navigate` lanza si Voyajer no está configurado. Aquí no puede
+  // ocurrir: `configure()` corre más abajo en este mismo script, de forma
+  // síncrona, así que ningún clic del usuario puede intercalarse antes.
+  ctx.listen(boton, 'click', () => {
+    ctx.navigate({ view: 'tabs', tab: clave });
+  });
+});
+
+Chunklet.define('tab-panel', (panel, ctx) => {
+  const clave = panel.dataset.tabPanel;
+
+  const entidad = ctx.entity(panel.dataset.entity);
+  if (entidad) {
+    panel.querySelector('[data-field="title"]').textContent = entidad.properties.title;
+    panel.querySelector('[data-field="body"]').textContent = entidad.properties.body;
+  }
+
+  ctx.subscribeSelector(
+    (estado) => estado.route.tab,
+    (activa) => panel.classList.toggle('is-active', activa === clave),
+    { immediate: true }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// 4. Montar lo que ya existe, y observar el contenedor vacío.
+// ---------------------------------------------------------------------------
+Chunklet.mount(document.querySelector('header'));
+Chunklet.observe(document.getElementById('panel-container'));
+
+// ---------------------------------------------------------------------------
+// 5. Voyajer, después del montaje.
+//
+//    De esto cuelga el ejemplo entero: si `configure()` no sincronizara la
+//    ruta inicial, ningún botón se pintaría activo hasta el primer clic.
+//    La comprobación de abajo lo afirma en vez de darlo por visto.
+// ---------------------------------------------------------------------------
+Chunklet.configure({
+  voyajer: {
+    mode: 'hash',
+    parse(url) {
+      const clave = PESTANAS.find((p) => url.pathname === `/tab/${p}`);
+      if (clave) return { view: 'tabs', tab: clave };
+      if (url.pathname === '/' || url.pathname === '/tab') {
+        return { view: 'tabs', tab: PESTANAS[0] };
+      }
+      return null;
+    },
+    serialize(estado) {
+      return estado.view === 'tabs' && PESTANAS.includes(estado.tab)
+        ? `/tab/${estado.tab}`
+        : null;
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 6. Insertar los paneles. El observador los monta.
+//
+//    `innerHTML` sobre un contenedor con chunklets vivos los borraría sin
+//    desmontarlos: sus contextos nunca correrían el cleanup. Aquí está vacío,
+//    así que es seguro. Para reemplazar contenido montado: `Chunklet.unmount`
+//    primero, o dejar que el observador procese la retirada.
+// ---------------------------------------------------------------------------
+document.getElementById('panel-container').innerHTML = PESTANAS.map((clave) => `
+  <section class="tab-panel" data-tab-panel="${clave}"
+           data-entity="tab:${clave}" data-chunk="tab-panel">
+    <h3 data-field="title"></h3>
+    <p data-field="body"></p>
+  </section>`).join('');
+
+// ---------------------------------------------------------------------------
+// 7. Comprobación.
+//
+//    Los callbacks de MutationObserver son microtareas: justo después de
+//    asignar `innerHTML` los paneles existen pero aún no están montados.
+//    Ceder un turno es parte de la conducta, no una espera arbitraria.
+// ---------------------------------------------------------------------------
+await new Promise(queueMicrotask);
+
+const esperada = PESTANAS[0];
+const pruebas = [
+  ['ruta sincronizada por configure()', stack.pulsar.getState().route.tab === esperada],
+  ['botón activo sin haber hecho clic',
+   document.querySelector('.tab-button.is-active')?.dataset.tabKey === esperada],
+  ['los 3 paneles montó el observador', document.querySelectorAll('.tab-panel').length === 3],
+  ['panel visible y poblado desde nebula',
+   document.querySelector('.tab-panel.is-active [data-field="title"]')?.textContent === CONTENIDO[esperada][0]],
+];
+
+document.getElementById('comprobacion').textContent = pruebas
+  .map(([nombre, ok]) => `${ok ? '✓' : '✗'} ${nombre}`)
+  .join('\n');
+</script>
+</body>
+</html>
