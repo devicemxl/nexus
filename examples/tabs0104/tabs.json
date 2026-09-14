@@ -1,0 +1,22 @@
+{
+  "entities": {
+    "tab:overview": {
+      "properties": {
+        "orden": 10,
+        "tab":"overview"
+      }
+    },
+    "tab:features": {
+      "properties": {
+        "orden": 20,
+        "tab":"features"
+      }
+    },
+    "tab:settings": {
+      "properties": {
+        "orden": 30,
+        "tab":"settings"
+      }
+    }
+  }
+}

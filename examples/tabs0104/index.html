@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Tabs — regiones</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f0f2f5;
+           padding: 2rem; max-width: 800px; margin: 0 auto; }
+    header { background: #fff; border: 1px solid #d1d5db;
+             border-radius: 10px 10px 0 0; padding: 0 1.5rem; }
+    #comprobacion { margin-top: 1rem; font-family: ui-monospace, monospace;
+                    font-size: .85rem; white-space: pre-wrap; }
+    .fallo { color: #b91c1c; }
+  </style>
+</head>
+<body>
+
+<!--
+  `data-region="X"` declara un punto de anclaje. Para cada uno:
+
+    app/regiones/X.js        registra los behaviors de esa región
+    fragmentos/X.html        aporta su markup y su CSS
+
+  Este archivo no conoce ningún nombre de behavior, ni el modelo de pestañas,
+  ni el formato de las URL. Sabe qué regiones hay y en qué orden arrancar.
+
+  Un fragmento lleva markup y CSS y nunca conducta: `innerHTML` aplica los
+  `<style>` que encuentra y jamás ejecuta los `<script>`. Eso no es una
+  convención de este proyecto, es la plataforma.
+-->
+
+<header data-region="tabs-nav"></header>
+<div data-region="panel-container"></div>
+
+<div id="comprobacion"></div>
+
+<script type="module">
+import { createNebula } from '../../src/nebula.js';
+import { createHydrationAdapter } from '../../src/adapters/hydration-adapter.js';
+import * as Chunklet from '../../src/chunklet.js';
+
+import { traerTexto, traerJson } from './app/cargar.js';
+import { listarPestanas, fragmentosResueltos } from './app/modelo.js';
+import { opcionesVoyajer } from './app/ruta.js';
+
+const FUENTE = './tabs.json';
+const anclajes = [...document.querySelectorAll('[data-region]')];
+
+try {
+  // -------------------------------------------------------------------------
+  // 1. Modelo, sobre el grafo crudo y antes de cablear nada.
+  // -------------------------------------------------------------------------
+  const nebula = createNebula();
+  createHydrationAdapter(
+    { nebula },
+    { snapshot: await traerJson(FUENTE), mode: 'merge', onMissingTarget: 'skip' }
+  );
+
+  const claves = listarPestanas(nebula);
+  if (claves.length === 0) throw new Error(`${FUENTE} no trajo entidades "tab:*"`);
+
+  const stack = Chunklet.setup({
+    pulsar: { initialState: { route: {}, entities: {}, ui: {}, net: {} } },
+    nebula,
+  });
+
+  // -------------------------------------------------------------------------
+  // 2. Regiones: registrar sus behaviors y traer su markup.
+  //
+  //    El import es dinámico porque `define` exige `setup` previo, y un
+  //    import estático se ejecutaría antes que cualquier línea de aquí.
+  // -------------------------------------------------------------------------
+  await Promise.all(anclajes.map(async (anclaje) => {
+    const nombre = anclaje.dataset.region;
+    const [modulo, html] = await Promise.all([
+      import(`./app/regiones/${nombre}.js`),
+      traerTexto(`./fragmentos/${nombre}.html`),
+    ]);
+    modulo.definir();
+    anclaje.innerHTML = html;   // el anclaje está vacío: nada montado que desmontar
+  }));
+
+  // -------------------------------------------------------------------------
+  // 3. Un solo montaje. Cada región crea y monta su propio contenido dentro,
+  //    de forma síncrona, así que al volver de aquí el árbol está completo.
+  // -------------------------------------------------------------------------
+  Chunklet.mount(document.body);
+
+  // -------------------------------------------------------------------------
+  // 4. Voyajer. Las rutas válidas salen del modelo, así que no existían
+  //    cuando se llamó a `setup`.
+  // -------------------------------------------------------------------------
+  Chunklet.configure({ voyajer: opcionesVoyajer(claves) });
+
+  // -------------------------------------------------------------------------
+  // 5. Comprobación. Los paneles traen su contenido de forma asíncrona y
+  //    publican su estado en `net.*`; esto espera leyendo de ahí en vez de
+  //    adivinar con un temporizador.
+  // -------------------------------------------------------------------------
+  await new Promise((resolver) => {
+    if (fragmentosResueltos(stack.pulsar.getState(), claves)) return resolver();
+    const cancelar = stack.pulsar.subscribe((estado) => {
+      if (fragmentosResueltos(estado, claves)) { cancelar(); resolver(); }
+    });
+  });
+
+  const esperada = claves[0];
+  const pruebas = [
+    [`${claves.length} pestañas hidratadas desde ${FUENTE}`, claves.length === 3],
+    ['las 2 regiones insertaron su markup',
+     anclajes.every((a) => a.firstElementChild !== null)],
+    ['CSS del fragmento aplicado',
+     getComputedStyle(document.getElementById('tabs-nav')).display === 'flex'],
+    ['cada región montó sus hijos',
+     document.querySelectorAll('.tab-button').length === claves.length &&
+     document.querySelectorAll('.tab-panel').length === claves.length],
+    ['ruta sincronizada por configure()',
+     stack.pulsar.getState().route.tab === esperada],
+    ['botón activo sin haber hecho clic',
+     document.querySelector('.tab-button.is-active')?.dataset.tabKey === esperada],
+    ['los 3 fragmentos de contenido cargados',
+     claves.every((c) => stack.pulsar.getState().net.fragmentos[c] === 'listo')],
+    ['panel visible con contenido',
+     (document.querySelector('.tab-panel.is-active [data-zona="contenido"]')
+       ?.textContent ?? '').trim().length > 0],
+  ];
+
+  document.getElementById('comprobacion').textContent = pruebas
+    .map(([nombre, ok]) => `${ok ? '✓' : '✗'} ${nombre}`)
+    .join('\n');
+
+} catch (error) {
+  document.getElementById('comprobacion').innerHTML =
+    `<span class="fallo">✗ el arranque falló: ${error.message}</span>`;
+  console.error('[index]', error);
+}
+</script>
+</body>
+</html>
