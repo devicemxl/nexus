@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Tabs — piezas con exo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f0f2f5;
+           padding: 2rem; max-width: 800px; margin: 0 auto; }
+    header { background: #fff; border: 1px solid #d1d5db;
+             border-radius: 10px 10px 0 0; padding: 0 1.5rem; }
+    #comprobacion { margin-top: 1rem; font-family: ui-monospace, monospace;
+                    font-size: .85rem; white-space: pre-wrap; }
+    .fallo { color: #b91c1c; }
+  </style>
+</head>
+<body>
+
+<!--
+  `data-pieza="X"` declara un anclaje. exo lo resuelve a:
+
+    piezas/X/X.html    markup y CSS
+    piezas/X/X.js      export `definir()`
+
+  Este archivo no conoce ningún nombre de behavior, ni el modelo de pestañas,
+  ni el formato de las URL. Sabe qué piezas hay y en qué orden arrancar.
+-->
+
+<header data-pieza="tabs-nav"></header>
+<div data-pieza="panel-container"></div>
+
+<div id="comprobacion"></div>
+
+<script type="module">
+import { createNebula } from '../../src/nebula.js';
+import { createHydrationAdapter } from '../../src/adapters/hydration-adapter.js';
+import * as Chunklet from '../../src/chunklet.js';
+
+import { traerJson, cargarPiezas } from '../../exo/exo.js';
+import { listarPestanas, fragmentosResueltos } from './app/modelo.js';
+import { opcionesVoyajer } from './app/ruta.js';
+
+const FUENTE = './tabs.json';
+
+try {
+  // 1. Modelo, sobre el grafo crudo y antes de cablear nada.
+  const nebula = createNebula();
+  createHydrationAdapter(
+    { nebula },
+    { snapshot: await traerJson(FUENTE), mode: 'merge', onMissingTarget: 'skip' }
+  );
+
+  const claves = listarPestanas(nebula);
+  if (claves.length === 0) throw new Error(`${FUENTE} no trajo entidades "tab:*"`);
+
+  const stack = Chunklet.setup({
+    pulsar: { initialState: { route: {}, entities: {}, ui: {}, net: {} } },
+    nebula,
+  });
+
+  // 2. Piezas. Registra sus behaviors y trae su markup; no monta nada.
+  await cargarPiezas(document.body);
+
+  // 3. Un solo montaje. Cada pieza crea y monta su contenido dentro, de forma
+  //    síncrona, así que al volver de aquí el árbol está completo.
+  Chunklet.mount(document.body);
+
+  // 4. Voyajer. Las rutas válidas salen del modelo, así que no existían
+  //    cuando se llamó a `setup`.
+  Chunklet.configure({ voyajer: opcionesVoyajer(claves) });
+
+  // 5. Comprobación. Los paneles traen su contenido de forma asíncrona y
+  //    publican su estado en `net.*`; esto espera leyendo de ahí.
+  await new Promise((resolver) => {
+    if (fragmentosResueltos(stack.pulsar.getState(), claves)) return resolver();
+    const cancelar = stack.pulsar.subscribe((estado) => {
+      if (fragmentosResueltos(estado, claves)) { cancelar(); resolver(); }
+    });
+  });
+
+  const esperada = claves[0];
+  const pruebas = [
+    [`${claves.length} pestañas hidratadas desde ${FUENTE}`, claves.length === 3],
+    ['las 2 piezas insertaron su markup',
+     [...document.querySelectorAll('[data-pieza]')].every((a) => a.firstElementChild)],
+    ['CSS de la pieza aplicado',
+     getComputedStyle(document.getElementById('tabs-nav')).display === 'flex'],
+    ['cada pieza montó sus hijos',
+     document.querySelectorAll('.tab-button').length === claves.length &&
+     document.querySelectorAll('.tab-panel').length === claves.length],
+    ['ruta sincronizada por configure()',
+     stack.pulsar.getState().route.tab === esperada],
+    ['botón activo sin haber hecho clic',
+     document.querySelector('.tab-button.is-active')?.dataset.tabKey === esperada],
+    ['contenido resuelto por import.meta.url',
+     claves.every((c) => stack.pulsar.getState().net.fragmentos[c] === 'listo')],
+    ['panel visible con contenido',
+     (document.querySelector('.tab-panel.is-active [data-zona="contenido"]')
+       ?.textContent ?? '').trim().length > 0],
+  ];
+
+  document.getElementById('comprobacion').textContent = pruebas
+    .map(([nombre, ok]) => `${ok ? '✓' : '✗'} ${nombre}`)
+    .join('\n');
+
+} catch (error) {
+  document.getElementById('comprobacion').innerHTML =
+    `<span class="fallo">✗ el arranque falló: ${error.message}</span>`;
+  console.error('[index]', error);
+}
+</script>
+</body>
+</html>
