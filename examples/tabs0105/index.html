@@ -49,9 +49,6 @@ try {
     { snapshot: await traerJson(FUENTE), mode: 'merge', onMissingTarget: 'skip' }
   );
 
-  const claves = listarPestanas(nebula);
-  if (claves.length === 0) throw new Error(`${FUENTE} no trajo entidades "tab:*"`);
-
   const stack = Chunklet.setup({
     pulsar: { initialState: { route: {}, entities: {}, ui: {}, net: {} } },
     nebula,
@@ -64,12 +61,16 @@ try {
   //    síncrona, así que al volver de aquí el árbol está completo.
   Chunklet.mount(document.body);
 
-  // 4. Voyajer. Las rutas válidas salen del modelo, así que no existían
-  //    cuando se llamó a `setup`.
-  Chunklet.configure({ voyajer: opcionesVoyajer(claves) });
+  // 4. Voyajer. `ruta.js` deriva del modelo las pestañas válidas; este
+  //    archivo no las conoce. Lanza si el modelo no trajo ninguna.
+  Chunklet.configure({ voyajer: opcionesVoyajer(nebula) });
 
-  // 5. Comprobación. Los paneles traen su contenido de forma asíncrona y
-  //    publican su estado en `net.*`; esto espera leyendo de ahí.
+  // 5. Comprobación. Es el único bloque que consulta el modelo desde aquí:
+  //    verificar exige saber qué se esperaba, y eso no es cableado.
+  //
+  //    Los paneles traen su contenido de forma asíncrona y publican su estado
+  //    en `net.*`; esto espera leyendo de ahí.
+  const claves = listarPestanas(nebula);
   await new Promise((resolver) => {
     if (fragmentosResueltos(stack.pulsar.getState(), claves)) return resolver();
     const cancelar = stack.pulsar.subscribe((estado) => {

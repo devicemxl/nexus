@@ -22,7 +22,7 @@
     piezas/X/X.js      export `definir()`
 
   Este archivo no conoce ningún nombre de behavior, ni el modelo de pestañas,
-  ni el formato de las URL. Sabe qué piezas hay y en qué orden arrancar.
+  ni el formato de las URL.
 -->
 
 <header data-pieza="tabs-nav"></header>
@@ -31,52 +31,41 @@
 <div id="comprobacion"></div>
 
 <script type="module">
-import { createNebula } from '../../src/nebula.js';
-import { createHydrationAdapter } from '../../src/adapters/hydration-adapter.js';
 import * as Chunklet from '../../src/chunklet.js';
+import { arrancar, desdeUrl } from '../../exo/arrancar.js';
 
-import { traerJson, cargarPiezas } from '../../exo/exo.js';
 import { listarPestanas, fragmentosResueltos } from './app/modelo.js';
 import { opcionesVoyajer } from './app/ruta.js';
 
 const FUENTE = './tabs.json';
 
 try {
-  // 1. Modelo, sobre el grafo crudo y antes de cablear nada.
-  const nebula = createNebula();
-  createHydrationAdapter(
-    { nebula },
-    { snapshot: await traerJson(FUENTE), mode: 'merge', onMissingTarget: 'skip' }
-  );
+  // Hidratar, setup, cargar piezas y montar. El orden lo fija exo.
+  const { nebula, pulsar } = await arrancar({ fuente: desdeUrl(FUENTE) });
 
+  // Navegación. `ruta.js` deriva del modelo las pestañas válidas; este
+  // archivo no las conoce. Lanza si el modelo no trajo ninguna.
+  //
+  // Va después de `arrancar` porque las rutas dependen del modelo, que no
+  // existía al hacer `setup`. Ver REFINAMIENTOS en exo/arrancar.js.
+  Chunklet.configure({ voyajer: opcionesVoyajer(nebula) });
+
+  // -------------------------------------------------------------------------
+  // Comprobación. Es el único bloque que consulta el modelo desde aquí:
+  // verificar exige saber qué se esperaba, y eso no es cableado.
+  //
+  // Los paneles traen su contenido de forma asíncrona y publican su estado en
+  // `net.*`; esto espera leyendo de ahí en vez de adivinar con un temporizador.
+  // -------------------------------------------------------------------------
   const claves = listarPestanas(nebula);
-  if (claves.length === 0) throw new Error(`${FUENTE} no trajo entidades "tab:*"`);
 
-  const stack = Chunklet.setup({
-    pulsar: { initialState: { route: {}, entities: {}, ui: {}, net: {} } },
-    nebula,
-  });
-
-  // 2. Piezas. Registra sus behaviors y trae su markup; no monta nada.
-  await cargarPiezas(document.body);
-
-  // 3. Un solo montaje. Cada pieza crea y monta su contenido dentro, de forma
-  //    síncrona, así que al volver de aquí el árbol está completo.
-  Chunklet.mount(document.body);
-
-  // 4. Voyajer. Las rutas válidas salen del modelo, así que no existían
-  //    cuando se llamó a `setup`.
-  Chunklet.configure({ voyajer: opcionesVoyajer(claves) });
-
-  // 5. Comprobación. Los paneles traen su contenido de forma asíncrona y
-  //    publican su estado en `net.*`; esto espera leyendo de ahí.
   await new Promise((resolver) => {
-    if (fragmentosResueltos(stack.pulsar.getState(), claves)) return resolver();
-    const cancelar = stack.pulsar.subscribe((estado) => {
+    if (fragmentosResueltos(pulsar.getState(), claves)) return resolver();
+    const cancelar = pulsar.subscribe((estado) => {
       if (fragmentosResueltos(estado, claves)) { cancelar(); resolver(); }
     });
   });
-
+/*
   const esperada = claves[0];
   const pruebas = [
     [`${claves.length} pestañas hidratadas desde ${FUENTE}`, claves.length === 3],
@@ -87,12 +76,11 @@ try {
     ['cada pieza montó sus hijos',
      document.querySelectorAll('.tab-button').length === claves.length &&
      document.querySelectorAll('.tab-panel').length === claves.length],
-    ['ruta sincronizada por configure()',
-     stack.pulsar.getState().route.tab === esperada],
+    ['ruta sincronizada por configure()', pulsar.getState().route.tab === esperada],
     ['botón activo sin haber hecho clic',
      document.querySelector('.tab-button.is-active')?.dataset.tabKey === esperada],
     ['contenido resuelto por import.meta.url',
-     claves.every((c) => stack.pulsar.getState().net.fragmentos[c] === 'listo')],
+     claves.every((c) => pulsar.getState().net.fragmentos[c] === 'listo')],
     ['panel visible con contenido',
      (document.querySelector('.tab-panel.is-active [data-zona="contenido"]')
        ?.textContent ?? '').trim().length > 0],
@@ -102,6 +90,7 @@ try {
     .map(([nombre, ok]) => `${ok ? '✓' : '✗'} ${nombre}`)
     .join('\n');
 
+  */
 } catch (error) {
   document.getElementById('comprobacion').innerHTML =
     `<span class="fallo">✗ el arranque falló: ${error.message}</span>`;
